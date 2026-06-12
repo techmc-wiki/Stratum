@@ -21,6 +21,7 @@ import (
 	stratumerrors "github.com/stratummc/stratum/internal/errors"
 	"github.com/stratummc/stratum/internal/repository/filesystem"
 	"github.com/stratummc/stratum/internal/service/observationsvc"
+	"github.com/stratummc/stratum/internal/service/reconcilesvc"
 	"github.com/stratummc/stratum/internal/service/sessionsvc"
 )
 
@@ -72,6 +73,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return inspectSession(ctx, store, agentClient, command[2:], stdout, stderr)
 	case "sessions observe":
 		return observeSession(ctx, store, agentClient, command[2:], stdout, stderr)
+	case "sessions reconcile":
+		return reconcileSession(ctx, store, agentClient, strings.TrimSpace(*agentURL) != "", command[2:], stdout, stderr)
 	case "sessions logs":
 		return sessionLogs(ctx, agentClient, command[2:], stdout, stderr)
 	case "sessions prepare", "sessions start", "sessions stop", "sessions restart",
@@ -386,6 +389,55 @@ func observeSession(ctx context.Context, store *filesystem.Store, agentClient ag
 		result.ID, result.SessionID, result.ControllerSessionState, result.AgentRuntimeStatus, result.ObserverAgentID,
 		result.RuntimeProfileID, result.ProcessID, result.PID, result.MismatchDetected, result.MismatchType,
 		result.Severity, result.RecommendedAction, result.ObservedAt.Format(time.RFC3339Nano))
+	return 0
+}
+
+func reconcileSession(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, observeAgent bool, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 || args[0] != "mark-stopped" {
+		fmt.Fprintln(stderr, "usage: stratum sessions reconcile mark-stopped --id ID --actor ACTOR --reason REASON")
+		return 2
+	}
+	flags := newFlagSet("sessions reconcile mark-stopped", stderr)
+	id := flags.String("id", "", "session ID")
+	actor := flags.String("actor", "", "actor user ID")
+	reason := flags.String("reason", "", "manual reconciliation reason")
+	requestID := flags.String("request-id", "", "request correlation ID")
+	idempotencyKey := flags.String("idempotency-key", "", "deduplicate this reconciliation request")
+	if err := flags.Parse(args[1:]); err != nil {
+		return 2
+	}
+	if *id == "" || strings.TrimSpace(*actor) == "" || strings.TrimSpace(*reason) == "" {
+		fmt.Fprintln(stderr, "--id, --actor, and --reason are required")
+		return 2
+	}
+
+	options := reconcilesvc.Options{RequestID: *requestID, IdempotencyKey: *idempotencyKey}
+	if observeAgent {
+		controller, err := store.GetSession(ctx, *id)
+		if err != nil {
+			return reportError(stderr, "reconcile session", err)
+		}
+		observationOptions := observationsvc.Options{ObservedAt: time.Now().UTC()}
+		if expected, err := expectedRuntimeProfile(ctx, store, *id); err != nil {
+			return reportError(stderr, "load session runtime profile", err)
+		} else {
+			observationOptions.ExpectedRuntimeProfileID = expected
+		}
+		status, err := agentClient.InspectSession(ctx, *id)
+		if err != nil {
+			options.InspectError = err.Error()
+		} else {
+			observation := observationsvc.Observe(controller, &status, observationOptions)
+			options.Observation = &observation
+		}
+	}
+
+	value, replay, err := reconcilesvc.New(store).MarkStopped(ctx, *id, *actor, *reason, options)
+	if err != nil {
+		return reportError(stderr, "session reconcile mark-stopped", err)
+	}
+	fmt.Fprintf(stdout, "Session %s reconciliation mark-stopped status=%s operation=%s request=%s replay=%t observationAvailable=%s.\n",
+		*id, value.Status, value.ID, value.RequestID, replay, value.Metadata["observationAvailable"])
 	return 0
 }
 

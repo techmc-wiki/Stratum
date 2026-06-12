@@ -127,6 +127,78 @@ func TestCLIObservesRuntimeWithoutMutatingSession(t *testing.T) {
 	}
 }
 
+func TestCLIManualMarkStoppedReconciliation(t *testing.T) {
+	runtime := local.NewProcessAgent()
+	server := httptest.NewServer(httptransport.NewServer(runtime, "", nil).Handler())
+	defer server.Close()
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	base := []string{"--data-dir", dataDirectory, "--agent-url", server.URL}
+	commands := [][]string{
+		{"projects", "create", "--id", "project-1", "--name", "Project"},
+		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
+		{"sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
+		{"sessions", "prepare", "--id", "session-1", "--actor", "actor-1"},
+		{"sessions", "start", "--id", "session-1", "--actor", "actor-1", "--runtime-profile", "dummy-process"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(append(append([]string{}, base...), command...), &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	reconcile := append(append([]string{}, base...), "sessions", "reconcile", "mark-stopped", "--id", "session-1", "--actor", "actor-1", "--reason", "operator confirmed metadata repair", "--request-id", "request-reconcile-1")
+	if code := Run(reconcile, &stdout, &stderr); code != 0 {
+		t.Fatalf("reconcile: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "status=succeeded") || !strings.Contains(stdout.String(), "observationAvailable=true") {
+		t.Fatalf("stdout=%q", stdout.String())
+	}
+
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := store.GetSession(context.Background(), "session-1")
+	if err != nil || value.State != "stopped" || value.LastRuntimeMessage != "manually reconciled as stopped" {
+		t.Fatalf("session=%+v err=%v", value, err)
+	}
+	status, err := runtime.InspectSession(context.Background(), "session-1")
+	if err != nil || !status.Running {
+		t.Fatalf("manual reconciliation must not stop runtime: status=%+v err=%v", status, err)
+	}
+	operations, err := store.ListOperationsBySession(context.Background(), "session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, operationValue := range operations {
+		if operationValue.Action == "session.reconcile.mark-stopped" {
+			found = operationValue.Status == "succeeded" && operationValue.RequestID == "request-reconcile-1" && operationValue.Metadata["mismatchType"] == "none" && operationValue.Metadata["observationWarning"] != ""
+		}
+	}
+	if !found {
+		t.Fatalf("reconciliation operation missing: %+v", operations)
+	}
+}
+
+func TestCLIManualMarkStoppedRequiresActorAndReason(t *testing.T) {
+	for _, args := range [][]string{
+		{"sessions", "reconcile", "mark-stopped", "--id", "session-1", "--reason", "reason"},
+		{"sessions", "reconcile", "mark-stopped", "--id", "session-1", "--actor", "actor-1"},
+	} {
+		var stdout, stderr bytes.Buffer
+		code := Run(append([]string{"--data-dir", filepath.Join(t.TempDir(), "data")}, args...), &stdout, &stderr)
+		if code != 2 || !strings.Contains(stderr.String(), "--id, --actor, and --reason are required") {
+			t.Fatalf("args=%v code=%d stderr=%q", args, code, stderr.String())
+		}
+	}
+}
+
 func TestCLIRuntimeProfilesAndLogLimit(t *testing.T) {
 	server := httptest.NewServer(httptransport.NewServer(local.NewProcessAgent(), "", nil).Handler())
 	defer server.Close()
