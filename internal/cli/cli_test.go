@@ -199,6 +199,112 @@ func TestCLIManualMarkStoppedRequiresActorAndReason(t *testing.T) {
 	}
 }
 
+func TestCLIManualStopRuntimeReconciliation(t *testing.T) {
+	runtime := local.NewProcessAgent()
+	server := httptest.NewServer(httptransport.NewServer(runtime, "", nil).Handler())
+	defer server.Close()
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	base := []string{"--data-dir", dataDirectory, "--agent-url", server.URL}
+	commands := [][]string{
+		{"projects", "create", "--id", "project-1", "--name", "Project"},
+		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
+		{"sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
+		{"sessions", "prepare", "--id", "session-1", "--actor", "actor-1"},
+		{"sessions", "start", "--id", "session-1", "--actor", "actor-1", "--runtime-profile", "dummy-process"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(append(append([]string{}, base...), command...), &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	command := append(append([]string{}, base...), "sessions", "reconcile", "stop-runtime", "--id", "session-1", "--actor", "actor-1", "--reason", "stop orphan runtime", "--request-id", "request-stop-runtime")
+	if code := Run(command, &stdout, &stderr); code != 0 {
+		t.Fatalf("stop-runtime: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "status=succeeded") || !strings.Contains(stdout.String(), "agentResult=success") {
+		t.Fatalf("stdout=%q", stdout.String())
+	}
+	status, err := runtime.InspectSession(context.Background(), "session-1")
+	if err != nil || status.Running || status.Status != "stopped" {
+		t.Fatalf("runtime status=%+v err=%v", status, err)
+	}
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := store.GetSession(context.Background(), "session-1")
+	if err != nil || value.State != "running" {
+		t.Fatalf("controller state changed: %+v err=%v", value, err)
+	}
+	operations, _ := store.ListOperationsBySession(context.Background(), "session-1")
+	var found bool
+	for _, operationValue := range operations {
+		if operationValue.Action == "session.reconcile.stop-runtime" {
+			found = operationValue.Status == "succeeded" && operationValue.RequestID == "request-stop-runtime" && operationValue.Metadata["agentRuntimeStatus"] == "running" && operationValue.Metadata["agentResult"] == "success" && operationValue.Metadata["agentMode"] == "http"
+		}
+	}
+	if !found {
+		t.Fatalf("runtime stop operation missing: %+v", operations)
+	}
+}
+
+func TestCLIManualStopRuntimeRequiresAgentURL(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--data-dir", filepath.Join(t.TempDir(), "data"), "sessions", "reconcile", "stop-runtime", "--id", "session-1", "--actor", "actor-1", "--reason", "manual stop"}, &stdout, &stderr)
+	if code != 2 || !strings.Contains(stderr.String(), "requires --agent-url") {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+}
+
+func TestCLIManualStopRuntimeUnreachableAgentFailsWithoutStateChange(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	commands := [][]string{
+		{"--data-dir", dataDirectory, "projects", "create", "--id", "project-1", "--name", "Project"},
+		{"--data-dir", dataDirectory, "rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
+		{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
+		{"--data-dir", dataDirectory, "sessions", "prepare", "--id", "session-1", "--actor", "actor-1"},
+		{"--data-dir", dataDirectory, "sessions", "start", "--id", "session-1", "--actor", "actor-1"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(command, &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code := Run([]string{"--data-dir", dataDirectory, "--agent-url", "http://127.0.0.1:1", "--agent-timeout", "100ms", "sessions", "reconcile", "stop-runtime", "--id", "session-1", "--actor", "actor-1", "--reason", "agent unreachable test"}, &stdout, &stderr)
+	if code != 1 || !strings.Contains(stderr.String(), "inspect agent runtime") {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := store.GetSession(context.Background(), "session-1")
+	if err != nil || value.State != "running" {
+		t.Fatalf("session=%+v err=%v", value, err)
+	}
+	operations, _ := store.ListOperationsBySession(context.Background(), "session-1")
+	var found bool
+	for _, operationValue := range operations {
+		if operationValue.Action == "session.reconcile.stop-runtime" {
+			found = operationValue.Status == "failed" && operationValue.Metadata["agentResult"] == "failure"
+		}
+	}
+	if !found {
+		t.Fatalf("failed operation missing: %+v", operations)
+	}
+}
+
 func TestCLIRuntimeProfilesAndLogLimit(t *testing.T) {
 	server := httptest.NewServer(httptransport.NewServer(local.NewProcessAgent(), "", nil).Handler())
 	defer server.Close()

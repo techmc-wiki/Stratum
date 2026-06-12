@@ -74,7 +74,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "sessions observe":
 		return observeSession(ctx, store, agentClient, command[2:], stdout, stderr)
 	case "sessions reconcile":
-		return reconcileSession(ctx, store, agentClient, strings.TrimSpace(*agentURL) != "", command[2:], stdout, stderr)
+		return reconcileSession(ctx, store, agentClient, agentMode, strings.TrimSpace(*agentURL) != "", command[2:], stdout, stderr)
 	case "sessions logs":
 		return sessionLogs(ctx, agentClient, command[2:], stdout, stderr)
 	case "sessions prepare", "sessions start", "sessions stop", "sessions restart",
@@ -392,12 +392,13 @@ func observeSession(ctx context.Context, store *filesystem.Store, agentClient ag
 	return 0
 }
 
-func reconcileSession(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, observeAgent bool, args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 || args[0] != "mark-stopped" {
-		fmt.Fprintln(stderr, "usage: stratum sessions reconcile mark-stopped --id ID --actor ACTOR --reason REASON")
+func reconcileSession(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, agentMode string, hasAgentURL bool, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 || (args[0] != "mark-stopped" && args[0] != "stop-runtime") {
+		fmt.Fprintln(stderr, "usage: stratum sessions reconcile <mark-stopped|stop-runtime> --id ID --actor ACTOR --reason REASON")
 		return 2
 	}
-	flags := newFlagSet("sessions reconcile mark-stopped", stderr)
+	action := args[0]
+	flags := newFlagSet("sessions reconcile "+action, stderr)
 	id := flags.String("id", "", "session ID")
 	actor := flags.String("actor", "", "actor user ID")
 	reason := flags.String("reason", "", "manual reconciliation reason")
@@ -410,9 +411,29 @@ func reconcileSession(ctx context.Context, store *filesystem.Store, agentClient 
 		fmt.Fprintln(stderr, "--id, --actor, and --reason are required")
 		return 2
 	}
+	if action == "stop-runtime" && !hasAgentURL {
+		fmt.Fprintln(stderr, "sessions reconcile stop-runtime requires --agent-url")
+		return 2
+	}
+
+	if action == "stop-runtime" {
+		expected, err := expectedRuntimeProfile(ctx, store, *id)
+		if err != nil {
+			return reportError(stderr, "load session runtime profile", err)
+		}
+		value, replay, err := reconcilesvc.New(store).StopRuntime(ctx, agentClient, *id, *actor, *reason, reconcilesvc.StopRuntimeOptions{
+			RequestID: *requestID, IdempotencyKey: *idempotencyKey, AgentMode: agentMode, ExpectedRuntimeProfileID: expected,
+		})
+		if err != nil {
+			return reportError(stderr, "session reconcile stop-runtime", err)
+		}
+		fmt.Fprintf(stdout, "Session %s reconciliation stop-runtime status=%s operation=%s request=%s replay=%t agentResult=%s.\n",
+			*id, value.Status, value.ID, value.RequestID, replay, value.Metadata["agentResult"])
+		return 0
+	}
 
 	options := reconcilesvc.Options{RequestID: *requestID, IdempotencyKey: *idempotencyKey}
-	if observeAgent {
+	if hasAgentURL {
 		controller, err := store.GetSession(ctx, *id)
 		if err != nil {
 			return reportError(stderr, "reconcile session", err)
