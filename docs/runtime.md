@@ -123,6 +123,20 @@ creates the layout but still starts no OS process. Future MCDR and Minecraft
 profiles will use this layout for session-scoped files. Checkpoint backup,
 artifact mounting, cleanup policy, and sandboxing remain future work.
 
+## Runtime Artifact and Config Staging
+
+Runtime staging is Agent-owned preparation inside a Session runtime layout. The
+current helper computes safe paths under `artifacts/` and `config/` and may write
+small manifest stubs at `artifacts/staged-artifacts.json` and
+`config/staged-config.json`. Staged names must be relative, must not traverse
+outside the session layout, and must use conservative path characters.
+
+Staging is not artifact approval, Lucy package installation, mod mounting, or
+config preset application. The helper does not copy real artifact payloads from
+Controller storage, expose arbitrary file writes to users, or execute staged
+files. Future Artifact Manager and Lucy integration may populate these
+directories after approval and sandboxing rules are defined.
+
 ## Managed terminal executor
 
 The Agent uses Go `os/exec` directly with `command_argv`; it never invokes a

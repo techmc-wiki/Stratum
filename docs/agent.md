@@ -122,6 +122,10 @@ atomically. Disabled profiles are neither listed nor runnable, and profile
 discovery removes argv, working directory, environment, and stdin stop command
 values. See `runtime.md` for the format and trust boundary.
 
+The Agent runtime layout includes internal staging helpers for future artifact
+and config preparation. They compute safe paths and manifest stubs only; they do
+not approve artifacts, install Lucy packages, mount mods, or execute files.
+
 ## Why Agent controls MCDR, not the other way around
 
 MCDR is itself a process that requires supervision. A future trusted

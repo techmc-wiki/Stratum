@@ -85,3 +85,7 @@ metadata `--data-dir`. The current runtime layout creates per-session `work`,
 `logs`, `config`, `artifacts`, `checkpoints`, and `tmp` directories for future
 runtime integrations, but checkpoint backup and cleanup policy remain separate
 future work.
+
+Runtime staging manifests under `artifacts/` and `config/` are Agent-side runtime
+preparation files. They are not Controller artifact metadata, approval records,
+Lucy locks, or durable checkpoint metadata.
