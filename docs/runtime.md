@@ -126,6 +126,25 @@ Unexpected zero-code exit is reported as `exited`; unexpected non-zero exit is
 reported as `crashed` with exit code and error. The Agent does not mutate the
 Controller Session record. Runtime reconciliation remains future work.
 
+## Runtime Observation and Reconciliation Contract
+
+`RuntimeObservation` is a computed comparison between authoritative Controller
+Session metadata and an Agent runtime status. It detects cases such as a
+Controller-running Session whose process exited or crashed, a stopped Session
+whose runtime is still running, unknown Agent state, assigned-Agent mismatch,
+and runtime-profile mismatch when an expected profile is available.
+
+The result contains a mismatch type, severity, and recommended action. These
+are diagnostic values only: observation never mutates Session state and never
+stops, restarts, or marks a runtime crashed. Observations are not persisted in
+this phase. Operators can inspect the current comparison with:
+
+```powershell
+go run ./cmd/stratum --data-dir .stratum/data --agent-url http://127.0.0.1:8787 sessions observe --id demo-session
+```
+
+Automatic repair and explicit reconciliation operations remain future work.
+
 ## MCDR RuntimeProfile future shape
 
 The following profile is conceptual and not implemented:

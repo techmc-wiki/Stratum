@@ -166,6 +166,20 @@ Session metadata keeps `lastAgentStatus` (a protocol result such as `success`)
 separate from `lastRuntimeMessage` (operation detail such as `running` or
 `stopped`).
 
+## Runtime Observation and Reconciliation Contract
+
+The Controller remains the source of truth for Session metadata. A
+`RuntimeObservation` compares that metadata with one Agent `InspectSession`
+response and records any mismatch, its severity, and a recommended action.
+Observations include process/profile identifiers, exit details, optional
+resource data, and enough Controller context to diagnose the difference.
+
+This phase is detection only. Computing or printing an observation does not
+change Session state, mark a Session crashed, or stop/restart a runtime. The
+`sessions observe --id <session>` command uses the existing Agent inspect API
+and reports the comparison. Future explicit reconcile operations may consume
+the recommendation after authorization and audit rules are defined.
+
 ## Lifecycle ordering
 
 The Session Lifecycle Service validates transitions and resource policy first,
@@ -175,8 +189,8 @@ audit event records the agent details. Success events include `agentId`,
 `agentResult`, and `agentMessage`.
 
 State persistence and audit append are still separate writes. Real remote-agent
-work will need idempotency, reconciliation, production authentication, retry
-policy, and an outbox/event transaction strategy.
+work will need explicit reconciliation operations, production authentication,
+retry policy, and an outbox/event transaction strategy.
 
 The current transport supplies request IDs, a client timeout, and a shared
 token placeholder. MCDR, Minecraft, Lucy, runtime reconciliation, production

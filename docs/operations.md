@@ -11,3 +11,7 @@ The tuple `(actor, action, session, idempotency key)` identifies a retried reque
 Lifecycle commands accept `--idempotency-key`, `--request-id`, and `--operation-timeout`. Use `stratum operations list [--session ID] [--status STATUS]` and `stratum operations inspect --id ID` to inspect history.
 
 A timeout marks the operation `timed_out`; session metadata is changed only after the underlying lifecycle action succeeds.
+
+Runtime observation is read-only and does not create an Operation. A future
+explicit reconcile action would require its own authorized and audited
+Operation before changing Session or runtime state.
