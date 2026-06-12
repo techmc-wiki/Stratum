@@ -73,6 +73,60 @@ func TestCLIUsesHTTPAgentWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestCLIObservesRuntimeWithoutMutatingSession(t *testing.T) {
+	server := httptest.NewServer(httptransport.NewServer(local.NewProcessAgent(), "", nil).Handler())
+	defer server.Close()
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	base := []string{"--data-dir", dataDirectory, "--agent-url", server.URL}
+	commands := [][]string{
+		{"projects", "create", "--id", "project-1", "--name", "Project"},
+		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
+		{"sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
+		{"sessions", "prepare", "--id", "session-1", "--actor", "actor-1"},
+		{"sessions", "start", "--id", "session-1", "--actor", "actor-1", "--runtime-profile", "dummy-process"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(append(append([]string{}, base...), command...), &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, base...), "sessions", "observe", "--id", "session-1"), &stdout, &stderr); code != 0 {
+		t.Fatalf("observe running: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "controllerState=running") || !strings.Contains(stdout.String(), "agentStatus=running") || !strings.Contains(stdout.String(), "mismatch=false") || !strings.Contains(stdout.String(), "recommendedAction=none") {
+		t.Fatalf("running observation=%q", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, base...), "sessions", "stop", "--id", "session-1", "--actor", "actor-1"), &stdout, &stderr); code != 0 {
+		t.Fatalf("stop: code=%d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, base...), "sessions", "observe", "--id", "session-1"), &stdout, &stderr); code != 0 {
+		t.Fatalf("observe stopped: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "controllerState=stopped") || !strings.Contains(stdout.String(), "agentStatus=stopped") || !strings.Contains(stdout.String(), "mismatch=false") {
+		t.Fatalf("stopped observation=%q", stdout.String())
+	}
+
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := store.GetSession(context.Background(), "session-1")
+	if err != nil || value.State != "stopped" {
+		t.Fatalf("session=%+v err=%v", value, err)
+	}
+}
+
 func TestCLIRuntimeProfilesAndLogLimit(t *testing.T) {
 	server := httptest.NewServer(httptransport.NewServer(local.NewProcessAgent(), "", nil).Handler())
 	defer server.Close()

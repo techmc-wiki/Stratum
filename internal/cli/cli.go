@@ -20,6 +20,7 @@ import (
 	"github.com/stratummc/stratum/internal/domain/session"
 	stratumerrors "github.com/stratummc/stratum/internal/errors"
 	"github.com/stratummc/stratum/internal/repository/filesystem"
+	"github.com/stratummc/stratum/internal/service/observationsvc"
 	"github.com/stratummc/stratum/internal/service/sessionsvc"
 )
 
@@ -69,6 +70,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return listSessions(ctx, store, stdout, stderr)
 	case "sessions inspect":
 		return inspectSession(ctx, store, agentClient, command[2:], stdout, stderr)
+	case "sessions observe":
+		return observeSession(ctx, store, agentClient, command[2:], stdout, stderr)
 	case "sessions logs":
 		return sessionLogs(ctx, agentClient, command[2:], stdout, stderr)
 	case "sessions prepare", "sessions start", "sessions stop", "sessions restart",
@@ -348,6 +351,68 @@ func inspectSession(ctx context.Context, store *filesystem.Store, agentClient ag
 		value.LastAgentStatus, value.LastRuntimeMessage, value.RuntimeEndpoint, observed.Status, observed.ProcessID,
 		observed.RuntimeProfileID, observed.RuntimeType, observed.RuntimeMode, observed.PID, observed.Running, observed.Crashed, optionalInt(observed.ExitCode), observed.LastError)
 	return 0
+}
+
+func observeSession(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("sessions observe", stderr)
+	id := flags.String("id", "", "session ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" {
+		fmt.Fprintln(stderr, "--id is required")
+		return 2
+	}
+	controller, err := store.GetSession(ctx, *id)
+	if err != nil {
+		return reportError(stderr, "observe session", err)
+	}
+
+	options := observationsvc.Options{ObservedAt: time.Now().UTC()}
+	if expected, err := expectedRuntimeProfile(ctx, store, *id); err != nil {
+		return reportError(stderr, "load session runtime profile", err)
+	} else {
+		options.ExpectedRuntimeProfileID = expected
+	}
+	status, inspectErr := agentClient.InspectSession(ctx, *id)
+	var observed *agent.SessionStatus
+	if inspectErr == nil {
+		observed = &status
+	} else {
+		options.Metadata = map[string]string{"agentInspectError": inspectErr.Error()}
+	}
+	result := observationsvc.Observe(controller, observed, options)
+	fmt.Fprintf(stdout, "id=%s session=%s controllerState=%s agentStatus=%s agent=%s runtimeProfile=%s process=%s pid=%d mismatch=%t mismatchType=%s severity=%s recommendedAction=%s observedAt=%s\n",
+		result.ID, result.SessionID, result.ControllerSessionState, result.AgentRuntimeStatus, result.ObserverAgentID,
+		result.RuntimeProfileID, result.ProcessID, result.PID, result.MismatchDetected, result.MismatchType,
+		result.Severity, result.RecommendedAction, result.ObservedAt.Format(time.RFC3339Nano))
+	return 0
+}
+
+func expectedRuntimeProfile(ctx context.Context, store *filesystem.Store, sessionID string) (string, error) {
+	values, err := store.ListOperationsBySession(ctx, sessionID)
+	if err != nil {
+		return "", err
+	}
+	var latest operation.Operation
+	var latestAt time.Time
+	for _, value := range values {
+		if value.Status != operation.StatusSucceeded || (value.Action != "start" && value.Action != "restart") {
+			continue
+		}
+		profileID := value.Metadata["runtimeProfileId"]
+		if profileID == "" {
+			continue
+		}
+		completedAt := value.CreatedAt
+		if value.CompletedAt != nil {
+			completedAt = *value.CompletedAt
+		}
+		if latestAt.IsZero() || completedAt.After(latestAt) {
+			latest, latestAt = value, completedAt
+		}
+	}
+	return latest.Metadata["runtimeProfileId"], nil
 }
 
 func optionalInt(value *int) string {
