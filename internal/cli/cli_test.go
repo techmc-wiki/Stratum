@@ -571,6 +571,74 @@ func TestCLIArtifactStagingPlanListAndInspect(t *testing.T) {
 	}
 }
 
+func TestCLIArtifactApproveReject(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 6, 12, 12, 0, 0, 0, time.UTC)
+	if err := store.CreateArtifact(context.Background(), artifact.Artifact{ID: "approve-me", Name: "Approve Me", Type: artifact.TypeJar, UploaderID: "uploader-1", SHA256: artifact.HashBytes([]byte("approve")), SizeBytes: 7, Status: artifact.StatusPending, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateArtifact(context.Background(), artifact.Artifact{ID: "reject-me", Name: "Reject Me", Type: artifact.TypeJar, UploaderID: "uploader-1", SHA256: artifact.HashBytes([]byte("reject")), SizeBytes: 6, Status: artifact.StatusPending, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+
+	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "approve", "--id", "approve-me", "--actor", "reviewer-1", "--reason", "trusted fixture"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("approve: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "status=approved") || !strings.Contains(stdout.String(), "No payload was copied") {
+		t.Fatalf("approve stdout=%q", stdout.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "reject", "--id", "reject-me", "--actor", "reviewer-1", "--reason", "unsafe fixture"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("reject: code=%d stderr=%q", code, stderr.String())
+	}
+	approved, err := store.GetArtifact(context.Background(), "approve-me")
+	if err != nil || approved.Status != artifact.StatusApproved || approved.ReviewedBy != "reviewer-1" || approved.ReviewedAt == nil || approved.ReviewReason != "trusted fixture" {
+		t.Fatalf("approved=%+v err=%v", approved, err)
+	}
+	rejected, err := store.GetArtifact(context.Background(), "reject-me")
+	if err != nil || rejected.Status != artifact.StatusRejected || rejected.ReviewedBy != "reviewer-1" || rejected.ReviewedAt == nil || rejected.ReviewReason != "unsafe fixture" {
+		t.Fatalf("rejected=%+v err=%v", rejected, err)
+	}
+	events, err := store.ListAuditEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var approvedEvent, rejectedEvent bool
+	for _, event := range events {
+		if event.Action == "artifact.approved" && event.Metadata["artifactId"] == "approve-me" && event.Metadata["reason"] == "trusted fixture" {
+			approvedEvent = true
+		}
+		if event.Action == "artifact.rejected" && event.Metadata["artifactId"] == "reject-me" && event.Metadata["reason"] == "unsafe fixture" {
+			rejectedEvent = true
+		}
+	}
+	if !approvedEvent || !rejectedEvent {
+		t.Fatalf("events=%+v", events)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "list"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("list: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "approve-me\tApprove Me\tjar\tapproved\treviewedBy=reviewer-1") || !strings.Contains(stdout.String(), "reviewReason=trusted fixture") {
+		t.Fatalf("list stdout=%q", stdout.String())
+	}
+}
+
+func TestCLIArtifactReviewRequiresFields(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--data-dir", filepath.Join(t.TempDir(), "data"), "artifacts", "approve", "--id", "artifact-1", "--actor", "reviewer-1"}, &stdout, &stderr)
+	if code != 2 || !strings.Contains(stderr.String(), "--id, --actor, and --reason are required") {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+}
+
 func TestLifecycleCLIUpdatesPersistentSession(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")

@@ -11,6 +11,7 @@ import (
 	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/agent/httptransport"
 	"github.com/stratummc/stratum/internal/agent/local"
+	"github.com/stratummc/stratum/internal/domain/artifact"
 	"github.com/stratummc/stratum/internal/domain/artifactstaging"
 	"github.com/stratummc/stratum/internal/domain/audit"
 	"github.com/stratummc/stratum/internal/domain/checkpoint"
@@ -24,6 +25,7 @@ import (
 	stratumerrors "github.com/stratummc/stratum/internal/errors"
 	"github.com/stratummc/stratum/internal/repository/filesystem"
 	"github.com/stratummc/stratum/internal/service/artifactstagingsvc"
+	"github.com/stratummc/stratum/internal/service/artifactsvc"
 	"github.com/stratummc/stratum/internal/service/observationsvc"
 	"github.com/stratummc/stratum/internal/service/reconcilesvc"
 	"github.com/stratummc/stratum/internal/service/sessionsvc"
@@ -93,6 +95,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return getCheckpoint(ctx, store, command[2:], stdout, stderr)
 	case "artifacts list":
 		return listArtifacts(ctx, store, stdout, stderr)
+	case "artifacts approve", "artifacts reject":
+		return reviewArtifact(ctx, store, action, command[2:], stdout, stderr)
 	case "artifacts staging":
 		return artifactStaging(ctx, store, command[2:], stdout, stderr)
 	case "operations list":
@@ -776,8 +780,43 @@ func listArtifacts(ctx context.Context, store *filesystem.Store, stdout, stderr 
 		return reportError(stderr, "list artifacts", err)
 	}
 	for _, value := range values {
-		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\n", value.ID, value.Name, value.Type, value.Status)
+		reviewedAt := ""
+		if value.ReviewedAt != nil {
+			reviewedAt = value.ReviewedAt.Format(time.RFC3339Nano)
+		}
+		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\treviewedBy=%s\treviewedAt=%s\treviewReason=%s\n", value.ID, value.Name, value.Type, value.Status, value.ReviewedBy, reviewedAt, value.ReviewReason)
 	}
+	return 0
+}
+
+func reviewArtifact(ctx context.Context, store *filesystem.Store, action string, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("artifacts "+action, stderr)
+	id := flags.String("id", "", "artifact ID")
+	actor := flags.String("actor", "", "reviewer actor ID")
+	reason := flags.String("reason", "", "review reason")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" || strings.TrimSpace(*actor) == "" || strings.TrimSpace(*reason) == "" {
+		fmt.Fprintln(stderr, "--id, --actor, and --reason are required")
+		return 2
+	}
+	service := artifactsvc.New(store)
+	var value artifact.Artifact
+	var err error
+	if action == "approve" {
+		value, err = service.ApproveArtifact(ctx, *id, *actor, *reason)
+	} else {
+		value, err = service.RejectArtifact(ctx, *id, *actor, *reason)
+	}
+	if err != nil {
+		return reportError(stderr, "artifact "+action, err)
+	}
+	reviewedAt := ""
+	if value.ReviewedAt != nil {
+		reviewedAt = value.ReviewedAt.Format(time.RFC3339Nano)
+	}
+	fmt.Fprintf(stdout, "Artifact %s status=%s reviewedBy=%s reviewedAt=%s reason=%q. No payload was copied, mounted, installed, or executed.\n", value.ID, value.Status, value.ReviewedBy, reviewedAt, value.ReviewReason)
 	return 0
 }
 

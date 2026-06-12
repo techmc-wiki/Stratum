@@ -38,6 +38,11 @@ behavior and optional list-by-session filtering. Create operations reject an
 existing ID. Updates require an existing object, and deletes/get operations
 return typed not-found errors.
 
+Artifact records may include `reviewedBy`, `reviewedAt`, and `reviewReason` when
+an explicit metadata-only approval or rejection has been recorded. These fields
+are review metadata only; they are not evidence that payload storage exists or
+that a file has been copied, mounted, installed, or executed.
+
 Lists read every `.json` record and return records ordered by filename. A
 malformed or unknown-field record stops the list with an actionable repository
 error rather than silently dropping metadata.

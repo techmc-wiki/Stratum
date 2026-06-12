@@ -150,6 +150,15 @@ produce rejected metadata plans with audit history. Future work may copy or moun
 approved payloads into Agent-owned staging directories after upload storage,
 approval, and sandboxing rules are implemented.
 
+## Artifact Approval
+
+Artifact approval is metadata-only review. `artifacts approve` and `artifacts
+reject` transition pending artifact metadata, record reviewer and reason fields,
+and append audit events. Approval does not copy, mount, install, or execute
+payloads; it only makes the artifact eligible for future staging plans. Rejected
+artifacts cannot be staged. Payload storage, upload, and runtime mounting remain
+future work.
+
 ## Managed terminal executor
 
 The Agent uses Go `os/exec` directly with `command_argv`; it never invokes a

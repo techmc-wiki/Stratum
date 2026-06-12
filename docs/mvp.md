@@ -25,6 +25,7 @@ Minecraft server.
 - Per-session Agent runtime directory allocation under `--runtime-root`.
 - Agent-side artifact/config staging path helpers and manifest stubs.
 - Metadata-only approved artifact staging plans with audit history.
+- Metadata-only artifact approval/rejection with reviewer audit history.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active
@@ -37,9 +38,10 @@ RuntimeProfile loading, runtime mismatch detection, persisted observation
 history, explicit mark-stopped, stop-runtime, and mark-crashed reconciliation,
 per-session runtime directory allocation, and internal runtime staging helpers
 are implemented. Metadata-only artifact staging plans define which approved
-artifacts may later be staged. The next phase may add another narrowly scoped
-Agent runtime capability. It must not perform automatic repair or accept
-arbitrary user-supplied commands.
+artifacts may later be staged, and artifact review can approve or reject pending
+metadata. The next phase may add another narrowly scoped Agent runtime
+capability. It must not perform automatic repair or accept arbitrary
+user-supplied commands.
 
 A later phase may add **MCDR RuntimeProfile v0**, where the Agent launches MCDR
 as a trusted child process. MCDR may manage Minecraft internally, but it will not

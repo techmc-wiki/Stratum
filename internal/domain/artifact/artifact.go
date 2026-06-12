@@ -35,18 +35,21 @@ type Usage struct {
 }
 
 type Artifact struct {
-	ID                      string    `json:"id"`
-	Name                    string    `json:"name"`
-	Type                    Type      `json:"type"`
-	UploaderID              string    `json:"uploaderId"`
-	SHA256                  string    `json:"sha256"`
-	SizeBytes               int64     `json:"sizeBytes"`
-	TargetMinecraftVersions []string  `json:"targetMinecraftVersions"`
-	LoaderCompatibility     []string  `json:"loaderCompatibility"`
-	Status                  Status    `json:"status"`
-	UsageRecords            []Usage   `json:"usageRecords,omitempty"`
-	ReviewNotes             string    `json:"reviewNotes,omitempty"`
-	CreatedAt               time.Time `json:"createdAt"`
+	ID                      string     `json:"id"`
+	Name                    string     `json:"name"`
+	Type                    Type       `json:"type"`
+	UploaderID              string     `json:"uploaderId"`
+	SHA256                  string     `json:"sha256"`
+	SizeBytes               int64      `json:"sizeBytes"`
+	TargetMinecraftVersions []string   `json:"targetMinecraftVersions"`
+	LoaderCompatibility     []string   `json:"loaderCompatibility"`
+	Status                  Status     `json:"status"`
+	UsageRecords            []Usage    `json:"usageRecords,omitempty"`
+	ReviewNotes             string     `json:"reviewNotes,omitempty"`
+	ReviewedBy              string     `json:"reviewedBy,omitempty"`
+	ReviewedAt              *time.Time `json:"reviewedAt,omitempty"`
+	ReviewReason            string     `json:"reviewReason,omitempty"`
+	CreatedAt               time.Time  `json:"createdAt"`
 }
 
 func HashBytes(data []byte) string {

@@ -19,6 +19,10 @@ Artifact staging plan creation writes audit events but does not create a
 lifecycle Operation. It is metadata-only validation of staging intent and does
 not call the Agent or mutate runtime directories.
 
+Artifact approval and rejection also write audit events without creating
+Operations. They are metadata review actions and do not copy, mount, install, or
+execute artifact payloads.
+
 ## Manual Reconciliation Operations
 
 Reconciliation is an explicit human-confirmed metadata repair. Supported
