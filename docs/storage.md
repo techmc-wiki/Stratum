@@ -4,6 +4,9 @@ StratumMC's current durable repository stores control-plane metadata beneath a
 configurable data directory. The CLI defaults to `.stratum/data`; deployments
 should provide an explicit location with `--data-dir`.
 
+Operation metadata is retained as one atomic JSON document per operation in
+`operations/`, using the same temporary-file-and-rename path as other entities.
+
 ## Layout
 
 ```text
@@ -61,6 +64,12 @@ Session state is written atomically before a success audit is appended. These
 two files are not a transaction: an audit append failure can be reported after
 the state file was updated. A future transactional event/outbox design should
 close that gap before multi-controller operation.
+
+Session JSON may also contain `assignedAgentId`, `lastAgentStatus`,
+`lastRuntimeMessage`, and `runtimeEndpoint`. These are control-plane
+observations and routing metadata; they are not proof that a real process
+exists. Agent-backed lifecycle audit events add `agentId`, `agentResult`, and
+`agentMessage`.
 
 ## Scope
 

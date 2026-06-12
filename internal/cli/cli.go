@@ -8,8 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stratummc/stratum/internal/agent"
+	"github.com/stratummc/stratum/internal/agent/httptransport"
+	"github.com/stratummc/stratum/internal/agent/local"
 	"github.com/stratummc/stratum/internal/domain/checkpoint"
 	"github.com/stratummc/stratum/internal/domain/environment"
+	"github.com/stratummc/stratum/internal/domain/operation"
 	"github.com/stratummc/stratum/internal/domain/project"
 	"github.com/stratummc/stratum/internal/domain/resourcepolicy"
 	"github.com/stratummc/stratum/internal/domain/room"
@@ -25,6 +29,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	global := flag.NewFlagSet("stratum", flag.ContinueOnError)
 	global.SetOutput(stderr)
 	dataDirectory := global.String("data-dir", defaultDataDirectory, "metadata data directory")
+	agentURL := global.String("agent-url", "", "agent HTTP endpoint; empty uses local fake")
+	agentToken := global.String("agent-token", "", "agent HTTP bearer token")
+	agentTimeout := global.Duration("agent-timeout", 10*time.Second, "agent HTTP request timeout")
 	if err := global.Parse(args); err != nil {
 		return 2
 	}
@@ -41,6 +48,11 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	ctx := context.Background()
+	agentClient, agentMode, err := buildAgentClient(*agentURL, *agentToken, *agentTimeout)
+	if err != nil {
+		fmt.Fprintf(stderr, "configure agent client: %v\n", err)
+		return 2
+	}
 	resource, action := command[0], command[1]
 	switch resource + " " + action {
 	case "projects create":
@@ -55,10 +67,14 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return createSession(ctx, store, command[2:], stdout, stderr)
 	case "sessions list":
 		return listSessions(ctx, store, stdout, stderr)
+	case "sessions inspect":
+		return inspectSession(ctx, store, agentClient, command[2:], stdout, stderr)
+	case "sessions logs":
+		return sessionLogs(ctx, agentClient, command[2:], stdout, stderr)
 	case "sessions prepare", "sessions start", "sessions stop", "sessions restart",
 		"sessions freeze", "sessions unfreeze", "sessions mark-crashed",
 		"sessions archive", "sessions delete":
-		return runSessionLifecycle(ctx, store, action, command[2:], stdout, stderr)
+		return runSessionLifecycle(ctx, store, agentClient, agentMode, action, command[2:], stdout, stderr)
 	case "checkpoints create":
 		return createCheckpoint(ctx, store, command[2:], stdout, stderr)
 	case "checkpoints list":
@@ -67,6 +83,18 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return getCheckpoint(ctx, store, command[2:], stdout, stderr)
 	case "artifacts list":
 		return listArtifacts(ctx, store, stdout, stderr)
+	case "operations list":
+		return listOperations(ctx, store, command[2:], stdout, stderr)
+	case "operations inspect":
+		return inspectOperation(ctx, store, command[2:], stdout, stderr)
+	case "agents list":
+		return listAgents(ctx, agentClient, stdout, stderr)
+	case "agents inspect":
+		return inspectAgent(ctx, agentClient, command[2:], stdout, stderr)
+	case "agents resources":
+		return agentResources(ctx, agentClient, command[2:], stdout, stderr)
+	case "agents runtime-profiles":
+		return agentRuntimeProfiles(ctx, agentClient, command[2:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", strings.Join(command[:2], " "))
 		usage(stderr)
@@ -190,7 +218,7 @@ func createSession(ctx context.Context, store *filesystem.Store, args []string, 
 	if err := store.CreateSession(ctx, value); err != nil {
 		return reportError(stderr, "create session", err)
 	}
-	fmt.Fprintf(stdout, "Created %s session %s in state %s. Runtime start is TODO.\n", value.Type, value.ID, value.State)
+	fmt.Fprintf(stdout, "Created %s session %s in state %s. Runtime is not started.\n", value.Type, value.ID, value.State)
 	return 0
 }
 
@@ -205,11 +233,15 @@ func listSessions(ctx context.Context, store *filesystem.Store, stdout, stderr i
 	return 0
 }
 
-func runSessionLifecycle(ctx context.Context, store *filesystem.Store, action string, args []string, stdout, stderr io.Writer) int {
+func runSessionLifecycle(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, agentMode, action string, args []string, stdout, stderr io.Writer) int {
 	flags := newFlagSet("sessions "+action, stderr)
 	id := flags.String("id", "", "session ID")
 	actor := flags.String("actor", "", "actor user ID")
 	reason := flags.String("reason", "", "operation reason")
+	idempotencyKey := flags.String("idempotency-key", "", "deduplicate this actor/action/session request")
+	requestID := flags.String("request-id", "", "request correlation ID")
+	operationTimeout := flags.Duration("operation-timeout", 0, "maximum lifecycle operation duration")
+	runtimeProfileID := flags.String("runtime-profile", "", "trusted Agent runtime profile ID (start/restart only)")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -221,31 +253,213 @@ func runSessionLifecycle(ctx context.Context, store *filesystem.Store, action st
 	if err != nil {
 		return reportError(stderr, "prepare resource policy", err)
 	}
-	service := sessionsvc.New(store, policy)
+	service := sessionsvc.New(store, policy, agentClient)
+	options := sessionsvc.OperationOptions{IdempotencyKey: *idempotencyKey, RequestID: *requestID, Timeout: *operationTimeout, RuntimeProfileID: *runtimeProfileID}
+	var operationValue operation.Operation
+	var replay bool
 	switch action {
 	case "prepare":
-		err = service.Prepare(ctx, *id, *actor)
+		operationValue, replay, err = service.PrepareWithOptions(ctx, *id, *actor, options)
 	case "start":
-		err = service.Start(ctx, *id, *actor)
+		operationValue, replay, err = service.StartWithOptions(ctx, *id, *actor, options)
 	case "stop":
-		err = service.Stop(ctx, *id, *actor)
+		operationValue, replay, err = service.StopWithOptions(ctx, *id, *actor, options)
 	case "restart":
-		err = service.Restart(ctx, *id, *actor)
+		operationValue, replay, err = service.RestartWithOptions(ctx, *id, *actor, options)
 	case "freeze":
-		err = service.Freeze(ctx, *id, *actor)
+		operationValue, replay, err = service.FreezeWithOptions(ctx, *id, *actor, options)
 	case "unfreeze":
-		err = service.Unfreeze(ctx, *id, *actor)
+		operationValue, replay, err = service.UnfreezeWithOptions(ctx, *id, *actor, options)
 	case "mark-crashed":
-		err = service.MarkCrashed(ctx, *id, *actor, *reason)
+		operationValue, replay, err = service.MarkCrashedWithOptions(ctx, *id, *actor, *reason, options)
 	case "archive":
-		err = service.Archive(ctx, *id, *actor)
+		operationValue, replay, err = service.ArchiveWithOptions(ctx, *id, *actor, options)
 	case "delete":
-		err = service.Delete(ctx, *id, *actor)
+		operationValue, replay, err = service.DeleteWithOptions(ctx, *id, *actor, options)
 	}
 	if err != nil {
 		return reportError(stderr, "session "+action, err)
 	}
-	fmt.Fprintf(stdout, "Session %s operation %s completed.\n", *id, action)
+	fmt.Fprintf(stdout, "Session %s operation %s status=%s operation=%s request=%s replay=%t via=%s.\n", *id, action, operationValue.Status, operationValue.ID, operationValue.RequestID, replay, agentMode)
+	return 0
+}
+
+func listOperations(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("operations list", stderr)
+	sessionID := flags.String("session", "", "filter by session ID")
+	status := flags.String("status", "", "filter by operation status")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	values, err := store.ListOperations(ctx)
+	if err != nil {
+		return reportError(stderr, "list operations", err)
+	}
+	for _, value := range values {
+		if *sessionID != "" && value.SessionID != *sessionID {
+			continue
+		}
+		if *status != "" && string(value.Status) != *status {
+			continue
+		}
+		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\t%s\n", value.ID, value.SessionID, value.Action, value.Status, value.RequestID)
+	}
+	return 0
+}
+
+func inspectOperation(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("operations inspect", stderr)
+	id := flags.String("id", "", "operation ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" {
+		fmt.Fprintln(stderr, "--id is required")
+		return 2
+	}
+	value, err := store.GetOperation(ctx, *id)
+	if err != nil {
+		return reportError(stderr, "inspect operation", err)
+	}
+	fmt.Fprintf(stdout, "id=%s request=%s actor=%s action=%s session=%s status=%s previous=%s intended=%s final=%s result=%s runtimeProfile=%s errorCode=%s error=%q\n", value.ID, value.RequestID, value.ActorID, value.Action, value.SessionID, value.Status, value.PreviousState, value.IntendedState, value.FinalState, value.Result, value.Metadata["runtimeProfileId"], value.ErrorCode, value.ErrorMessage)
+	return 0
+}
+
+func inspectSession(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("sessions inspect", stderr)
+	id := flags.String("id", "", "session ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" {
+		fmt.Fprintln(stderr, "--id is required")
+		return 2
+	}
+	value, err := store.GetSession(ctx, *id)
+	if err != nil {
+		return reportError(stderr, "inspect session", err)
+	}
+	observed, err := agentClient.InspectSession(ctx, *id)
+	if err != nil {
+		return reportError(stderr, "inspect session agent", err)
+	}
+	fmt.Fprintf(stdout, "id=%s project=%s room=%s type=%s state=%s agent=%s agentStatus=%s runtimeMessage=%q endpoint=%s observed=%s process=%s runtimeProfile=%s runtimeType=%s runtimeMode=%s pid=%d running=%t crashed=%t exitCode=%s runtimeError=%q\n",
+		value.ID, value.ProjectID, value.RoomID, value.Type, value.State, value.AssignedAgentID,
+		value.LastAgentStatus, value.LastRuntimeMessage, value.RuntimeEndpoint, observed.Status, observed.ProcessID,
+		observed.RuntimeProfileID, observed.RuntimeType, observed.RuntimeMode, observed.PID, observed.Running, observed.Crashed, optionalInt(observed.ExitCode), observed.LastError)
+	return 0
+}
+
+func optionalInt(value *int) string {
+	if value == nil {
+		return ""
+	}
+	return fmt.Sprintf("%d", *value)
+}
+
+func sessionLogs(ctx context.Context, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("sessions logs", stderr)
+	id := flags.String("id", "", "session ID")
+	maxBytes := flags.Int("max-bytes", 0, "maximum output bytes; zero returns all available logs")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" {
+		fmt.Fprintln(stderr, "--id is required")
+		return 2
+	}
+	batch, err := agentClient.CollectLogs(agent.WithLogMaxBytes(ctx, *maxBytes), *id)
+	if err != nil {
+		return reportError(stderr, "collect session logs", err)
+	}
+	remaining := *maxBytes
+	for _, line := range batch.Lines {
+		output := line + "\n"
+		if remaining > 0 && len(output) > remaining {
+			_, _ = io.WriteString(stdout, output[:remaining])
+			break
+		}
+		_, _ = io.WriteString(stdout, output)
+		if remaining > 0 {
+			remaining -= len(output)
+			if remaining == 0 {
+				break
+			}
+		}
+	}
+	return 0
+}
+
+func agentRuntimeProfiles(ctx context.Context, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("agents runtime-profiles", stderr)
+	id := flags.String("id", local.DefaultAgentID, "agent ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id != local.DefaultAgentID {
+		fmt.Fprintf(stderr, "agent %q not found\n", *id)
+		return 1
+	}
+	profiles, err := agentClient.RuntimeProfiles(ctx)
+	if err != nil {
+		return reportError(stderr, "list runtime profiles", err)
+	}
+	for _, value := range profiles {
+		fmt.Fprintf(stdout, "%s\t%s\t%s\tenabled=%t\tstop=%s\t%s\n", value.ID, value.Name, value.RuntimeType, value.Enabled, value.StopStrategy, value.Notes)
+	}
+	return 0
+}
+
+func listAgents(ctx context.Context, agentClient agent.AgentClient, stdout, stderr io.Writer) int {
+	info, err := agentClient.Info(ctx)
+	if err != nil {
+		return reportError(stderr, "list agents", err)
+	}
+	fmt.Fprintf(stdout, "%s\t%s\t%s\n", info.ID, info.Status, info.RuntimeEndpoint)
+	return 0
+}
+
+func inspectAgent(ctx context.Context, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("agents inspect", stderr)
+	id := flags.String("id", local.DefaultAgentID, "agent ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id != local.DefaultAgentID {
+		fmt.Fprintf(stderr, "agent %q not found\n", *id)
+		return 1
+	}
+	info, err := agentClient.Info(ctx)
+	if err != nil {
+		return reportError(stderr, "inspect agent", err)
+	}
+	report, err := agentClient.ReportResources(ctx)
+	if err != nil {
+		return reportError(stderr, "report agent resources", err)
+	}
+	fmt.Fprintf(stdout, "id=%s status=%s endpoint=%s capabilities=%s cpu=%d memory=%d/%dMB disk=%d/%dMB running=%d\n",
+		info.ID, info.Status, info.RuntimeEndpoint, strings.Join(info.Capabilities, ","), report.CPUCapacity,
+		report.MemoryUsedMB, report.MemoryTotalMB, report.DiskUsedMB, report.DiskTotalMB, report.RunningSessions)
+	return 0
+}
+
+func agentResources(ctx context.Context, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("agents resources", stderr)
+	id := flags.String("id", local.DefaultAgentID, "agent ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id != local.DefaultAgentID {
+		fmt.Fprintf(stderr, "agent %q not found\n", *id)
+		return 1
+	}
+	report, err := agentClient.ReportResources(ctx)
+	if err != nil {
+		return reportError(stderr, "report agent resources", err)
+	}
+	fmt.Fprintf(stdout, "agent=%s cpu=%d memory=%d/%dMB disk=%d/%dMB running=%d reported=%s\n",
+		report.AgentID, report.CPUCapacity, report.MemoryUsedMB, report.MemoryTotalMB,
+		report.DiskUsedMB, report.DiskTotalMB, report.RunningSessions, report.ReportedAt.Format(time.RFC3339))
 	return 0
 }
 
@@ -354,6 +568,17 @@ func ensureResourcePolicy(ctx context.Context, store *filesystem.Store) (resourc
 	return value, nil
 }
 
+func buildAgentClient(rawURL, token string, timeout time.Duration) (agent.AgentClient, string, error) {
+	if strings.TrimSpace(rawURL) == "" {
+		return local.NewFake(), "local", nil
+	}
+	client, err := httptransport.NewClient(rawURL, token, timeout)
+	if err != nil {
+		return nil, "", err
+	}
+	return client, "http", nil
+}
+
 func parseSessionType(value string) (session.Type, bool) {
 	candidate := session.Type(value)
 	switch candidate {
@@ -376,5 +601,5 @@ func reportError(stderr io.Writer, action string, err error) int {
 }
 
 func usage(writer io.Writer) {
-	fmt.Fprintln(writer, "usage: stratum [--data-dir PATH] <projects|rooms|sessions|checkpoints|artifacts> <command> [flags]")
+	fmt.Fprintln(writer, "usage: stratum [--data-dir PATH] [--agent-url URL] [--agent-token TOKEN] <projects|rooms|sessions|checkpoints|artifacts|operations|agents> <command> [flags]")
 }

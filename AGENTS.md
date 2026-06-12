@@ -13,7 +13,7 @@ StratumMC is **not** a generic Minecraft hosting panel. It is a Project/Room-cen
 * semantic checkpoints,
 * uploaded artifact management,
 * resource-aware session scheduling,
-* MCDR-based Minecraft runtime control,
+* Agent-supervised Minecraft runtimes with optional future MCDR integration,
 * Lucy-based non-intrusive environment/dependency management.
 
 Prioritize correctness, reproducibility, safe boundaries, and clean architecture over rapid feature accumulation.
@@ -187,6 +187,25 @@ Resource policy should support:
 
 ## Architectural Boundaries
 
+### Runtime Ownership Rule
+
+Stratum Agent owns the outer process and terminal lifecycle for every runtime.
+It is responsible for process start, stop, restart, force termination, process
+handles, terminal stdin/stdout/stderr, logs, local runtime status, PID and exit
+code observation, crash detection, resource observation, and future sandboxing.
+
+The Controller remains the source of truth for Project, Room, Session, and
+Operation metadata, resource decisions, permissions, audit history, checkpoint
+metadata, and artifact metadata. Agents report machine-local observations but
+must not directly mutate Controller repositories or authoritative Session state.
+
+MCDR is not the Stratum lifecycle source of truth. It may later be launched by
+the Agent as a child process through a trusted RuntimeProfile. MCDR may manage
+Minecraft console/plugin behavior inside that runtime, while Stratum Agent
+supervises the outer process lifecycle. Future MCDR integration must be built
+behind Agent runtime supervision; the Controller must not call MCDR directly as
+its primary start/stop/restart manager.
+
 ### StratumMC Control Plane
 
 StratumMC owns:
@@ -205,16 +224,18 @@ StratumMC owns:
 
 ### MCDR
 
-MCDR is the Minecraft JVM runtime bridge.
+MCDR is a possible future child runtime and server-side integration layer. It
+may provide:
 
-StratumMC may call MCDR to:
-
-* start Minecraft server,
-* stop Minecraft server,
-* restart Minecraft server,
 * send commands,
-* collect logs,
-* expose in-game commands.
+* expose in-game commands,
+* bridge plugin and console behavior,
+* manage Minecraft internally after the Agent starts its trusted runtime
+  profile.
+
+MCDR itself requires process supervision. Stratum Agent must be able to observe
+its logs and exit status and stop or restart the outer runtime even when MCDR or
+Minecraft is unresponsive.
 
 Do not make Lucy responsible for any of these.
 
@@ -440,7 +461,8 @@ Always preserve these rules:
 6. Unapproved artifacts must not be attached to shared sessions.
 7. Review sessions should be isolated.
 8. Lucy must not be used to control JVM runtime.
-9. MCDR/runtime supervision must be abstracted behind interfaces.
+9. Stratum Agent owns runtime supervision; MCDR integration must remain an
+   optional child RuntimeProfile behind Agent interfaces.
 10. Never store secrets in committed files.
 11. Do not allow uploaded artifacts to affect base worlds or unrelated sessions.
 12. Do not implement URL mixin source compilation.
@@ -500,6 +522,69 @@ Do not add these unless explicitly requested:
 
 ---
 
+## Atomic Change / Commit Policy
+
+Prefer small, reviewable changes over large multi-area rewrites. One Codex task
+should normally correspond to one narrow implementation goal.
+
+Do not mix unrelated changes, for example:
+
+* runtime code + docs rewrite + CLI redesign + schema migration,
+* feature implementation + broad refactor,
+* bugfix + architecture rename.
+
+If a task requires multiple logical steps, split the work into clear phases.
+When git is available and committing is allowed, create atomic commits. Each
+commit should compile and pass relevant tests when practical.
+
+Use a consistent commit-message prefix:
+
+* `docs:`
+* `domain:`
+* `storage:`
+* `lifecycle:`
+* `agent:`
+* `runtime:`
+* `cli:`
+* `test:`
+* `refactor:`
+* `chore:`
+
+If actual git commits cannot be created in the environment, summarize the work
+as **proposed atomic commits** in the final response.
+
+Additional rules:
+
+* Do not touch unrelated files just to reformat or reword them.
+* Do not rewrite docs wholesale unless the task is specifically documentation
+  alignment.
+* Do not update `AGENTS.md` during feature work unless project rules themselves
+  need to change.
+* Do not bundle architecture changes with implementation unless explicitly
+  requested.
+* Prefer focused tests for the changed module. Run the full suite before
+  finishing when practical.
+* Always summarize changed files grouped by logical commit.
+
+The final response for future tasks must use this structure:
+
+1. **Verification**
+   * `gofmt` status
+   * `go test -count=1 ./...` status
+   * `git diff --check` status
+2. **Atomic commit summary**
+   * `Commit 1: <prefix>: <summary>`
+     * files changed
+     * reason
+   * additional commits in the same format when needed
+3. **Behavior changes**
+4. **Remaining TODOs**
+5. **Suggested next atomic task**
+
+See `docs/workflow.md` for the practical development workflow.
+
+---
+
 ## Before Finishing a Task
 
 Before reporting completion:
@@ -508,9 +593,5 @@ Before reporting completion:
 2. Run `gofmt` on changed Go files.
 3. Check that new files fit existing architecture.
 4. Update docs if architecture changed.
-5. Summarize:
-
-   * what changed,
-   * why it changed,
-   * how to test it,
-   * what remains TODO.
+5. Report verification, proposed or actual atomic commits, behavior changes,
+   remaining TODOs, and the suggested next atomic task using the format above.

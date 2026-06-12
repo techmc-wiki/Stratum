@@ -1,0 +1,184 @@
+# Controller-Agent Protocol
+
+StratumMC separates control-plane decisions from machine-local execution. The
+Controller owns projects, rooms, permissions, scheduling, authoritative session
+state, operations, checkpoints, artifacts, and audit history. An Agent owns
+machine-local process and terminal lifecycle, logs, runtime observations,
+resource reporting, and future filesystem, checkpoint-packing, and sandboxing
+work on one runtime host.
+
+## Controller-facing protocol
+
+`internal/agent.AgentClient` is the transport-independent boundary used by
+controller services. It exposes:
+
+- session prepare, start, stop, restart, freeze, unfreeze, and inspection;
+- fake log collection and resource reporting;
+- checkpoint create/restore stubs;
+- agent identity and endpoint metadata.
+
+Requests contain domain IDs and environment references, never host-local paths.
+A future authenticated HTTP, RPC, or message transport can implement the same
+interface without moving lifecycle policy into the agent.
+
+The Agent HTTP API is the machine-local execution boundary. The Agent must
+expose runtime inspection, logs, and resource observations so the Controller can
+coordinate operations and persist authoritative metadata. The Agent reports
+facts; it does not write Controller repositories directly.
+
+## Local HTTP transport
+
+`internal/agent/httptransport` provides a standard-library HTTP server and an
+`AgentClient` implementation. The transport converts explicit JSON DTOs to the
+agent protocol and back. It does not receive a controller repository and cannot
+mutate project, room, session, checkpoint, artifact, or audit metadata.
+
+Current endpoints:
+
+```text
+GET  /health
+GET  /v1/agent
+GET  /v1/agent/resources
+POST /v1/sessions/{id}/prepare
+POST /v1/sessions/{id}/start
+POST /v1/sessions/{id}/stop
+POST /v1/sessions/{id}/restart
+POST /v1/sessions/{id}/freeze
+POST /v1/sessions/{id}/unfreeze
+GET  /v1/sessions/{id}/inspect
+GET  /v1/sessions/{id}/logs
+POST /v1/checkpoints/create-stub
+POST /v1/checkpoints/restore-stub
+```
+
+Run the development agent with:
+
+```bash
+go run ./cmd/stratum-agent serve --listen 127.0.0.1:8787
+```
+
+Controller CLI commands use the in-process fake by default. Supplying
+`--agent-url http://127.0.0.1:8787` switches all lifecycle, inspection, log, and
+resource calls to the HTTP client. The client has a configurable timeout and
+validates bounded JSON responses.
+
+## Development authentication
+
+The agent accepts an optional shared token through `--token` or
+`STRATUM_AGENT_TOKEN`. When configured, every request must contain
+`Authorization: Bearer <token>`. The CLI sends it with `--agent-token`.
+
+This is only a local-development placeholder. It has no identity, rotation,
+scope, replay protection, TLS policy, or fine-grained authorization.
+
+## Request IDs
+
+The server preserves `X-Request-ID` or generates one when absent. It returns the
+ID in the response header and structured error body, and includes it in server
+error logs. The HTTP client generates an ID per request unless the caller uses
+`httptransport.WithRequestID` to provide one.
+
+## Agent-internal interfaces
+
+The protocol package also defines `RuntimeAgent`, `ProcessSupervisor`,
+`LogStreamer`, `FileOperator`, `ResourceReporter`, and `CheckpointWorker`.
+These split machine-local responsibilities so managed terminal runtimes,
+filesystem isolation, and checkpoint handling can be implemented independently.
+
+## Process supervision stub
+
+`stratum-agent serve` uses `local.ProcessAgent`, backed by the Go-native
+`process.Supervisor`. It does not launch an operating-system command. Each
+started session receives an Agent-local runtime record containing a symbolic
+process ID, session and agent IDs, runtime status, sanitized command name,
+timestamps, exit code, last error, in-memory log reference, and runtime mode.
+
+The only supported server runtime mode is `dummy-process`. The agent does not
+accept command text, executable paths, or shell fragments from users or the
+Controller. Start creates a cancellable Go runtime handle; stop cancels it and
+waits for a clean exit; restart performs stop then start. The supervisor can
+also mark a runtime crashed for tests and future exit detection integration.
+
+Dummy logs are deterministic lifecycle messages captured in memory. The HTTP
+session inspect and logs endpoints expose these observations. Resource reports
+count supervised runtimes currently in `running` state.
+
+This runtime state is Agent-local and ephemeral. The Controller remains the
+source of truth for Session and Operation metadata, and the Agent never receives
+a Controller repository.
+
+The Agent owns a trusted RuntimeProfile registry. `GET
+/v1/agent/runtime-profiles` lists enabled profiles, and start/restart requests
+carry only a `runtimeProfileId`. The default is `dummy-process`. Profile
+validation requires argv arrays for terminal profiles and rejects common shell
+executables; the ordinary CLI never accepts command argv or environment input.
+The managed terminal executor uses `os/exec` with argv, constrains working
+directories to the Agent runtime root, captures bounded stdout/stderr logs, and
+tracks PID, exit code, and unexpected exit. No production terminal profile is
+enabled by default. Machine owners may load reviewed profiles at Agent startup
+with `--runtime-profiles PATH`; the JSON loader rejects unknown fields and
+registers the complete validated file atomically. Disabled profiles are neither
+listed nor runnable, and profile discovery removes argv, working directory,
+environment, and stdin stop command values. See `runtime.md` for the format and
+trust boundary.
+
+## Why Agent controls MCDR, not the other way around
+
+MCDR is itself a process that requires supervision. A future trusted
+RuntimeProfile may launch MCDR as the child runtime, but the Agent must retain
+the outer process handle and terminal boundary.
+
+- If MCDR exits or crashes, the Agent must detect its exit code and report it.
+- If Minecraft or MCDR hangs, the Agent must still be able to enforce graceful
+  and force-stop deadlines.
+- Terminal input, stdout/stderr capture, resource usage, crash recovery, and
+  future sandboxing belong to the machine-local Agent.
+- MCDR may manage Minecraft console/plugin behavior inside the runtime, but it
+  cannot become the authoritative Controller or mutate Controller repositories.
+
+The intended chain is `Controller -> Agent HTTP API -> Runtime Supervisor ->
+optional MCDR child -> Minecraft`. The Controller does not call MCDR directly
+for its primary lifecycle operations.
+
+## Local fake agent
+
+`internal/agent/local.Fake` remains deterministic and in-process for focused
+tests and for CLI use without `--agent-url`. It maintains only
+temporary in-memory observations, returns fixed logs and resource capacity, and
+can be configured to fail individual operations in tests. It does not:
+
+- launch or inspect a real process;
+- call MCDR or Lucy;
+- access worlds or uploaded artifacts;
+- create or restore a real checkpoint;
+- provide a security or isolation boundary.
+
+The fixed resource report contains CPU capacity, memory usage, disk usage, and
+the number of sessions observed as running by that fake instance. Failures use
+a structured `agent.Error` containing agent ID, operation, and message.
+
+The CLI constructs this fake for each invocation. The long-running HTTP agent
+uses the process supervision stub instead. Durable controller metadata
+records the assigned agent, last reported result, and endpoint placeholder, but
+the fake's in-memory runtime observation is intentionally not durable.
+
+Session metadata keeps `lastAgentStatus` (a protocol result such as `success`)
+separate from `lastRuntimeMessage` (operation detail such as `running` or
+`stopped`).
+
+## Lifecycle ordering
+
+The Session Lifecycle Service validates transitions and resource policy first,
+then invokes the optional agent, then commits final session metadata. If the
+agent returns an error, the control-plane state is left unchanged and a failure
+audit event records the agent details. Success events include `agentId`,
+`agentResult`, and `agentMessage`.
+
+State persistence and audit append are still separate writes. Real remote-agent
+work will need idempotency, reconciliation, production authentication, retry
+policy, and an outbox/event transaction strategy.
+
+The current transport supplies request IDs, a client timeout, and a shared
+token placeholder. MCDR, Minecraft, Lucy, runtime reconciliation, production
+authentication, TLS configuration, retry policy, durable Agent runtime
+recovery, and transactional outbox behavior remain TODO.

@@ -52,6 +52,10 @@ type Session struct {
 	State              State      `json:"state"`
 	EnvironmentID      string     `json:"environmentId"`
 	SourceCheckpointID string     `json:"sourceCheckpointId,omitempty"`
+	AssignedAgentID    string     `json:"assignedAgentId,omitempty"`
+	LastAgentStatus    string     `json:"lastAgentStatus,omitempty"`
+	LastRuntimeMessage string     `json:"lastRuntimeMessage,omitempty"`
+	RuntimeEndpoint    string     `json:"runtimeEndpoint,omitempty"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	ExpiresAt          *time.Time `json:"expiresAt,omitempty"`
 	LastActiveAt       time.Time  `json:"lastActiveAt"`

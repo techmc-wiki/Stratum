@@ -17,8 +17,9 @@ work.
 8. Review sessions isolate untrusted artifacts from base worlds, unrelated
    projects, controller files, checkpoint storage, and host secrets.
 9. Lucy cannot start, stop, or command a JVM.
-10. MCDR and process supervision are accessible only through explicit runtime
-    interfaces.
+10. Stratum Agent owns the outer process and terminal lifecycle through explicit
+    runtime interfaces. MCDR may only be an Agent-supervised child runtime and
+    cannot directly mutate Controller metadata.
 11. Secrets must come from deployment configuration and must never be committed.
 12. User-provided URL mixin source compilation is prohibited.
 

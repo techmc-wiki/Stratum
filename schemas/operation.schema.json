@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stratummc.dev/schemas/operation.schema.json",
+  "title": "Operation",
+  "type": "object",
+  "required": ["id", "requestId", "actorId", "action", "targetType", "targetId", "status", "createdAt"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "requestId": { "type": "string", "minLength": 1 },
+    "idempotencyKey": { "type": "string" },
+    "actorId": { "type": "string", "minLength": 1 },
+    "action": { "type": "string", "minLength": 1 },
+    "targetType": { "type": "string", "minLength": 1 },
+    "targetId": { "type": "string", "minLength": 1 },
+    "projectId": { "type": "string" },
+    "sessionId": { "type": "string" },
+    "status": { "enum": ["pending", "running", "succeeded", "failed", "timed_out", "cancelled"] },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" },
+    "previousState": { "type": "string" },
+    "intendedState": { "type": "string" },
+    "finalState": { "type": "string" },
+    "agentId": { "type": "string" },
+    "agentMode": { "type": "string" },
+    "agentRequestId": { "type": "string" },
+    "result": { "type": "string" },
+    "errorCode": { "type": "string" },
+    "errorMessage": { "type": "string" },
+    "metadata": { "type": "object", "additionalProperties": { "type": "string" } }
+  },
+  "additionalProperties": false
+}

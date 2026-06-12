@@ -8,6 +8,7 @@ import (
 	"github.com/stratummc/stratum/internal/domain/artifact"
 	"github.com/stratummc/stratum/internal/domain/audit"
 	"github.com/stratummc/stratum/internal/domain/checkpoint"
+	"github.com/stratummc/stratum/internal/domain/operation"
 	"github.com/stratummc/stratum/internal/domain/project"
 	"github.com/stratummc/stratum/internal/domain/room"
 	"github.com/stratummc/stratum/internal/domain/session"
@@ -20,11 +21,12 @@ type Store struct {
 	Sessions    map[string]session.Session
 	Checkpoints map[string]checkpoint.Checkpoint
 	Artifacts   map[string]artifact.Artifact
+	Operations  map[string]operation.Operation
 	AuditEvents []audit.Event
 }
 
 func New() *Store {
-	return &Store{Projects: map[string]project.Project{}, Rooms: map[string]room.Room{}, Sessions: map[string]session.Session{}, Checkpoints: map[string]checkpoint.Checkpoint{}, Artifacts: map[string]artifact.Artifact{}}
+	return &Store{Projects: map[string]project.Project{}, Rooms: map[string]room.Room{}, Sessions: map[string]session.Session{}, Checkpoints: map[string]checkpoint.Checkpoint{}, Artifacts: map[string]artifact.Artifact{}, Operations: map[string]operation.Operation{}}
 }
 
 func (s *Store) ListProjects(_ context.Context) ([]project.Project, error) {
@@ -95,6 +97,46 @@ func (s *Store) ListAuditEvents(_ context.Context) ([]audit.Event, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return append([]audit.Event(nil), s.AuditEvents...), nil
+}
+
+func (s *Store) CreateOperation(_ context.Context, value operation.Operation) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.Operations[value.ID]; ok {
+		return fmt.Errorf("operation %q already exists", value.ID)
+	}
+	s.Operations[value.ID] = value
+	return nil
+}
+
+func (s *Store) GetOperation(_ context.Context, id string) (operation.Operation, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	value, ok := s.Operations[id]
+	if !ok {
+		return operation.Operation{}, fmt.Errorf("operation %q not found", id)
+	}
+	return value, nil
+}
+
+func (s *Store) ListOperations(_ context.Context) ([]operation.Operation, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make([]operation.Operation, 0, len(s.Operations))
+	for _, value := range s.Operations {
+		result = append(result, value)
+	}
+	return result, nil
+}
+
+func (s *Store) UpdateOperation(_ context.Context, value operation.Operation) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.Operations[value.ID]; !ok {
+		return fmt.Errorf("operation %q not found", value.ID)
+	}
+	s.Operations[value.ID] = value
+	return nil
 }
 
 func (s *Store) SaveCheckpoint(_ context.Context, value checkpoint.Checkpoint) error {

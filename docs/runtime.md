@@ -1,0 +1,151 @@
+# Runtime Profiles
+
+RuntimeProfile is the trusted Agent-side description of a managed runtime. It
+defines what child process may be launched, where it runs, how terminal I/O is
+captured, how graceful stop is requested, and when force termination is
+allowed. RuntimeProfiles are local deployment configuration, not user-provided
+commands and not authoritative Controller metadata. The Go model and registry
+live in `internal/agent/runtimeprofile`.
+
+The ownership chain is:
+
+```text
+Controller
+  -> Agent HTTP API
+    -> Terminal / Process Runtime Supervisor
+      -> trusted child process
+```
+
+The Controller owns metadata, operations, resource decisions, permissions,
+audit, and authoritative Session state. The Agent owns process handles,
+terminal stdin/stdout/stderr, logs, PID and exit status, crash detection,
+stop/restart enforcement, resource observation, and future sandboxing.
+
+## Profile types
+
+- `dummy-process`: current enabled Go-native development profile. It creates no OS
+  process and produces deterministic in-memory lifecycle logs.
+- `terminal`: implemented trusted argv-based local process with managed terminal
+  I/O. No production terminal profile is enabled by default.
+- `mcdr-managed`: future terminal profile that launches MCDR as the child
+  runtime. MCDR may then manage Minecraft internally.
+- `minecraft-direct`: future trusted profile that launches a configured
+  Minecraft server process without MCDR.
+
+## Safety rules
+
+- No arbitrary shell commands are accepted by default.
+- Executables and arguments use an argv array, never an interpolated shell
+  string.
+- Profiles come only from trusted local configuration or approved built-ins.
+- Users cannot supply executable paths, arguments, working directories, or stop
+  commands directly.
+- Working directories must resolve inside the assigned session runtime root.
+- The Agent owns the outer process lifecycle for every profile.
+- The Controller owns authoritative metadata state and never hands repositories
+  to the Agent.
+- MCDR and Lucy cannot directly mutate Controller repositories.
+
+## Current registry behavior
+
+The built-in registry exposes only `dummy-process`, enabled by default. Session
+start and restart requests may select a profile by ID; omission resolves to
+`dummy-process`. Unknown and disabled IDs fail before runtime start.
+
+The Agent may load additional profiles from a trusted local JSON file with
+`--runtime-profiles PATH`. Loading is strict: unknown fields, malformed
+durations, invalid profiles, duplicate IDs, and conflicts with built-ins stop
+Agent startup. The whole file is registered atomically. Disabled profiles are
+retained locally but cannot be listed or selected.
+
+```json
+{
+  "runtime_profiles": [
+    {
+      "id": "local-terminal",
+      "name": "Trusted local terminal",
+      "runtime_type": "terminal",
+      "command_argv": ["server", "--nogui"],
+      "working_dir": ".",
+      "env": {},
+      "stop_strategy": "stdin",
+      "stop_stdin_command": "stop",
+      "graceful_stop_timeout": "30s",
+      "force_kill_timeout": "10s",
+      "log_mode": "combined",
+      "enabled": false,
+      "notes": "Enable only after deployment review"
+    }
+  ]
+}
+```
+
+This file is machine-owner configuration and may contain executable details.
+It must not be generated from user input or exposed through the Controller.
+Ordinary lifecycle CLI commands can select only by profile ID; they cannot
+provide argv, environment variables, working directories, or stop commands.
+
+Profile discovery returns sanitized metadata only. Executable argv, working
+directory, environment entries, and stdin stop commands are not exposed through
+the Agent HTTP listing endpoint.
+
+For local development:
+
+```powershell
+go run ./cmd/stratum-agent serve --runtime-root .stratum/runtime --runtime-profiles .stratum/runtime-profiles.json
+go run ./cmd/stratum --agent-url http://127.0.0.1:8787 agents runtime-profiles --id local
+```
+
+## Managed terminal executor
+
+The Agent uses Go `os/exec` directly with `command_argv`; it never invokes a
+shell. Terminal working directories must be relative paths beneath a configured
+Agent runtime root. Absolute paths, traversal outside that root, missing
+directories, and non-directory targets are rejected.
+
+The child environment is intentionally small. The Agent inherits only basic
+host path and temporary-directory variables needed for cross-platform startup
+(`SystemRoot`, `WINDIR`, `TEMP`, `TMP`, `HOME`, and `USERPROFILE` when present),
+then adds trusted profile `env` entries. Session requests cannot add variables.
+
+Stdout and stderr are captured with source prefixes into a bounded in-memory
+log buffer. Old entries are discarded at the retained byte limit, and the logs
+endpoint supports a tail `maxBytes` limit.
+
+Stop behavior follows the trusted profile:
+
+- `stdin` writes `stop_stdin_command` plus a newline and waits for the graceful
+  timeout.
+- `terminate` requests an OS interrupt where supported and waits for the
+  graceful timeout.
+- `none` sends no graceful command.
+- Any strategy that does not exit in time is force-killed and bounded by
+  `force_kill_timeout`.
+
+Unexpected zero-code exit is reported as `exited`; unexpected non-zero exit is
+reported as `crashed` with exit code and error. The Agent does not mutate the
+Controller Session record. Runtime reconciliation remains future work.
+
+## MCDR RuntimeProfile future shape
+
+The following profile is conceptual and not implemented:
+
+```yaml
+id: mcdr-managed
+runtime_type: terminal
+command: ["python", "-m", "mcdreforged"]
+working_dir: "<session_runtime_dir>"
+stop_strategy: stdin
+stop_stdin_command: "!!MCDR stop"
+graceful_stop_timeout: "30s"
+force_kill_timeout: "10s"
+enabled_by_default: false
+```
+
+In this profile, Stratum Agent launches and supervises MCDR. MCDR may expose
+plugins, in-game commands, and Minecraft console behavior inside the runtime.
+If MCDR exits, hangs, or fails to stop Minecraft, the Agent still owns status
+reporting and force-stop behavior.
+
+Lucy remains a non-intrusive dependency, manifest, and lock-management
+integration. It is not a process supervisor or session lifecycle controller.

@@ -17,6 +17,7 @@ import (
 	"github.com/stratummc/stratum/internal/domain/audit"
 	"github.com/stratummc/stratum/internal/domain/checkpoint"
 	"github.com/stratummc/stratum/internal/domain/environment"
+	"github.com/stratummc/stratum/internal/domain/operation"
 	"github.com/stratummc/stratum/internal/domain/project"
 	"github.com/stratummc/stratum/internal/domain/resourcepolicy"
 	"github.com/stratummc/stratum/internal/domain/room"
@@ -39,7 +40,7 @@ func New(root string) (*Store, error) {
 	root = filepath.Clean(root)
 	for _, directory := range []string{
 		"projects", "rooms", "sessions", "checkpoints", "artifacts",
-		"environments", "resource-policies", "audit",
+		"environments", "resource-policies", "operations", "audit",
 	} {
 		if err := os.MkdirAll(filepath.Join(root, directory), directoryPermissions); err != nil {
 			return nil, repositoryError(stratumerrors.KindConflict, operation, "create metadata directory", err)
@@ -289,6 +290,62 @@ func (s *Store) DeleteSession(_ context.Context, id string) error {
 	return deleteJSON(s.entityPath("sessions", id), op)
 }
 
+func (s *Store) CreateOperation(_ context.Context, value operation.Operation) error {
+	const op = "filesystem.CreateOperation"
+	if err := validateOperation(op, value); err != nil {
+		return err
+	}
+	return createJSON(s.entityPath("operations", value.ID), op, value)
+}
+
+func (s *Store) GetOperation(_ context.Context, id string) (operation.Operation, error) {
+	const op = "filesystem.GetOperation"
+	if err := validateID(op, id); err != nil {
+		return operation.Operation{}, err
+	}
+	return readJSON[operation.Operation](s.entityPath("operations", id), op)
+}
+
+func (s *Store) ListOperations(_ context.Context) ([]operation.Operation, error) {
+	return listJSON[operation.Operation](filepath.Join(s.Root, "operations"), "filesystem.ListOperations")
+}
+
+func (s *Store) UpdateOperation(_ context.Context, value operation.Operation) error {
+	const op = "filesystem.UpdateOperation"
+	if err := validateOperation(op, value); err != nil {
+		return err
+	}
+	return updateJSON(s.entityPath("operations", value.ID), op, value)
+}
+
+func (s *Store) ListOperationsBySession(ctx context.Context, sessionID string) ([]operation.Operation, error) {
+	values, err := s.ListOperations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]operation.Operation, 0)
+	for _, value := range values {
+		if value.SessionID == sessionID {
+			result = append(result, value)
+		}
+	}
+	return result, nil
+}
+
+func (s *Store) ListActiveOperationsBySession(ctx context.Context, sessionID string) ([]operation.Operation, error) {
+	values, err := s.ListOperationsBySession(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]operation.Operation, 0)
+	for _, value := range values {
+		if value.Active() {
+			result = append(result, value)
+		}
+	}
+	return result, nil
+}
+
 func (s *Store) CreateCheckpoint(_ context.Context, value checkpoint.Checkpoint) error {
 	const op = "filesystem.CreateCheckpoint"
 	if err := validateCheckpoint(op, value); err != nil {
@@ -513,6 +570,16 @@ func validateSession(op string, value session.Session) error {
 	}
 	if value.ProjectID == "" || value.OwnerUserID == "" || value.Type == "" || value.State == "" || value.EnvironmentID == "" || value.CreatedAt.IsZero() || value.LastActiveAt.IsZero() {
 		return validationError(op, "session requires project, owner, type, state, environment, creation time, and last-active time")
+	}
+	return nil
+}
+
+func validateOperation(op string, value operation.Operation) error {
+	if err := validateID(op, value.ID); err != nil {
+		return err
+	}
+	if value.RequestID == "" || value.ActorID == "" || value.Action == "" || value.TargetType == "" || value.TargetID == "" || value.Status == "" || value.CreatedAt.IsZero() {
+		return validationError(op, "operation requires request, actor, action, target, status, and creation time")
 	}
 	return nil
 }
