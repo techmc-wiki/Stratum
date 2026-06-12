@@ -66,7 +66,7 @@ retained locally but cannot be listed or selected.
       "name": "Trusted local terminal",
       "runtime_type": "terminal",
       "command_argv": ["server", "--nogui"],
-      "working_dir": ".",
+      "working_dir": "sessions/example/work",
       "env": {},
       "stop_strategy": "stdin",
       "stop_stdin_command": "stop",
@@ -96,12 +96,40 @@ go run ./cmd/stratum-agent serve --runtime-root .stratum/runtime --runtime-profi
 go run ./cmd/stratum --agent-url http://127.0.0.1:8787 agents runtime-profiles --id local
 ```
 
+## Session Runtime Directory Layout
+
+The Agent owns runtime storage under `--runtime-root`, which defaults to
+`.stratum/runtime`. This tree is separate from Controller metadata storage under
+`--data-dir`; Controller repositories remain the source of truth for metadata,
+while runtime-root contains machine-local runtime files.
+
+Each session start allocates this layout:
+
+```text
+runtime-root/
+  sessions/
+    <session-id>/
+      work/
+      logs/
+      config/
+      artifacts/
+      checkpoints/
+      tmp/
+```
+
+Session IDs use the same conservative ASCII path-safety rules as metadata IDs,
+and generated paths must remain under runtime-root. The dummy process profile
+creates the layout but still starts no OS process. Future MCDR and Minecraft
+profiles will use this layout for session-scoped files. Checkpoint backup,
+artifact mounting, cleanup policy, and sandboxing remain future work.
+
 ## Managed terminal executor
 
 The Agent uses Go `os/exec` directly with `command_argv`; it never invokes a
-shell. Terminal working directories must be relative paths beneath a configured
-Agent runtime root. Absolute paths, traversal outside that root, missing
-directories, and non-directory targets are rejected.
+shell. Terminal profiles without `working_dir` use the session `work/`
+directory. Profiles with `working_dir` must use a relative path beneath the
+configured Agent runtime root. Absolute paths, traversal outside that root,
+missing directories, and non-directory targets are rejected.
 
 The child environment is intentionally small. The Agent inherits only basic
 host path and temporary-directory variables needed for cross-platform startup
@@ -136,8 +164,8 @@ and runtime-profile mismatch when an expected profile is available.
 
 The result contains a mismatch type, severity, and recommended action. These
 are diagnostic values only: observation never mutates Session state and never
-stops, restarts, or marks a runtime crashed. Observations are not persisted in
-this phase. Operators can inspect the current comparison with:
+stops, restarts, or marks a runtime crashed. Operators can inspect the current
+comparison with:
 
 ```powershell
 go run ./cmd/stratum --data-dir .stratum/data --agent-url http://127.0.0.1:8787 sessions observe --id demo-session

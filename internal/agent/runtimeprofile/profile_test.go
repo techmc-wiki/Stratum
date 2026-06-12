@@ -28,4 +28,9 @@ func TestValidationAndBuiltInRegistry(t *testing.T) {
 	if err := Validate(safe); err != nil {
 		t.Fatalf("safe terminal profile: %v", err)
 	}
+	defaultWorkDir := safe
+	defaultWorkDir.ID, defaultWorkDir.WorkingDir = "terminal-default-work", ""
+	if err := Validate(defaultWorkDir); err != nil {
+		t.Fatalf("empty working dir should use session work dir: %v", err)
+	}
 }

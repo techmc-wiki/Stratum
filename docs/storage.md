@@ -79,3 +79,9 @@ This repository stores metadata only. It does not store uploaded artifact
 payloads, live session files, base worlds, checkpoint world snapshots, secrets,
 or MCDR/Lucy runtime state. Those remain behind separate storage and runtime
 interfaces.
+
+Agent runtime files live under the Agent `--runtime-root`, not the Controller
+metadata `--data-dir`. The current runtime layout creates per-session `work`,
+`logs`, `config`, `artifacts`, `checkpoints`, and `tmp` directories for future
+runtime integrations, but checkpoint backup and cleanup policy remain separate
+future work.

@@ -95,7 +95,7 @@ func (c *Client) InspectSession(ctx context.Context, sessionID string) (agent.Se
 	if err := c.do(ctx, http.MethodGet, "/v1/sessions/"+url.PathEscape(sessionID)+"/inspect", nil, &response); err != nil {
 		return agent.SessionStatus{}, err
 	}
-	return agent.SessionStatus{AgentID: response.AgentID, SessionID: response.SessionID, Status: response.Status, Running: response.Running, Frozen: response.Frozen, RuntimeEndpoint: response.RuntimeEndpoint, ProcessID: response.ProcessID, PID: response.PID, RuntimeMode: response.RuntimeMode, RuntimeProfileID: response.RuntimeProfileID, RuntimeType: response.RuntimeType, Crashed: response.Crashed, StartedAt: response.StartedAt, StoppedAt: response.StoppedAt, ExitCode: response.ExitCode, LastError: response.LastError, ObservedAt: response.ObservedAt}, nil
+	return agent.SessionStatus{AgentID: response.AgentID, SessionID: response.SessionID, Status: response.Status, Running: response.Running, Frozen: response.Frozen, RuntimeEndpoint: response.RuntimeEndpoint, ProcessID: response.ProcessID, PID: response.PID, RuntimeMode: response.RuntimeMode, RuntimeProfileID: response.RuntimeProfileID, RuntimeType: response.RuntimeType, Crashed: response.Crashed, StartedAt: response.StartedAt, StoppedAt: response.StoppedAt, ExitCode: response.ExitCode, LastError: response.LastError, ObservedAt: response.ObservedAt, SessionRoot: response.SessionRoot, WorkDir: response.WorkDir, LogsDir: response.LogsDir}, nil
 }
 
 func (c *Client) CollectLogs(ctx context.Context, sessionID string) (agent.LogBatch, error) {

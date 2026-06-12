@@ -21,7 +21,7 @@ func main() {
 	listen := flags.String("listen", "127.0.0.1:8787", "listen address")
 	token := flags.String("token", os.Getenv("STRATUM_AGENT_TOKEN"), "optional bearer token")
 	runtimeMode := flags.String("runtime-mode", "dummy-process", "safe runtime mode (dummy-process only)")
-	runtimeRoot := flags.String("runtime-root", "", "trusted runtime working root; defaults to the system temporary directory")
+	runtimeRoot := flags.String("runtime-root", ".stratum/runtime", "trusted runtime working root")
 	runtimeProfiles := flags.String("runtime-profiles", "", "trusted local RuntimeProfile JSON configuration")
 	_ = flags.Parse(os.Args[2:])
 	if *runtimeMode != "dummy-process" {
@@ -40,15 +40,9 @@ func main() {
 			logger.Fatalf("register runtime profiles from %q: %v", *runtimeProfiles, err)
 		}
 	}
-	var runtimeAgent *local.ProcessAgent
-	if *runtimeRoot == "" {
-		runtimeAgent = local.NewProcessAgentWithRegistry(local.DefaultAgentID, registry)
-	} else {
-		var err error
-		runtimeAgent, err = local.NewProcessAgentWithRegistryAndRoot(local.DefaultAgentID, registry, *runtimeRoot)
-		if err != nil {
-			logger.Fatal(err)
-		}
+	runtimeAgent, err := local.NewProcessAgentWithRegistryAndRoot(local.DefaultAgentID, registry, *runtimeRoot)
+	if err != nil {
+		logger.Fatal(err)
 	}
 	server := httptransport.NewServer(runtimeAgent, *token, logger)
 	logger.Printf("listening on %s with %s supervision (auth=%t)", *listen, *runtimeMode, *token != "")

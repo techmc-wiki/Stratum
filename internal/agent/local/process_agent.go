@@ -57,7 +57,9 @@ func NewProcessAgentWithRegistryAndRoot(id string, profiles *runtimeprofile.Regi
 
 func (a *ProcessAgent) RuntimeProfiles(context.Context) ([]runtimeprofile.Profile, error) {
 	values := a.profiles.ListEnabled()
-	for index := range values { values[index] = values[index].Public() }
+	for index := range values {
+		values[index] = values[index].Public()
+	}
 	return values, nil
 }
 
@@ -141,7 +143,7 @@ func (a *ProcessAgent) InspectSession(_ context.Context, sessionID string) (agen
 	a.mu.RLock()
 	frozen := a.frozen[sessionID]
 	a.mu.RUnlock()
-	return agent.SessionStatus{AgentID: a.id, SessionID: sessionID, Status: string(model.Status), Running: model.Status == agentprocess.StatusRunning, Frozen: frozen, RuntimeEndpoint: a.endpoint, ProcessID: model.ProcessID, PID: model.PID, RuntimeMode: model.RuntimeMode, RuntimeProfileID: model.RuntimeProfileID, RuntimeType: model.RuntimeType, Crashed: model.Crashed, StartedAt: model.StartedAt, StoppedAt: model.StoppedAt, ExitCode: model.ExitCode, LastError: model.LastError, ObservedAt: time.Now().UTC()}, nil
+	return agent.SessionStatus{AgentID: a.id, SessionID: sessionID, Status: string(model.Status), Running: model.Status == agentprocess.StatusRunning, Frozen: frozen, RuntimeEndpoint: a.endpoint, ProcessID: model.ProcessID, PID: model.PID, RuntimeMode: model.RuntimeMode, RuntimeProfileID: model.RuntimeProfileID, RuntimeType: model.RuntimeType, Crashed: model.Crashed, StartedAt: model.StartedAt, StoppedAt: model.StoppedAt, ExitCode: model.ExitCode, LastError: model.LastError, ObservedAt: time.Now().UTC(), SessionRoot: model.SessionRoot, WorkDir: model.WorkDir, LogsDir: model.LogsDir}, nil
 }
 
 func (a *ProcessAgent) CollectLogs(ctx context.Context, sessionID string) (agent.LogBatch, error) {

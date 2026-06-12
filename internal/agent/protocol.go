@@ -91,6 +91,9 @@ type SessionStatus struct {
 	ExitCode         *int
 	LastError        string
 	ObservedAt       time.Time
+	SessionRoot      string
+	WorkDir          string
+	LogsDir          string
 }
 
 type LogBatch struct {

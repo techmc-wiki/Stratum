@@ -2,6 +2,8 @@ package local
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -57,5 +59,27 @@ func TestProcessAgentRejectsUnknownProfile(t *testing.T) {
 	}
 	if _, err := runtime.StartSession(context.Background(), agent.SessionRequest{SessionID: "session-explicit", RuntimeProfileID: runtimeprofile.DefaultProfileID}); err != nil {
 		t.Fatalf("explicit dummy profile: %v", err)
+	}
+}
+
+func TestProcessAgentCreatesRuntimeLayout(t *testing.T) {
+	root := t.TempDir()
+	runtime, err := NewProcessAgentWithRegistryAndRoot(DefaultAgentID, runtimeprofile.Builtins(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := agent.SessionRequest{SessionID: "session-layout", RuntimeProfileID: runtimeprofile.DefaultProfileID}
+	if _, err := runtime.StartSession(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	status, err := runtime.InspectSession(context.Background(), request.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.WorkDir != filepath.Join(root, "sessions", "session-layout", "work") || status.LogsDir == "" || status.SessionRoot == "" {
+		t.Fatalf("status=%+v", status)
+	}
+	if info, err := os.Stat(status.WorkDir); err != nil || !info.IsDir() {
+		t.Fatalf("work dir info=%+v err=%v", info, err)
 	}
 }

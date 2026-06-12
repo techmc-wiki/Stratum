@@ -48,6 +48,9 @@ type RuntimeProcess struct {
 	RuntimeProfileID string     `json:"runtimeProfileId"`
 	RuntimeType      string     `json:"runtimeType"`
 	Crashed          bool       `json:"crashed"`
+	SessionRoot      string     `json:"sessionRoot,omitempty"`
+	WorkDir          string     `json:"workDir,omitempty"`
+	LogsDir          string     `json:"logsDir,omitempty"`
 }
 
 type logBuffer struct {
@@ -173,10 +176,16 @@ func (s *Supervisor) StartProcess(ctx context.Context, sessionID string, profile
 	if err := runtimeprofile.Validate(profile); err != nil {
 		return RuntimeProcess{}, err
 	}
-	var workDir string
-	var err error
+	layout, err := NewSessionRuntimeLayout(s.runtimeRoot, sessionID)
+	if err != nil {
+		return RuntimeProcess{}, err
+	}
+	if err := layout.Create(); err != nil {
+		return RuntimeProcess{}, err
+	}
+	workDir := layout.WorkDir
 	if profile.RuntimeType == runtimeprofile.TypeTerminal {
-		workDir, err = s.resolveWorkingDir(profile.WorkingDir)
+		workDir, err = s.resolveWorkingDir(layout, profile.WorkingDir)
 		if err != nil {
 			return RuntimeProcess{}, err
 		}
@@ -199,7 +208,7 @@ func (s *Supervisor) StartProcess(ctx context.Context, sessionID string, profile
 	if profile.RuntimeType == runtimeprofile.TypeTerminal {
 		mode, command = RuntimeModeTerminal, profile.ID
 	}
-	item := &managedProcess{model: RuntimeProcess{ProcessID: fmt.Sprintf("process-%d", s.sequence), SessionID: sessionID, AgentID: s.agentID, Status: StatusStarting, Command: command, StartedAt: &now, LogRef: "memory://runtime/" + sessionID, RuntimeMode: mode, RuntimeProfileID: profile.ID, RuntimeType: string(profile.RuntimeType)}, profile: profile, logs: logs, done: make(chan struct{})}
+	item := &managedProcess{model: RuntimeProcess{ProcessID: fmt.Sprintf("process-%d", s.sequence), SessionID: sessionID, AgentID: s.agentID, Status: StatusStarting, Command: command, StartedAt: &now, LogRef: "memory://runtime/" + sessionID, RuntimeMode: mode, RuntimeProfileID: profile.ID, RuntimeType: string(profile.RuntimeType), SessionRoot: layout.SessionRoot, WorkDir: workDir, LogsDir: layout.LogsDir}, profile: profile, logs: logs, done: make(chan struct{})}
 	item.logs.append(formatLog(now, "supervisor", "starting "+profile.ID))
 	s.processes[sessionID] = item
 	s.mu.Unlock()
@@ -432,9 +441,9 @@ func (s *Supervisor) appendLog(sessionID string, expected *managedProcess, line 
 	}
 }
 
-func (s *Supervisor) resolveWorkingDir(relative string) (string, error) {
+func (s *Supervisor) resolveWorkingDir(layout SessionRuntimeLayout, relative string) (string, error) {
 	if strings.TrimSpace(relative) == "" {
-		return "", errors.New("terminal runtime working directory is required")
+		return layout.WorkDir, nil
 	}
 	if filepath.IsAbs(relative) {
 		return "", errors.New("terminal runtime working directory must be relative to runtime root")
@@ -444,6 +453,9 @@ func (s *Supervisor) resolveWorkingDir(relative string) (string, error) {
 		return "", errors.New("terminal runtime working directory escapes runtime root")
 	}
 	resolved := filepath.Join(s.runtimeRoot, clean)
+	if !pathWithin(s.runtimeRoot, resolved) {
+		return "", errors.New("terminal runtime working directory escapes runtime root")
+	}
 	info, err := os.Stat(resolved)
 	if err != nil {
 		return "", fmt.Errorf("inspect terminal runtime working directory: %w", err)

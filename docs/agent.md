@@ -112,15 +112,15 @@ The Agent owns a trusted RuntimeProfile registry. `GET
 carry only a `runtimeProfileId`. The default is `dummy-process`. Profile
 validation requires argv arrays for terminal profiles and rejects common shell
 executables; the ordinary CLI never accepts command argv or environment input.
-The managed terminal executor uses `os/exec` with argv, constrains working
-directories to the Agent runtime root, captures bounded stdout/stderr logs, and
-tracks PID, exit code, and unexpected exit. No production terminal profile is
-enabled by default. Machine owners may load reviewed profiles at Agent startup
-with `--runtime-profiles PATH`; the JSON loader rejects unknown fields and
-registers the complete validated file atomically. Disabled profiles are neither
-listed nor runnable, and profile discovery removes argv, working directory,
-environment, and stdin stop command values. See `runtime.md` for the format and
-trust boundary.
+The managed terminal executor uses `os/exec` with argv, allocates per-session
+directories under `--runtime-root`, constrains working directories to that root,
+captures bounded stdout/stderr logs, and tracks PID, exit code, and unexpected
+exit. No production terminal profile is enabled by default. Machine owners may
+load reviewed profiles at Agent startup with `--runtime-profiles PATH`; the JSON
+loader rejects unknown fields and registers the complete validated file
+atomically. Disabled profiles are neither listed nor runnable, and profile
+discovery removes argv, working directory, environment, and stdin stop command
+values. See `runtime.md` for the format and trust boundary.
 
 ## Why Agent controls MCDR, not the other way around
 

@@ -73,9 +73,6 @@ func Validate(value Profile) error {
 		if looksLikeShell(value.CommandArgv[0]) {
 			return fmt.Errorf("runtime profile %q must use executable argv, not a shell command", value.ID)
 		}
-		if strings.TrimSpace(value.WorkingDir) == "" {
-			return fmt.Errorf("terminal runtime profile %q requires a working directory", value.ID)
-		}
 	default:
 		return fmt.Errorf("runtime profile %q has unsupported runtime type %q", value.ID, value.RuntimeType)
 	}

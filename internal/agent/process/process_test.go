@@ -16,10 +16,19 @@ import (
 
 func TestSupervisorStartStopRestartAndLogs(t *testing.T) {
 	ctx := context.Background()
-	supervisor := NewSupervisor("agent-test")
+	root := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("agent-test", root, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
 	started, err := supervisor.StartProcess(ctx, "session-1", runtimeprofile.DummyProcess())
-	if err != nil || started.Status != StatusRunning || !supervisor.IsRunning("session-1") {
+	if err != nil || started.Status != StatusRunning || !supervisor.IsRunning("session-1") || started.WorkDir != filepath.Join(root, "sessions", "session-1", "work") {
 		t.Fatalf("started=%+v err=%v", started, err)
+	}
+	for _, path := range []string{started.SessionRoot, started.WorkDir, started.LogsDir, filepath.Join(root, "sessions", "session-1", "config"), filepath.Join(root, "sessions", "session-1", "artifacts"), filepath.Join(root, "sessions", "session-1", "checkpoints"), filepath.Join(root, "sessions", "session-1", "tmp")} {
+		if info, err := os.Stat(path); err != nil || !info.IsDir() {
+			t.Fatalf("runtime directory %q info=%+v err=%v", path, info, err)
+		}
 	}
 	logs := supervisor.CollectLogs("session-1", 80)
 	if len(logs) == 0 || !strings.Contains(logs[len(logs)-1], "runtime running") {
@@ -159,6 +168,20 @@ func TestTerminalWorkingDirectoryAndLogLimit(t *testing.T) {
 		t.Fatalf("logs exceed limit: %d %v", total, logs)
 	}
 	_, _ = supervisor.StopProcess(context.Background(), "limited")
+}
+
+func TestTerminalEmptyWorkingDirectoryUsesSessionWorkDir(t *testing.T) {
+	supervisor, profile := terminalTestSupervisor(t, "stdin")
+	profile.WorkingDir = ""
+	started, err := supervisor.StartProcess(context.Background(), "terminal-default-work", profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(started.WorkDir, filepath.Join("sessions", "terminal-default-work", "work")) {
+		t.Fatalf("workDir=%q", started.WorkDir)
+	}
+	waitForLog(t, supervisor, "terminal-default-work", "helper-ready")
+	_, _ = supervisor.StopProcess(context.Background(), "terminal-default-work")
 }
 
 func TestSupervisorMarkCrashed(t *testing.T) {

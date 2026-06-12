@@ -125,7 +125,7 @@ func (s *Server) inspectSession(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, http.StatusBadGateway, "inspect", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, SessionInspectResponse{AgentID: status.AgentID, SessionID: status.SessionID, Status: status.Status, Running: status.Running, Frozen: status.Frozen, RuntimeEndpoint: status.RuntimeEndpoint, ProcessID: status.ProcessID, PID: status.PID, RuntimeMode: status.RuntimeMode, RuntimeProfileID: status.RuntimeProfileID, RuntimeType: status.RuntimeType, Crashed: status.Crashed, StartedAt: status.StartedAt, StoppedAt: status.StoppedAt, ExitCode: status.ExitCode, LastError: status.LastError, ObservedAt: status.ObservedAt, RequestID: requestID(r)})
+	writeJSON(w, http.StatusOK, SessionInspectResponse{AgentID: status.AgentID, SessionID: status.SessionID, Status: status.Status, Running: status.Running, Frozen: status.Frozen, RuntimeEndpoint: status.RuntimeEndpoint, ProcessID: status.ProcessID, PID: status.PID, RuntimeMode: status.RuntimeMode, RuntimeProfileID: status.RuntimeProfileID, RuntimeType: status.RuntimeType, Crashed: status.Crashed, StartedAt: status.StartedAt, StoppedAt: status.StoppedAt, ExitCode: status.ExitCode, LastError: status.LastError, ObservedAt: status.ObservedAt, SessionRoot: status.SessionRoot, WorkDir: status.WorkDir, LogsDir: status.LogsDir, RequestID: requestID(r)})
 }
 
 func (s *Server) logs(w http.ResponseWriter, r *http.Request) {

@@ -57,6 +57,9 @@ type SessionInspectResponse struct {
 	ExitCode         *int       `json:"exitCode,omitempty"`
 	LastError        string     `json:"lastError,omitempty"`
 	ObservedAt       time.Time  `json:"observedAt"`
+	SessionRoot      string     `json:"sessionRoot,omitempty"`
+	WorkDir          string     `json:"workDir,omitempty"`
+	LogsDir          string     `json:"logsDir,omitempty"`
 	RequestID        string     `json:"requestId"`
 }
 
