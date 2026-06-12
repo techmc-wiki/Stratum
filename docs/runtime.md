@@ -143,7 +143,12 @@ this phase. Operators can inspect the current comparison with:
 go run ./cmd/stratum --data-dir .stratum/data --agent-url http://127.0.0.1:8787 sessions observe --id demo-session
 ```
 
-Automatic repair and explicit reconciliation operations remain future work.
+The explicit `sessions reconcile mark-stopped` operation may repair Controller
+metadata after human confirmation. It requires an actor and reason, creates an
+Operation and audit trail, and may attach the current observation when an Agent
+URL is provided. It never stops or kills the Agent runtime; process control is
+a separate lifecycle action. Other reconciliation actions and automatic repair
+remain future work.
 
 ## MCDR RuntimeProfile future shape
 

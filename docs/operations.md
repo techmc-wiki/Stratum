@@ -12,6 +12,23 @@ Lifecycle commands accept `--idempotency-key`, `--request-id`, and `--operation-
 
 A timeout marks the operation `timed_out`; session metadata is changed only after the underlying lifecycle action succeeds.
 
-Runtime observation is read-only and does not create an Operation. A future
-explicit reconcile action would require its own authorized and audited
-Operation before changing Session or runtime state.
+Runtime observation is read-only and does not create an Operation.
+
+## Manual Reconciliation Operations
+
+Reconciliation is an explicit human-confirmed metadata repair. The first
+supported action is:
+
+```powershell
+stratum sessions reconcile mark-stopped --id SESSION --actor ACTOR --reason "REASON"
+```
+
+It creates a `session.reconcile.mark-stopped` Operation and audit events, then
+updates an eligible Controller Session to `stopped`. The reason and any
+available RuntimeObservation classification are recorded. Running, crashed,
+frozen, starting, and stopping Sessions are eligible; already stopped or other
+inactive states are rejected with a failed Operation.
+
+This action only changes Controller metadata. It does not stop, kill, restart,
+or otherwise mutate an Agent runtime. Runtime process control remains a
+separate Agent operation. Automatic reconciliation is future work.
