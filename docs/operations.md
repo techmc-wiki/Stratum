@@ -32,3 +32,20 @@ inactive states are rejected with a failed Operation.
 This action only changes Controller metadata. It does not stop, kill, restart,
 or otherwise mutate an Agent runtime. Runtime process control remains a
 separate Agent operation. Automatic reconciliation is future work.
+
+## Manual Runtime Stop Reconciliation
+
+`stop-runtime` is the separate, human-confirmed Agent action:
+
+```powershell
+stratum --agent-url http://127.0.0.1:8787 sessions reconcile stop-runtime --id SESSION --actor ACTOR --reason "REASON"
+```
+
+It inspects the Agent runtime, records the observation, then calls the existing
+Agent stop operation. The Controller Session state is not changed. Operators
+may use `mark-stopped` and `stop-runtime` in sequence when metadata and runtime
+state have diverged.
+
+An unreachable Agent or failed stop produces a failed Operation and audit
+record without changing Controller Session state. This command does not create
+checkpoints, add new kill mechanisms, or perform automatic reconciliation.

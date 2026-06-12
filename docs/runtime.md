@@ -150,6 +150,14 @@ URL is provided. It never stops or kills the Agent runtime; process control is
 a separate lifecycle action. Other reconciliation actions and automatic repair
 remain future work.
 
+`sessions reconcile stop-runtime` performs that separate Agent action. It
+requires an Agent URL, actor, and reason; inspects the runtime first; and records
+the observation and Agent result in the Operation and audit trail. It does not
+change Controller Session state or invoke `mark-stopped` automatically.
+Already stopped known runtimes follow the Agent's existing idempotent stop
+behavior; unknown runtimes fail clearly. No checkpoint is created, and MCDR
+does not become the lifecycle owner.
+
 ## MCDR RuntimeProfile future shape
 
 The following profile is conceptual and not implemented:

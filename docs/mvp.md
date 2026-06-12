@@ -18,6 +18,7 @@ Minecraft server.
 - Trusted local RuntimeProfile JSON loading with strict validation.
 - Read-only RuntimeObservation classification and `sessions observe` CLI output.
 - Audited manual `mark-stopped` Controller metadata reconciliation.
+- Audited manual `stop-runtime` Agent runtime reconciliation.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active
