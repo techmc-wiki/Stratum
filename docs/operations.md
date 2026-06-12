@@ -23,6 +23,10 @@ Artifact approval and rejection also write audit events without creating
 Operations. They are metadata review actions and do not copy, mount, install, or
 execute artifact payloads.
 
+Artifact metadata creation writes `artifact.created` with artifact, project,
+actor, type, and pending status metadata. It does not create an Operation or
+accept an artifact payload.
+
 ## Manual Reconciliation Operations
 
 Reconciliation is an explicit human-confirmed metadata repair. Supported

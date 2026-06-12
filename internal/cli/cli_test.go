@@ -517,6 +517,117 @@ func TestCheckpointListAndGet(t *testing.T) {
 	}
 }
 
+func TestCLIArtifactCreateApproveAndStageMetadataOnly(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	commands := [][]string{
+		{"--data-dir", dataDirectory, "projects", "create", "--id", "project-1", "--name", "Project"},
+		{"--data-dir", dataDirectory, "rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
+		{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
+		{"--data-dir", dataDirectory, "artifacts", "create", "--id", "artifact-1", "--name", "Test Artifact", "--type", "jar", "--project", "project-1", "--actor", "actor-1"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(command, &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+	if !strings.Contains(stdout.String(), "status=pending") || !strings.Contains(stdout.String(), "project=project-1") || !strings.Contains(stdout.String(), "payload=metadata-only") || !strings.Contains(stdout.String(), "no payload was uploaded") {
+		t.Fatalf("create stdout=%q", stdout.String())
+	}
+
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.GetArtifact(context.Background(), "artifact-1")
+	if err != nil || created.Status != artifact.StatusPending || created.ProjectID != "project-1" || created.PayloadStatus != artifact.PayloadMetadataOnly || created.SHA256 != "" {
+		t.Fatalf("artifact=%+v err=%v", created, err)
+	}
+	events, err := store.ListAuditEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var createdAudit bool
+	for _, event := range events {
+		if event.Action == "artifact.created" && event.ProjectID == "project-1" && event.ActorID == "actor-1" && event.Metadata["artifactId"] == "artifact-1" && event.Metadata["artifactType"] == "jar" && event.Metadata["status"] == "pending" {
+			createdAudit = true
+		}
+	}
+	if !createdAudit {
+		t.Fatalf("artifact creation audit missing: %+v", events)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "staging", "plan", "--session", "session-1", "--artifact", "artifact-1", "--actor", "actor-1", "--name", "test-artifact.jar"}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "status=rejected") {
+		t.Fatalf("pending staging: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "approve", "--id", "artifact-1", "--actor", "actor-1", "--reason", "trusted metadata-only test"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("approve: code=%d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "staging", "plan", "--session", "session-1", "--artifact", "artifact-1", "--actor", "actor-1", "--name", "test-artifact.jar"}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "status=planned") {
+		t.Fatalf("approved staging: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	plans, err := store.ListArtifactStagingPlansBySession(context.Background(), "session-1")
+	if err != nil || len(plans) != 2 {
+		t.Fatalf("plans=%+v err=%v", plans, err)
+	}
+	var plannedMetadataOnly bool
+	for _, plan := range plans {
+		if plan.Status == "planned" && plan.ArtifactHash == "" {
+			plannedMetadataOnly = true
+		}
+	}
+	if !plannedMetadataOnly {
+		t.Fatalf("metadata-only planned staging missing: %+v", plans)
+	}
+}
+
+func TestCLIArtifactCreateValidationAndDuplicate(t *testing.T) {
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"--data-dir", dataDirectory, "projects", "create", "--id", "project-1", "--name", "Project"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("project: %s", stderr.String())
+	}
+	base := []string{"--data-dir", dataDirectory, "artifacts", "create"}
+	tests := [][]string{
+		{"--name", "Artifact", "--type", "jar", "--project", "project-1", "--actor", "actor-1"},
+		{"--id", "artifact-1", "--type", "jar", "--project", "project-1", "--actor", "actor-1"},
+		{"--id", "artifact-1", "--name", "Artifact", "--project", "project-1", "--actor", "actor-1"},
+		{"--id", "artifact-1", "--name", "Artifact", "--type", "jar", "--project", "project-1"},
+	}
+	for _, args := range tests {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(append(append([]string{}, base...), args...), &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "required") {
+			t.Fatalf("args=%v code=%d stderr=%q", args, code, stderr.String())
+		}
+	}
+	stdout.Reset()
+	stderr.Reset()
+	invalid := append(append([]string{}, base...), "--id", "artifact-1", "--name", "Artifact", "--type", "binary", "--project", "project-1", "--actor", "actor-1")
+	if code := Run(invalid, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "unsupported artifact type") {
+		t.Fatalf("invalid type: code=%d stderr=%q", code, stderr.String())
+	}
+	valid := append(append([]string{}, base...), "--id", "artifact-1", "--name", "Artifact", "--type", "jar", "--project", "project-1", "--actor", "actor-1")
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(valid, &stdout, &stderr); code != 0 {
+		t.Fatalf("create: code=%d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(valid, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "already exists") {
+		t.Fatalf("duplicate: code=%d stderr=%q", code, stderr.String())
+	}
+}
+
 func TestCLIArtifactStagingPlanListAndInspect(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")

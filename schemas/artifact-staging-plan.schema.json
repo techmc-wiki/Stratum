@@ -3,7 +3,7 @@
   "$id": "https://stratummc.dev/schemas/artifact-staging-plan.schema.json",
   "title": "ArtifactStagingPlan",
   "type": "object",
-  "required": ["id", "sessionId", "projectId", "artifactId", "artifactName", "artifactType", "artifactStatus", "artifactHash", "targetStagingName", "stagingKind", "actorId", "createdAt", "status"],
+  "required": ["id", "sessionId", "projectId", "artifactId", "artifactName", "artifactType", "artifactStatus", "targetStagingName", "stagingKind", "actorId", "createdAt", "status"],
   "properties": {
     "id": { "type": "string", "minLength": 1 },
     "sessionId": { "type": "string", "minLength": 1 },
@@ -13,7 +13,7 @@
     "artifactName": { "type": "string", "minLength": 1 },
     "artifactType": { "type": "string", "minLength": 1 },
     "artifactStatus": { "type": "string", "minLength": 1 },
-    "artifactHash": { "type": "string", "minLength": 1 },
+    "artifactHash": { "type": "string" },
     "targetStagingName": { "type": "string", "minLength": 1 },
     "stagingKind": { "enum": ["artifact", "config"] },
     "actorId": { "type": "string", "minLength": 1 },

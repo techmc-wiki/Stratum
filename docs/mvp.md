@@ -26,6 +26,7 @@ Minecraft server.
 - Agent-side artifact/config staging path helpers and manifest stubs.
 - Metadata-only approved artifact staging plans with audit history.
 - Metadata-only artifact approval/rejection with reviewer audit history.
+- Metadata-only pending artifact creation with project and actor attribution.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active
@@ -39,7 +40,8 @@ history, explicit mark-stopped, stop-runtime, and mark-crashed reconciliation,
 per-session runtime directory allocation, and internal runtime staging helpers
 are implemented. Metadata-only artifact staging plans define which approved
 artifacts may later be staged, and artifact review can approve or reject pending
-metadata. The next phase may add another narrowly scoped Agent runtime
+metadata. Artifact metadata can be created without inventing a payload hash.
+The next phase may add another narrowly scoped Agent runtime
 capability. It must not perform automatic repair or accept arbitrary
 user-supplied commands.
 

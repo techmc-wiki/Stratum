@@ -159,6 +159,10 @@ payloads; it only makes the artifact eligible for future staging plans. Rejected
 artifacts cannot be staged. Payload storage, upload, and runtime mounting remain
 future work.
 
+`artifacts create` creates the pending metadata record used by this workflow.
+It records project ownership, type, creator, and an explicit `metadata-only`
+payload status. It accepts no path and does not produce a placeholder hash.
+
 ## Managed terminal executor
 
 The Agent uses Go `os/exec` directly with `command_argv`; it never invokes a

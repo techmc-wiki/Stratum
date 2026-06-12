@@ -3,6 +3,7 @@ package artifact
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
 	"time"
@@ -21,6 +22,7 @@ const (
 )
 
 type Status string
+type PayloadStatus string
 
 const (
 	StatusPending    Status = "pending"
@@ -29,27 +31,43 @@ const (
 	StatusDeprecated Status = "deprecated"
 )
 
+const (
+	PayloadMetadataOnly PayloadStatus = "metadata-only"
+	PayloadAvailable    PayloadStatus = "available"
+)
+
 type Usage struct {
 	SessionID string    `json:"sessionId"`
 	UsedAt    time.Time `json:"usedAt"`
 }
 
 type Artifact struct {
-	ID                      string     `json:"id"`
-	Name                    string     `json:"name"`
-	Type                    Type       `json:"type"`
-	UploaderID              string     `json:"uploaderId"`
-	SHA256                  string     `json:"sha256"`
-	SizeBytes               int64      `json:"sizeBytes"`
-	TargetMinecraftVersions []string   `json:"targetMinecraftVersions"`
-	LoaderCompatibility     []string   `json:"loaderCompatibility"`
-	Status                  Status     `json:"status"`
-	UsageRecords            []Usage    `json:"usageRecords,omitempty"`
-	ReviewNotes             string     `json:"reviewNotes,omitempty"`
-	ReviewedBy              string     `json:"reviewedBy,omitempty"`
-	ReviewedAt              *time.Time `json:"reviewedAt,omitempty"`
-	ReviewReason            string     `json:"reviewReason,omitempty"`
-	CreatedAt               time.Time  `json:"createdAt"`
+	ID                      string        `json:"id"`
+	ProjectID               string        `json:"projectId,omitempty"`
+	Name                    string        `json:"name"`
+	Type                    Type          `json:"type"`
+	UploaderID              string        `json:"uploaderId"`
+	SHA256                  string        `json:"sha256"`
+	SizeBytes               int64         `json:"sizeBytes"`
+	PayloadStatus           PayloadStatus `json:"payloadStatus,omitempty"`
+	TargetMinecraftVersions []string      `json:"targetMinecraftVersions"`
+	LoaderCompatibility     []string      `json:"loaderCompatibility"`
+	Status                  Status        `json:"status"`
+	UsageRecords            []Usage       `json:"usageRecords,omitempty"`
+	ReviewNotes             string        `json:"reviewNotes,omitempty"`
+	ReviewedBy              string        `json:"reviewedBy,omitempty"`
+	ReviewedAt              *time.Time    `json:"reviewedAt,omitempty"`
+	ReviewReason            string        `json:"reviewReason,omitempty"`
+	CreatedAt               time.Time     `json:"createdAt"`
+}
+
+func ValidateType(value Type) error {
+	switch value {
+	case TypeJar, TypeDatapack, TypeMCDRPlugin, TypeConfigPreset, TypeCarpetRules, TypeSchematic, TypeWorldArchive:
+		return nil
+	default:
+		return fmt.Errorf("unsupported artifact type %q", value)
+	}
 }
 
 func HashBytes(data []byte) string {

@@ -24,3 +24,14 @@ func TestArtifactHashMetadata(t *testing.T) {
 		t.Fatalf("size = %d, want %d", size, len(data))
 	}
 }
+
+func TestValidateType(t *testing.T) {
+	for _, value := range []Type{TypeJar, TypeDatapack, TypeMCDRPlugin, TypeConfigPreset, TypeCarpetRules, TypeSchematic, TypeWorldArchive} {
+		if err := ValidateType(value); err != nil {
+			t.Fatalf("type %q: %v", value, err)
+		}
+	}
+	if err := ValidateType("binary"); err == nil {
+		t.Fatal("invalid artifact type should fail")
+	}
+}

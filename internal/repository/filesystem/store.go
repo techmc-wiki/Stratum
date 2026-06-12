@@ -689,8 +689,27 @@ func validateArtifact(op string, value artifact.Artifact) error {
 	if err := validateID(op, value.ID); err != nil {
 		return err
 	}
-	if strings.TrimSpace(value.Name) == "" || value.Type == "" || value.UploaderID == "" || value.SHA256 == "" || value.Status == "" || value.CreatedAt.IsZero() {
-		return validationError(op, "artifact requires name, type, uploader, hash, status, and creation time")
+	if strings.TrimSpace(value.Name) == "" || value.Type == "" || value.UploaderID == "" || value.Status == "" || value.CreatedAt.IsZero() {
+		return validationError(op, "artifact requires name, type, uploader, status, and creation time")
+	}
+	if err := artifact.ValidateType(value.Type); err != nil {
+		return validationError(op, err.Error())
+	}
+	switch value.PayloadStatus {
+	case artifact.PayloadMetadataOnly:
+		if value.SHA256 != "" || value.SizeBytes != 0 {
+			return validationError(op, "metadata-only artifact must not define payload hash or size")
+		}
+	case artifact.PayloadAvailable:
+		if len(value.SHA256) != 64 {
+			return validationError(op, "available artifact requires a SHA-256 hash")
+		}
+	case "":
+		if value.SHA256 == "" {
+			return validationError(op, "legacy artifact requires a payload hash")
+		}
+	default:
+		return validationError(op, fmt.Sprintf("unsupported artifact payload status %q", value.PayloadStatus))
 	}
 	return nil
 }
@@ -698,7 +717,7 @@ func validateArtifactStagingPlan(op string, value artifactstaging.Plan) error {
 	if err := validateID(op, value.ID); err != nil {
 		return err
 	}
-	if value.SessionID == "" || value.ProjectID == "" || value.ArtifactID == "" || value.ArtifactName == "" || value.ArtifactType == "" || value.ArtifactStatus == "" || value.ArtifactHash == "" || value.TargetStagingName == "" || value.StagingKind == "" || value.ActorID == "" || value.Status == "" || value.CreatedAt.IsZero() {
+	if value.SessionID == "" || value.ProjectID == "" || value.ArtifactID == "" || value.ArtifactName == "" || value.ArtifactType == "" || value.ArtifactStatus == "" || value.TargetStagingName == "" || value.StagingKind == "" || value.ActorID == "" || value.Status == "" || value.CreatedAt.IsZero() {
 		return validationError(op, "artifact staging plan requires session, project, artifact metadata, staging target, actor, status, and creation time")
 	}
 	return nil

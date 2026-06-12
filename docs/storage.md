@@ -43,6 +43,18 @@ an explicit metadata-only approval or rejection has been recorded. These fields
 are review metadata only; they are not evidence that payload storage exists or
 that a file has been copied, mounted, installed, or executed.
 
+## Metadata-only Artifact Creation
+
+`artifacts create` writes project-scoped Artifact metadata with status
+`pending` and payload status `metadata-only`. It records the actor as uploader
+for attribution, but accepts no file path and creates no hash or payload size.
+The command does not upload, hash, copy, mount, install, or execute anything.
+
+Approval remains a separate explicit review step. A metadata-only artifact may
+be referenced by a staging plan after approval, but an empty artifact hash in
+that plan means no payload blob is available. Payload upload and blob storage
+remain future work.
+
 Lists read every `.json` record and return records ordered by filename. A
 malformed or unknown-field record stops the list with an actionable repository
 error rather than silently dropping metadata.

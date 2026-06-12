@@ -95,6 +95,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return getCheckpoint(ctx, store, command[2:], stdout, stderr)
 	case "artifacts list":
 		return listArtifacts(ctx, store, stdout, stderr)
+	case "artifacts create":
+		return createArtifact(ctx, store, command[2:], stdout, stderr)
 	case "artifacts approve", "artifacts reject":
 		return reviewArtifact(ctx, store, action, command[2:], stdout, stderr)
 	case "artifacts staging":
@@ -784,8 +786,31 @@ func listArtifacts(ctx context.Context, store *filesystem.Store, stdout, stderr 
 		if value.ReviewedAt != nil {
 			reviewedAt = value.ReviewedAt.Format(time.RFC3339Nano)
 		}
-		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\treviewedBy=%s\treviewedAt=%s\treviewReason=%s\n", value.ID, value.Name, value.Type, value.Status, value.ReviewedBy, reviewedAt, value.ReviewReason)
+		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\treviewedBy=%s\treviewedAt=%s\treviewReason=%s\tproject=%s\tpayload=%s\n", value.ID, value.Name, value.Type, value.Status, value.ReviewedBy, reviewedAt, value.ReviewReason, value.ProjectID, value.PayloadStatus)
 	}
+	return 0
+}
+
+func createArtifact(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("artifacts create", stderr)
+	id := flags.String("id", "", "artifact ID")
+	name := flags.String("name", "", "artifact name")
+	typeValue := flags.String("type", "", "artifact type")
+	projectID := flags.String("project", "", "project ID")
+	actor := flags.String("actor", "", "creator actor ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" || strings.TrimSpace(*name) == "" || strings.TrimSpace(*typeValue) == "" || *projectID == "" || strings.TrimSpace(*actor) == "" {
+		fmt.Fprintln(stderr, "--id, --name, --type, --project, and --actor are required")
+		return 2
+	}
+	value, err := artifactsvc.New(store).CreateMetadata(ctx, *id, *name, artifact.Type(*typeValue), *projectID, *actor)
+	if err != nil {
+		return reportError(stderr, "create artifact", err)
+	}
+	fmt.Fprintf(stdout, "Artifact %s name=%q type=%s status=%s project=%s payload=%s. Metadata only; no payload was uploaded, hashed, copied, mounted, installed, or executed.\n",
+		value.ID, value.Name, value.Type, value.Status, value.ProjectID, value.PayloadStatus)
 	return 0
 }
 

@@ -41,6 +41,16 @@ func (s *Store) ListProjects(_ context.Context) ([]project.Project, error) {
 	return result, nil
 }
 
+func (s *Store) GetProject(_ context.Context, id string) (project.Project, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	value, ok := s.Projects[id]
+	if !ok {
+		return project.Project{}, fmt.Errorf("project %q not found", id)
+	}
+	return value, nil
+}
+
 func (s *Store) ListRooms(_ context.Context) ([]room.Room, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -161,6 +171,16 @@ func (s *Store) ListCheckpoints(_ context.Context) ([]checkpoint.Checkpoint, err
 func (s *Store) SaveArtifact(_ context.Context, value artifact.Artifact) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.Artifacts[value.ID] = value
+	return nil
+}
+
+func (s *Store) CreateArtifact(_ context.Context, value artifact.Artifact) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.Artifacts[value.ID]; ok {
+		return fmt.Errorf("artifact %q already exists", value.ID)
+	}
 	s.Artifacts[value.ID] = value
 	return nil
 }

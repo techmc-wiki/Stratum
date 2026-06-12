@@ -8,10 +8,86 @@ import (
 
 	"github.com/stratummc/stratum/internal/domain/artifact"
 	"github.com/stratummc/stratum/internal/domain/artifactstaging"
+	"github.com/stratummc/stratum/internal/domain/project"
 	"github.com/stratummc/stratum/internal/domain/session"
 	"github.com/stratummc/stratum/internal/repository/memory"
 	"github.com/stratummc/stratum/internal/service/artifactstagingsvc"
 )
+
+func TestCreateMetadataCreatesPendingArtifactAndAudit(t *testing.T) {
+	store := memory.New()
+	now := fixedReviewTime()
+	store.Projects["project-1"] = project.Project{ID: "project-1", Name: "Project", CreatedAt: now}
+	service := New(store)
+	service.now = fixedReviewTime
+	service.newID = fixedReviewID
+	value, err := service.CreateMetadata(context.Background(), "artifact-1", "Test Artifact", artifact.TypeJar, "project-1", "actor-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.Status != artifact.StatusPending || value.ProjectID != "project-1" || value.UploaderID != "actor-1" || value.PayloadStatus != artifact.PayloadMetadataOnly || value.SHA256 != "" || value.SizeBytes != 0 {
+		t.Fatalf("artifact=%+v", value)
+	}
+	events, _ := store.ListAuditEvents(context.Background())
+	if len(events) != 1 || events[0].Action != ActionCreated || events[0].ProjectID != "project-1" || events[0].Metadata["artifactName"] != "Test Artifact" || events[0].Metadata["artifactType"] != "jar" || events[0].Metadata["projectId"] != "project-1" || events[0].Metadata["status"] != "pending" || events[0].Metadata["actor"] != "actor-1" {
+		t.Fatalf("events=%+v", events)
+	}
+}
+
+func TestCreateMetadataValidationAndDuplicate(t *testing.T) {
+	store := memory.New()
+	store.Projects["project-1"] = project.Project{ID: "project-1", Name: "Project", CreatedAt: fixedReviewTime()}
+	service := New(store)
+	tests := []struct {
+		name, id, artifactName, projectID, actor string
+		kind                                     artifact.Type
+	}{
+		{name: "id", artifactName: "Artifact", kind: artifact.TypeJar, projectID: "project-1", actor: "actor-1"},
+		{name: "name", id: "artifact-1", kind: artifact.TypeJar, projectID: "project-1", actor: "actor-1"},
+		{name: "type", id: "artifact-1", artifactName: "Artifact", projectID: "project-1", actor: "actor-1"},
+		{name: "project", id: "artifact-1", artifactName: "Artifact", kind: artifact.TypeJar, actor: "actor-1"},
+		{name: "actor", id: "artifact-1", artifactName: "Artifact", kind: artifact.TypeJar, projectID: "project-1"},
+		{name: "invalid type", id: "artifact-1", artifactName: "Artifact", kind: artifact.Type("binary"), projectID: "project-1", actor: "actor-1"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := service.CreateMetadata(context.Background(), test.id, test.artifactName, test.kind, test.projectID, test.actor); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+	if _, err := service.CreateMetadata(context.Background(), "artifact-1", "Artifact", artifact.TypeJar, "missing-project", "actor-1"); err == nil || !strings.Contains(err.Error(), "load project") {
+		t.Fatalf("missing project err=%v", err)
+	}
+	if _, err := service.CreateMetadata(context.Background(), "artifact-1", "Artifact", artifact.TypeJar, "project-1", "actor-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateMetadata(context.Background(), "artifact-1", "Replacement", artifact.TypeJar, "project-1", "actor-1"); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("duplicate err=%v", err)
+	}
+}
+
+func TestCreatedMetadataArtifactApprovalAndStaging(t *testing.T) {
+	store := memory.New()
+	now := fixedReviewTime()
+	store.Projects["project-1"] = project.Project{ID: "project-1", Name: "Project", CreatedAt: now}
+	_ = store.SaveSession(context.Background(), session.Session{ID: "session-1", ProjectID: "project-1", OwnerUserID: "owner-1", Type: session.TypeShared, State: session.StateCreated, EnvironmentID: "env-1", CreatedAt: now, LastActiveAt: now})
+	service := New(store)
+	if _, err := service.CreateMetadata(context.Background(), "artifact-1", "Artifact", artifact.TypeJar, "project-1", "actor-1"); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := artifactstagingsvc.New(store).CreatePlan(context.Background(), artifactstagingsvc.CreateParams{SessionID: "session-1", ArtifactID: "artifact-1", ActorID: "actor-1", Name: "test-artifact.jar"})
+	if err != nil || pending.Status != artifactstaging.StatusRejected {
+		t.Fatalf("pending plan=%+v err=%v", pending, err)
+	}
+	if _, err := service.ApproveArtifact(context.Background(), "artifact-1", "reviewer-1", "trusted metadata"); err != nil {
+		t.Fatal(err)
+	}
+	planned, err := artifactstagingsvc.New(store).CreatePlan(context.Background(), artifactstagingsvc.CreateParams{SessionID: "session-1", ArtifactID: "artifact-1", ActorID: "actor-1", Name: "test-artifact.jar"})
+	if err != nil || planned.Status != artifactstaging.StatusPlanned || planned.ArtifactHash != "" {
+		t.Fatalf("planned=%+v err=%v", planned, err)
+	}
+}
 
 func TestApproveArtifactUpdatesReviewMetadataAndAudit(t *testing.T) {
 	store := artifactReviewStore(t, artifact.StatusPending)
