@@ -17,22 +17,32 @@ events, but does not create an Operation or mutate Session state.
 
 ## Manual Reconciliation Operations
 
-Reconciliation is an explicit human-confirmed metadata repair. The first
-supported action is:
+Reconciliation is an explicit human-confirmed metadata repair. Supported
+Controller metadata actions are:
 
 ```powershell
 stratum sessions reconcile mark-stopped --id SESSION --actor ACTOR --reason "REASON"
+stratum sessions reconcile mark-crashed --id SESSION --actor ACTOR --reason "REASON"
 ```
 
-It creates a `session.reconcile.mark-stopped` Operation and audit events, then
-updates an eligible Controller Session to `stopped`. The reason and any
-available RuntimeObservation classification are recorded. Running, crashed,
+`mark-stopped` creates a `session.reconcile.mark-stopped` Operation and audit
+events, then updates an eligible Controller Session to `stopped`. The reason and
+any available RuntimeObservation classification are recorded. Running, crashed,
 frozen, starting, and stopping Sessions are eligible; already stopped or other
 inactive states are rejected with a failed Operation.
 
-This action only changes Controller metadata. It does not stop, kill, restart,
-or otherwise mutate an Agent runtime. Runtime process control remains a
-separate Agent operation. Automatic reconciliation is future work.
+`mark-crashed` creates a `session.reconcile.mark-crashed` Operation and audit
+events, then updates an eligible Controller Session to `crashed`. Running,
+starting, stopping, and frozen Sessions are eligible. Created, preparing,
+stopped, crashed, archived, and deleted Sessions are rejected with a failed
+Operation. If an Agent URL is supplied, the command attempts to persist a fresh
+RuntimeObservation and attach its metadata. An unreachable Agent does not block
+the Controller-only repair.
+
+These actions only change Controller metadata. They do not stop, kill, restart,
+or otherwise mutate an Agent runtime, and they do not create checkpoints. Runtime
+process control remains a separate Agent operation. Automatic reconciliation is
+future work.
 
 ## Manual Runtime Stop Reconciliation
 

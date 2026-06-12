@@ -294,6 +294,120 @@ func TestCLIManualStopRuntimeReconciliation(t *testing.T) {
 	}
 }
 
+func TestCLIManualMarkCrashedReconciliation(t *testing.T) {
+	runtime := local.NewProcessAgent()
+	server := httptest.NewServer(httptransport.NewServer(runtime, "", nil).Handler())
+	defer server.Close()
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	base := []string{"--data-dir", dataDirectory, "--agent-url", server.URL}
+	commands := [][]string{
+		{"projects", "create", "--id", "project-1", "--name", "Project"},
+		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
+		{"sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
+		{"sessions", "prepare", "--id", "session-1", "--actor", "actor-1"},
+		{"sessions", "start", "--id", "session-1", "--actor", "actor-1", "--runtime-profile", "dummy-process"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(append(append([]string{}, base...), command...), &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	command := append(append([]string{}, base...), "sessions", "reconcile", "mark-crashed", "--id", "session-1", "--actor", "actor-1", "--reason", "operator confirmed crash", "--request-id", "request-mark-crashed")
+	if code := Run(command, &stdout, &stderr); code != 0 {
+		t.Fatalf("mark-crashed: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "mark-crashed status=succeeded") || !strings.Contains(stdout.String(), "observationAvailable=true") {
+		t.Fatalf("stdout=%q", stdout.String())
+	}
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := store.GetSession(context.Background(), "session-1")
+	if err != nil || value.State != "crashed" || value.LastRuntimeMessage != "manually reconciled as crashed" {
+		t.Fatalf("session=%+v err=%v", value, err)
+	}
+	status, err := runtime.InspectSession(context.Background(), "session-1")
+	if err != nil || !status.Running {
+		t.Fatalf("mark-crashed must not stop runtime: status=%+v err=%v", status, err)
+	}
+	observations, err := store.ListRuntimeObservationsBySession(context.Background(), "session-1")
+	if err != nil || len(observations) != 1 {
+		t.Fatalf("observations=%+v err=%v", observations, err)
+	}
+	operations, _ := store.ListOperationsBySession(context.Background(), "session-1")
+	var found bool
+	for _, operationValue := range operations {
+		if operationValue.Action == "session.reconcile.mark-crashed" {
+			found = operationValue.Status == "succeeded" && operationValue.RequestID == "request-mark-crashed" && operationValue.Metadata["observationId"] == observations[0].ID && operationValue.Metadata["agentRuntimeStatus"] == "running" && operationValue.Metadata["controllerSessionState"] == "running"
+		}
+	}
+	if !found {
+		t.Fatalf("mark-crashed operation missing: %+v", operations)
+	}
+	events, err := store.ListAuditEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	found = false
+	for _, event := range events {
+		if event.Action == "session.reconcile.mark-crashed" && event.Metadata["requestId"] == "request-mark-crashed" && event.Metadata["reason"] == "operator confirmed crash" && event.Metadata["operationId"] != "" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("mark-crashed audit missing: %+v", events)
+	}
+}
+
+func TestCLIManualMarkCrashedUnreachableAgentStillSucceeds(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	commands := [][]string{
+		{"--data-dir", dataDirectory, "projects", "create", "--id", "project-1", "--name", "Project"},
+		{"--data-dir", dataDirectory, "rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
+		{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
+		{"--data-dir", dataDirectory, "sessions", "start", "--id", "session-1", "--actor", "actor-1"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(command, &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code := Run([]string{"--data-dir", dataDirectory, "--agent-url", "http://127.0.0.1:1", "--agent-timeout", "100ms", "sessions", "reconcile", "mark-crashed", "--id", "session-1", "--actor", "actor-1", "--reason", "agent unreachable but operator confirmed crash"}, &stdout, &stderr)
+	if code != 0 || !strings.Contains(stdout.String(), "status=succeeded") || !strings.Contains(stdout.String(), "observationAvailable=false") {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := store.GetSession(context.Background(), "session-1")
+	if err != nil || value.State != "crashed" {
+		t.Fatalf("session=%+v err=%v", value, err)
+	}
+	operations, _ := store.ListOperationsBySession(context.Background(), "session-1")
+	var found bool
+	for _, operationValue := range operations {
+		if operationValue.Action == "session.reconcile.mark-crashed" {
+			found = operationValue.Status == "succeeded" && operationValue.Metadata["observationAvailable"] == "false" && operationValue.Metadata["observationError"] != ""
+		}
+	}
+	if !found {
+		t.Fatalf("mark-crashed operation missing: %+v", operations)
+	}
+}
+
 func TestCLIManualStopRuntimeRequiresAgentURL(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"--data-dir", filepath.Join(t.TempDir(), "data"), "sessions", "reconcile", "stop-runtime", "--id", "session-1", "--actor", "actor-1", "--reason", "manual stop"}, &stdout, &stderr)

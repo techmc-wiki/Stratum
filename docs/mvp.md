@@ -21,6 +21,7 @@ Minecraft server.
   events.
 - Audited manual `mark-stopped` Controller metadata reconciliation.
 - Audited manual `stop-runtime` Agent runtime reconciliation.
+- Audited manual `mark-crashed` Controller metadata reconciliation.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active
@@ -29,10 +30,11 @@ command starts Minecraft, MCDR, Lucy, or another JVM process.
 
 ## Next phase: Additional Explicit Reconciliation
 
-RuntimeProfile loading, runtime mismatch detection, and persisted observation
-history are implemented. The next phase may add another narrowly scoped,
-authorized reconcile Operation. It must not perform automatic repair or accept
-arbitrary user-supplied commands.
+RuntimeProfile loading, runtime mismatch detection, persisted observation
+history, and explicit mark-stopped, stop-runtime, and mark-crashed reconciliation
+are implemented. The next phase may add another narrowly scoped, authorized
+reconcile Operation. It must not perform automatic repair or accept arbitrary
+user-supplied commands.
 
 A later phase may add **MCDR RuntimeProfile v0**, where the Agent launches MCDR
 as a trusted child process. MCDR may manage Minecraft internally, but it will not

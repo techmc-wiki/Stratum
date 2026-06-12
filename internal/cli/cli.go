@@ -467,8 +467,8 @@ func appendRuntimeObservationAudit(ctx context.Context, store *filesystem.Store,
 }
 
 func reconcileSession(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, agentMode string, hasAgentURL bool, args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 || (args[0] != "mark-stopped" && args[0] != "stop-runtime") {
-		fmt.Fprintln(stderr, "usage: stratum sessions reconcile <mark-stopped|stop-runtime> --id ID --actor ACTOR --reason REASON")
+	if len(args) == 0 || (args[0] != "mark-stopped" && args[0] != "mark-crashed" && args[0] != "stop-runtime") {
+		fmt.Fprintln(stderr, "usage: stratum sessions reconcile <mark-stopped|mark-crashed|stop-runtime> --id ID --actor ACTOR --reason REASON")
 		return 2
 	}
 	action := args[0]
@@ -508,32 +508,57 @@ func reconcileSession(ctx context.Context, store *filesystem.Store, agentClient 
 
 	options := reconcilesvc.Options{RequestID: *requestID, IdempotencyKey: *idempotencyKey}
 	if hasAgentURL {
-		controller, err := store.GetSession(ctx, *id)
+		observation, inspectErr, err := persistReconcileObservation(ctx, store, agentClient, *id, *actor)
 		if err != nil {
-			return reportError(stderr, "reconcile session", err)
+			return reportError(stderr, "persist reconciliation observation", err)
 		}
-		observationOptions := observationsvc.Options{ObservedAt: time.Now().UTC()}
-		if expected, err := expectedRuntimeProfile(ctx, store, *id); err != nil {
-			return reportError(stderr, "load session runtime profile", err)
+		if inspectErr != nil {
+			options.InspectError = inspectErr.Error()
 		} else {
-			observationOptions.ExpectedRuntimeProfileID = expected
-		}
-		status, err := agentClient.InspectSession(ctx, *id)
-		if err != nil {
-			options.InspectError = err.Error()
-		} else {
-			observation := observationsvc.Observe(controller, &status, observationOptions)
-			options.Observation = &observation
+			options.Observation = observation
 		}
 	}
 
-	value, replay, err := reconcilesvc.New(store).MarkStopped(ctx, *id, *actor, *reason, options)
-	if err != nil {
-		return reportError(stderr, "session reconcile mark-stopped", err)
+	service := reconcilesvc.New(store)
+	var value operation.Operation
+	var replay bool
+	var err error
+	if action == "mark-crashed" {
+		value, replay, err = service.MarkCrashed(ctx, *id, *actor, *reason, options)
+	} else {
+		value, replay, err = service.MarkStopped(ctx, *id, *actor, *reason, options)
 	}
-	fmt.Fprintf(stdout, "Session %s reconciliation mark-stopped status=%s operation=%s request=%s replay=%t observationAvailable=%s.\n",
-		*id, value.Status, value.ID, value.RequestID, replay, value.Metadata["observationAvailable"])
+	if err != nil {
+		return reportError(stderr, "session reconcile "+action, err)
+	}
+	fmt.Fprintf(stdout, "Session %s reconciliation %s status=%s operation=%s request=%s replay=%t observationAvailable=%s.\n",
+		*id, action, value.Status, value.ID, value.RequestID, replay, value.Metadata["observationAvailable"])
 	return 0
+}
+
+func persistReconcileObservation(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, sessionID, actor string) (*runtimeobservation.Observation, error, error) {
+	controller, err := store.GetSession(ctx, sessionID)
+	if err != nil {
+		return nil, nil, err
+	}
+	observationOptions := observationsvc.Options{ObservedAt: time.Now().UTC()}
+	if expected, err := expectedRuntimeProfile(ctx, store, sessionID); err != nil {
+		return nil, nil, err
+	} else {
+		observationOptions.ExpectedRuntimeProfileID = expected
+	}
+	status, inspectErr := agentClient.InspectSession(ctx, sessionID)
+	if inspectErr != nil {
+		return nil, inspectErr, nil
+	}
+	observation := observationsvc.Observe(controller, &status, observationOptions)
+	if err := store.CreateRuntimeObservation(ctx, observation); err != nil {
+		return nil, nil, err
+	}
+	if err := appendRuntimeObservationAudit(ctx, store, observation, actor); err != nil {
+		return nil, nil, err
+	}
+	return &observation, nil, nil
 }
 
 func expectedRuntimeProfile(ctx context.Context, store *filesystem.Store, sessionID string) (string, error) {

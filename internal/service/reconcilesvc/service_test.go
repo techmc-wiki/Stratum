@@ -90,6 +90,39 @@ func TestStopRuntimeStopsAgentWithoutChangingControllerState(t *testing.T) {
 	}
 }
 
+func TestMarkCrashedAllowedStates(t *testing.T) {
+	for _, source := range []session.State{session.StateRunning, session.StateStarting, session.StateStopping, session.StateFrozen} {
+		t.Run(string(source), func(t *testing.T) {
+			store := memory.New()
+			value := reconciliationSession("session-"+string(source), source)
+			if err := store.SaveSession(context.Background(), value); err != nil {
+				t.Fatal(err)
+			}
+			result, replay, err := New(store).MarkCrashed(context.Background(), value.ID, "actor-1", "confirmed runtime crashed", Options{})
+			if err != nil || replay || result.Status != operation.StatusSucceeded || result.Action != ActionMarkCrashed {
+				t.Fatalf("operation=%+v replay=%t err=%v", result, replay, err)
+			}
+			got, err := store.GetSession(context.Background(), value.ID)
+			if err != nil || got.State != session.StateCrashed || got.LastRuntimeMessage != "manually reconciled as crashed" || got.AssignedAgentID != value.AssignedAgentID {
+				t.Fatalf("session=%+v err=%v", got, err)
+			}
+			if result.Metadata["reason"] == "" || result.Metadata["controllerSessionState"] != string(source) || result.Metadata["observationAvailable"] != "false" {
+				t.Fatalf("metadata=%+v", result.Metadata)
+			}
+			events, _ := store.ListAuditEvents(context.Background())
+			found := false
+			for _, event := range events {
+				if event.Action == ActionMarkCrashed && event.Metadata["operationId"] == result.ID && event.Metadata["reason"] == "confirmed runtime crashed" && event.Metadata["result"] == "success" && event.Metadata["nextState"] == "crashed" {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("reconciliation audit missing: %+v", events)
+			}
+		})
+	}
+}
+
 func TestStopRuntimeFailureDoesNotChangeControllerState(t *testing.T) {
 	for _, failure := range []agent.Operation{agent.OperationInspect, agent.OperationStop} {
 		t.Run(string(failure), func(t *testing.T) {
@@ -167,6 +200,24 @@ func TestMarkStoppedRejectsDisallowedStatesWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestMarkCrashedRejectsDisallowedStatesWithoutMutation(t *testing.T) {
+	for _, source := range []session.State{session.StateCreated, session.StatePreparing, session.StateStopped, session.StateCrashed, session.StateArchived, session.StateDeleted} {
+		t.Run(string(source), func(t *testing.T) {
+			store := memory.New()
+			value := reconciliationSession("session-"+string(source), source)
+			_ = store.SaveSession(context.Background(), value)
+			result, _, err := New(store).MarkCrashed(context.Background(), value.ID, "actor-1", "manual crash reconciliation", Options{})
+			if !stratumerrors.IsKind(err, stratumerrors.KindConflict) || result.Status != operation.StatusFailed {
+				t.Fatalf("operation=%+v err=%v", result, err)
+			}
+			got, loadErr := store.GetSession(context.Background(), value.ID)
+			if loadErr != nil || got.State != source {
+				t.Fatalf("session=%+v err=%v", got, loadErr)
+			}
+		})
+	}
+}
+
 func TestMarkStoppedRequiresActorAndReason(t *testing.T) {
 	store := memory.New()
 	value := reconciliationSession("session-1", session.StateRunning)
@@ -176,6 +227,23 @@ func TestMarkStoppedRequiresActorAndReason(t *testing.T) {
 		t.Fatalf("actor error=%v", err)
 	}
 	if _, _, err := service.MarkStopped(context.Background(), value.ID, "actor-1", " ", Options{}); !stratumerrors.IsKind(err, stratumerrors.KindValidation) {
+		t.Fatalf("reason error=%v", err)
+	}
+	operations, _ := store.ListOperations(context.Background())
+	if len(operations) != 0 {
+		t.Fatalf("invalid requests created operations: %+v", operations)
+	}
+}
+
+func TestMarkCrashedRequiresActorAndReason(t *testing.T) {
+	store := memory.New()
+	value := reconciliationSession("session-1", session.StateRunning)
+	_ = store.SaveSession(context.Background(), value)
+	service := New(store)
+	if _, _, err := service.MarkCrashed(context.Background(), value.ID, "", "reason", Options{}); !stratumerrors.IsKind(err, stratumerrors.KindValidation) {
+		t.Fatalf("actor error=%v", err)
+	}
+	if _, _, err := service.MarkCrashed(context.Background(), value.ID, "actor-1", " ", Options{}); !stratumerrors.IsKind(err, stratumerrors.KindValidation) {
 		t.Fatalf("reason error=%v", err)
 	}
 	operations, _ := store.ListOperations(context.Background())
@@ -199,6 +267,29 @@ func TestMarkStoppedIncludesObservationMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result.RequestID != "request-1" || result.Metadata["observationAvailable"] != "true" || result.Metadata["mismatchType"] != string(observation.MismatchType) || result.Metadata["recommendedAction"] != string(observation.RecommendedAction) {
+		t.Fatalf("operation=%+v", result)
+	}
+}
+
+func TestMarkCrashedIncludesObservationMetadata(t *testing.T) {
+	store := memory.New()
+	value := reconciliationSession("session-1", session.StateRunning)
+	_ = store.SaveSession(context.Background(), value)
+	observation := runtimeobservation.Observation{
+		ID:                 "runtime-observation-1",
+		MismatchDetected:   true,
+		MismatchType:       runtimeobservation.MismatchControllerRunningAgentCrashed,
+		Severity:           runtimeobservation.SeverityCritical,
+		RecommendedAction:  runtimeobservation.ActionMarkCrashed,
+		AgentRuntimeStatus: "crashed",
+		RuntimeProfileID:   "dummy-process",
+		ProcessID:          "process-1",
+	}
+	result, _, err := New(store).MarkCrashed(context.Background(), value.ID, "actor-1", "agent reports crashed", Options{Observation: &observation, RequestID: "request-1", IdempotencyKey: "idem-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RequestID != "request-1" || result.Metadata["observationAvailable"] != "true" || result.Metadata["observationId"] != observation.ID || result.Metadata["mismatchType"] != string(observation.MismatchType) || result.Metadata["agentRuntimeStatus"] != observation.AgentRuntimeStatus || result.Metadata["runtimeProfileId"] != observation.RuntimeProfileID || result.Metadata["processId"] != observation.ProcessID {
 		t.Fatalf("operation=%+v", result)
 	}
 }

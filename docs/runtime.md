@@ -179,6 +179,18 @@ Already stopped known runtimes follow the Agent's existing idempotent stop
 behavior; unknown runtimes fail clearly. No checkpoint is created, and MCDR
 does not become the lifecycle owner.
 
+## Manual Mark-Crashed Reconciliation
+
+`sessions reconcile mark-crashed` is an explicit human-confirmed Controller
+metadata repair. It may use and persist an Agent observation when an Agent URL is
+provided, but it does not stop, kill, restart, or otherwise mutate the Agent
+runtime. It also does not create checkpoint backups.
+
+Operators may combine `sessions observe`, `sessions reconcile mark-crashed`,
+`sessions reconcile stop-runtime`, and `sessions reconcile mark-stopped` as
+separate manual steps when Controller metadata and Agent runtime state diverge.
+Automatic reconciliation remains future work.
+
 ## MCDR RuntimeProfile future shape
 
 The following profile is conceptual and not implemented:
