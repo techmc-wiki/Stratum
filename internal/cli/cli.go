@@ -11,6 +11,7 @@ import (
 	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/agent/httptransport"
 	"github.com/stratummc/stratum/internal/agent/local"
+	"github.com/stratummc/stratum/internal/domain/artifactstaging"
 	"github.com/stratummc/stratum/internal/domain/audit"
 	"github.com/stratummc/stratum/internal/domain/checkpoint"
 	"github.com/stratummc/stratum/internal/domain/environment"
@@ -22,6 +23,7 @@ import (
 	"github.com/stratummc/stratum/internal/domain/session"
 	stratumerrors "github.com/stratummc/stratum/internal/errors"
 	"github.com/stratummc/stratum/internal/repository/filesystem"
+	"github.com/stratummc/stratum/internal/service/artifactstagingsvc"
 	"github.com/stratummc/stratum/internal/service/observationsvc"
 	"github.com/stratummc/stratum/internal/service/reconcilesvc"
 	"github.com/stratummc/stratum/internal/service/sessionsvc"
@@ -91,6 +93,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return getCheckpoint(ctx, store, command[2:], stdout, stderr)
 	case "artifacts list":
 		return listArtifacts(ctx, store, stdout, stderr)
+	case "artifacts staging":
+		return artifactStaging(ctx, store, command[2:], stdout, stderr)
 	case "operations list":
 		return listOperations(ctx, store, command[2:], stdout, stderr)
 	case "operations inspect":
@@ -774,6 +778,85 @@ func listArtifacts(ctx context.Context, store *filesystem.Store, stdout, stderr 
 	for _, value := range values {
 		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\n", value.ID, value.Name, value.Type, value.Status)
 	}
+	return 0
+}
+
+func artifactStaging(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 || (args[0] != "plan" && args[0] != "list" && args[0] != "inspect") {
+		fmt.Fprintln(stderr, "usage: stratum artifacts staging <plan|list|inspect> [flags]")
+		return 2
+	}
+	switch args[0] {
+	case "plan":
+		return planArtifactStaging(ctx, store, args[1:], stdout, stderr)
+	case "list":
+		return listArtifactStaging(ctx, store, args[1:], stdout, stderr)
+	case "inspect":
+		return inspectArtifactStaging(ctx, store, args[1:], stdout, stderr)
+	default:
+		return 2
+	}
+}
+
+func planArtifactStaging(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("artifacts staging plan", stderr)
+	sessionID := flags.String("session", "", "session ID")
+	artifactID := flags.String("artifact", "", "artifact ID")
+	actor := flags.String("actor", "", "actor user ID")
+	name := flags.String("name", "", "safe staging name")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *sessionID == "" || *artifactID == "" || strings.TrimSpace(*actor) == "" || *name == "" {
+		fmt.Fprintln(stderr, "--session, --artifact, --actor, and --name are required")
+		return 2
+	}
+	plan, err := artifactstagingsvc.New(store).CreatePlan(ctx, artifactstagingsvc.CreateParams{SessionID: *sessionID, ArtifactID: *artifactID, ActorID: *actor, Name: *name})
+	if err != nil {
+		return reportError(stderr, "plan artifact staging", err)
+	}
+	fmt.Fprintf(stdout, "Artifact staging plan %s status=%s session=%s artifact=%s kind=%s target=%s rejection=%q. No payload was copied or mounted.\n", plan.ID, plan.Status, plan.SessionID, plan.ArtifactID, plan.StagingKind, plan.TargetStagingName, plan.RejectionReason)
+	return 0
+}
+
+func listArtifactStaging(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("artifacts staging list", stderr)
+	sessionID := flags.String("session", "", "filter by session ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	service := artifactstagingsvc.New(store)
+	var values []artifactstaging.Plan
+	var err error
+	if *sessionID != "" {
+		values, err = service.ListBySession(ctx, *sessionID)
+	} else {
+		values, err = service.List(ctx)
+	}
+	if err != nil {
+		return reportError(stderr, "list artifact staging plans", err)
+	}
+	for _, value := range values {
+		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", value.ID, value.SessionID, value.ArtifactID, value.StagingKind, value.TargetStagingName, value.Status, value.RejectionReason)
+	}
+	return 0
+}
+
+func inspectArtifactStaging(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("artifacts staging inspect", stderr)
+	id := flags.String("id", "", "artifact staging plan ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" {
+		fmt.Fprintln(stderr, "--id is required")
+		return 2
+	}
+	value, err := artifactstagingsvc.New(store).Get(ctx, *id)
+	if err != nil {
+		return reportError(stderr, "inspect artifact staging plan", err)
+	}
+	fmt.Fprintf(stdout, "id=%s session=%s project=%s room=%s artifact=%s artifactName=%q artifactType=%s artifactStatus=%s hash=%s kind=%s target=%s actor=%s status=%s rejection=%q createdAt=%s\n", value.ID, value.SessionID, value.ProjectID, value.RoomID, value.ArtifactID, value.ArtifactName, value.ArtifactType, value.ArtifactStatus, value.ArtifactHash, value.StagingKind, value.TargetStagingName, value.ActorID, value.Status, value.RejectionReason, value.CreatedAt.Format(time.RFC3339Nano))
 	return 0
 }
 

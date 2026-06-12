@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/stratummc/stratum/internal/domain/artifact"
+	"github.com/stratummc/stratum/internal/domain/artifactstaging"
 	"github.com/stratummc/stratum/internal/domain/audit"
 	"github.com/stratummc/stratum/internal/domain/checkpoint"
 	"github.com/stratummc/stratum/internal/domain/operation"
@@ -21,12 +22,13 @@ type Store struct {
 	Sessions    map[string]session.Session
 	Checkpoints map[string]checkpoint.Checkpoint
 	Artifacts   map[string]artifact.Artifact
+	Plans       map[string]artifactstaging.Plan
 	Operations  map[string]operation.Operation
 	AuditEvents []audit.Event
 }
 
 func New() *Store {
-	return &Store{Projects: map[string]project.Project{}, Rooms: map[string]room.Room{}, Sessions: map[string]session.Session{}, Checkpoints: map[string]checkpoint.Checkpoint{}, Artifacts: map[string]artifact.Artifact{}, Operations: map[string]operation.Operation{}}
+	return &Store{Projects: map[string]project.Project{}, Rooms: map[string]room.Room{}, Sessions: map[string]session.Session{}, Checkpoints: map[string]checkpoint.Checkpoint{}, Artifacts: map[string]artifact.Artifact{}, Plans: map[string]artifactstaging.Plan{}, Operations: map[string]operation.Operation{}}
 }
 
 func (s *Store) ListProjects(_ context.Context) ([]project.Project, error) {
@@ -163,12 +165,80 @@ func (s *Store) SaveArtifact(_ context.Context, value artifact.Artifact) error {
 	return nil
 }
 
+func (s *Store) GetArtifact(_ context.Context, id string) (artifact.Artifact, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	value, ok := s.Artifacts[id]
+	if !ok {
+		return artifact.Artifact{}, fmt.Errorf("artifact %q not found", id)
+	}
+	return value, nil
+}
+
 func (s *Store) ListArtifacts(_ context.Context) ([]artifact.Artifact, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	result := make([]artifact.Artifact, 0, len(s.Artifacts))
 	for _, value := range s.Artifacts {
 		result = append(result, value)
+	}
+	return result, nil
+}
+
+func (s *Store) CreateArtifactStagingPlan(_ context.Context, value artifactstaging.Plan) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.Plans[value.ID]; ok {
+		return fmt.Errorf("artifact staging plan %q already exists", value.ID)
+	}
+	s.Plans[value.ID] = value
+	return nil
+}
+
+func (s *Store) GetArtifactStagingPlan(_ context.Context, id string) (artifactstaging.Plan, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	value, ok := s.Plans[id]
+	if !ok {
+		return artifactstaging.Plan{}, fmt.Errorf("artifact staging plan %q not found", id)
+	}
+	return value, nil
+}
+
+func (s *Store) ListArtifactStagingPlans(_ context.Context) ([]artifactstaging.Plan, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make([]artifactstaging.Plan, 0, len(s.Plans))
+	for _, value := range s.Plans {
+		result = append(result, value)
+	}
+	return result, nil
+}
+
+func (s *Store) ListArtifactStagingPlansBySession(ctx context.Context, sessionID string) ([]artifactstaging.Plan, error) {
+	values, err := s.ListArtifactStagingPlans(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]artifactstaging.Plan, 0)
+	for _, value := range values {
+		if value.SessionID == sessionID {
+			result = append(result, value)
+		}
+	}
+	return result, nil
+}
+
+func (s *Store) ListArtifactStagingPlansByArtifact(ctx context.Context, artifactID string) ([]artifactstaging.Plan, error) {
+	values, err := s.ListArtifactStagingPlans(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]artifactstaging.Plan, 0)
+	for _, value := range values {
+		if value.ArtifactID == artifactID {
+			result = append(result, value)
+		}
 	}
 	return result, nil
 }

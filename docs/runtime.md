@@ -137,6 +137,19 @@ Controller storage, expose arbitrary file writes to users, or execute staged
 files. Future Artifact Manager and Lucy integration may populate these
 directories after approval and sandboxing rules are defined.
 
+## Approved Artifact Staging Contract
+
+Artifact staging plans are Controller metadata records that validate whether an
+approved Artifact may be staged into a Session. They record the target staging
+name, staging kind, artifact status and hash, actor, and whether the plan was
+accepted or rejected. Creating a plan does not copy payloads, mount mods, call
+Lucy, call the Agent, or execute files.
+
+Only approved artifacts are planned. Pending, rejected, and deprecated artifacts
+produce rejected metadata plans with audit history. Future work may copy or mount
+approved payloads into Agent-owned staging directories after upload storage,
+approval, and sandboxing rules are implemented.
+
 ## Managed terminal executor
 
 The Agent uses Go `os/exec` directly with `command_argv`; it never invokes a

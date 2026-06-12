@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/stratummc/stratum/internal/domain/artifact"
+	"github.com/stratummc/stratum/internal/domain/artifactstaging"
 	"github.com/stratummc/stratum/internal/domain/audit"
 	"github.com/stratummc/stratum/internal/domain/checkpoint"
 	"github.com/stratummc/stratum/internal/domain/environment"
@@ -41,7 +42,7 @@ func New(root string) (*Store, error) {
 	root = filepath.Clean(root)
 	for _, directory := range []string{
 		"projects", "rooms", "sessions", "checkpoints", "artifacts",
-		"environments", "resource-policies", "operations", "runtime-observations", "audit",
+		"artifact-staging-plans", "environments", "resource-policies", "operations", "runtime-observations", "audit",
 	} {
 		if err := os.MkdirAll(filepath.Join(root, directory), directoryPermissions); err != nil {
 			return nil, repositoryError(stratumerrors.KindConflict, operation, "create metadata directory", err)
@@ -461,6 +462,54 @@ func (s *Store) DeleteArtifact(_ context.Context, id string) error {
 	return deleteJSON(s.entityPath("artifacts", id), op)
 }
 
+func (s *Store) CreateArtifactStagingPlan(_ context.Context, value artifactstaging.Plan) error {
+	const op = "filesystem.CreateArtifactStagingPlan"
+	if err := validateArtifactStagingPlan(op, value); err != nil {
+		return err
+	}
+	return createJSON(s.entityPath("artifact-staging-plans", value.ID), op, value)
+}
+
+func (s *Store) GetArtifactStagingPlan(_ context.Context, id string) (artifactstaging.Plan, error) {
+	const op = "filesystem.GetArtifactStagingPlan"
+	if err := validateID(op, id); err != nil {
+		return artifactstaging.Plan{}, err
+	}
+	return readJSON[artifactstaging.Plan](s.entityPath("artifact-staging-plans", id), op)
+}
+
+func (s *Store) ListArtifactStagingPlans(_ context.Context) ([]artifactstaging.Plan, error) {
+	return listJSON[artifactstaging.Plan](filepath.Join(s.Root, "artifact-staging-plans"), "filesystem.ListArtifactStagingPlans")
+}
+
+func (s *Store) ListArtifactStagingPlansBySession(ctx context.Context, sessionID string) ([]artifactstaging.Plan, error) {
+	values, err := s.ListArtifactStagingPlans(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]artifactstaging.Plan, 0)
+	for _, value := range values {
+		if value.SessionID == sessionID {
+			result = append(result, value)
+		}
+	}
+	return result, nil
+}
+
+func (s *Store) ListArtifactStagingPlansByArtifact(ctx context.Context, artifactID string) ([]artifactstaging.Plan, error) {
+	values, err := s.ListArtifactStagingPlans(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]artifactstaging.Plan, 0)
+	for _, value := range values {
+		if value.ArtifactID == artifactID {
+			result = append(result, value)
+		}
+	}
+	return result, nil
+}
+
 func (s *Store) CreateEnvironment(_ context.Context, value environment.Environment) error {
 	const op = "filesystem.CreateEnvironment"
 	if err := validateEnvironment(op, value); err != nil {
@@ -642,6 +691,15 @@ func validateArtifact(op string, value artifact.Artifact) error {
 	}
 	if strings.TrimSpace(value.Name) == "" || value.Type == "" || value.UploaderID == "" || value.SHA256 == "" || value.Status == "" || value.CreatedAt.IsZero() {
 		return validationError(op, "artifact requires name, type, uploader, hash, status, and creation time")
+	}
+	return nil
+}
+func validateArtifactStagingPlan(op string, value artifactstaging.Plan) error {
+	if err := validateID(op, value.ID); err != nil {
+		return err
+	}
+	if value.SessionID == "" || value.ProjectID == "" || value.ArtifactID == "" || value.ArtifactName == "" || value.ArtifactType == "" || value.ArtifactStatus == "" || value.ArtifactHash == "" || value.TargetStagingName == "" || value.StagingKind == "" || value.ActorID == "" || value.Status == "" || value.CreatedAt.IsZero() {
+		return validationError(op, "artifact staging plan requires session, project, artifact metadata, staging target, actor, status, and creation time")
 	}
 	return nil
 }

@@ -15,6 +15,10 @@ A timeout marks the operation `timed_out`; session metadata is changed only afte
 Runtime observation persists diagnostic RuntimeObservation records and audit
 events, but does not create an Operation or mutate Session state.
 
+Artifact staging plan creation writes audit events but does not create a
+lifecycle Operation. It is metadata-only validation of staging intent and does
+not call the Agent or mutate runtime directories.
+
 ## Manual Reconciliation Operations
 
 Reconciliation is an explicit human-confirmed metadata repair. Supported

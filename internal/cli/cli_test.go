@@ -12,6 +12,7 @@ import (
 	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/agent/httptransport"
 	"github.com/stratummc/stratum/internal/agent/local"
+	"github.com/stratummc/stratum/internal/domain/artifact"
 	"github.com/stratummc/stratum/internal/domain/audit"
 	"github.com/stratummc/stratum/internal/repository/filesystem"
 )
@@ -513,6 +514,60 @@ func TestCheckpointListAndGet(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "checkpoint-1\tsession-1") {
 		t.Fatalf("get stdout=%q", stdout.String())
+	}
+}
+
+func TestCLIArtifactStagingPlanListAndInspect(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	commands := [][]string{
+		{"--data-dir", dataDirectory, "projects", "create", "--id", "project-1", "--name", "Project"},
+		{"--data-dir", dataDirectory, "rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
+		{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(command, &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 6, 12, 12, 0, 0, 0, time.UTC)
+	if err := store.CreateArtifact(context.Background(), artifact.Artifact{ID: "artifact-1", Name: "Test Mod", Type: artifact.TypeJar, UploaderID: "uploader-1", SHA256: artifact.HashBytes([]byte("artifact")), SizeBytes: 8, Status: artifact.StatusApproved, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "staging", "plan", "--session", "session-1", "--artifact", "artifact-1", "--actor", "actor-1", "--name", "mods/test.jar"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("plan: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "status=planned") || !strings.Contains(stdout.String(), "No payload was copied") {
+		t.Fatalf("plan stdout=%q", stdout.String())
+	}
+	plans, err := store.ListArtifactStagingPlansBySession(context.Background(), "session-1")
+	if err != nil || len(plans) != 1 {
+		t.Fatalf("plans=%+v err=%v", plans, err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "staging", "list", "--session", "session-1"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("list: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), plans[0].ID+"\tsession-1\tartifact-1\tartifact\t"+filepath.Clean("mods/test.jar")+"\tplanned") {
+		t.Fatalf("list stdout=%q", stdout.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "staging", "inspect", "--id", plans[0].ID}, &stdout, &stderr); code != 0 {
+		t.Fatalf("inspect: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "artifact=artifact-1") || !strings.Contains(stdout.String(), "target="+filepath.Clean("mods/test.jar")) {
+		t.Fatalf("inspect stdout=%q", stdout.String())
 	}
 }
 

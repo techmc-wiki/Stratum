@@ -17,6 +17,7 @@ Operation metadata is retained as one atomic JSON document per operation in
   runtime-observations/<observation-id>.json
   checkpoints/<checkpoint-id>.json
   artifacts/<artifact-id>.json
+  artifact-staging-plans/<plan-id>.json
   environments/<environment-id>.json
   resource-policies/<policy-id>.json
   audit/events.jsonl
@@ -30,10 +31,12 @@ directory.
 ## JSON records
 
 Projects, rooms, sessions, checkpoints, artifacts, environments, and resource
-policies use one JSON document per object. Runtime observations are append-only
-diagnostic records with create/get/list behavior and optional list-by-session
-filtering. Create operations reject an existing ID. Updates require an existing
-object, and deletes/get operations return typed not-found errors.
+policies use one JSON document per object. Artifact staging plans are metadata
+records for approved-or-rejected staging intent; they do not store payloads.
+Runtime observations are append-only diagnostic records with create/get/list
+behavior and optional list-by-session filtering. Create operations reject an
+existing ID. Updates require an existing object, and deletes/get operations
+return typed not-found errors.
 
 Lists read every `.json` record and return records ordered by filename. A
 malformed or unknown-field record stops the list with an actionable repository
@@ -89,3 +92,7 @@ future work.
 Runtime staging manifests under `artifacts/` and `config/` are Agent-side runtime
 preparation files. They are not Controller artifact metadata, approval records,
 Lucy locks, or durable checkpoint metadata.
+
+Artifact staging plans are Controller metadata under `artifact-staging-plans/`.
+They validate approved staging intent only and do not imply that any artifact
+payload has been copied, mounted, installed, or executed.

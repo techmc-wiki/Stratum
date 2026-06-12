@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stratummc.dev/schemas/artifact-staging-plan.schema.json",
+  "title": "ArtifactStagingPlan",
+  "type": "object",
+  "required": ["id", "sessionId", "projectId", "artifactId", "artifactName", "artifactType", "artifactStatus", "artifactHash", "targetStagingName", "stagingKind", "actorId", "createdAt", "status"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "projectId": { "type": "string", "minLength": 1 },
+    "roomId": { "type": "string" },
+    "artifactId": { "type": "string", "minLength": 1 },
+    "artifactName": { "type": "string", "minLength": 1 },
+    "artifactType": { "type": "string", "minLength": 1 },
+    "artifactStatus": { "type": "string", "minLength": 1 },
+    "artifactHash": { "type": "string", "minLength": 1 },
+    "targetStagingName": { "type": "string", "minLength": 1 },
+    "stagingKind": { "enum": ["artifact", "config"] },
+    "actorId": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "status": { "enum": ["planned", "rejected", "applied_stub", "failed"] },
+    "rejectionReason": { "type": "string" },
+    "metadata": { "type": "object", "additionalProperties": { "type": "string" } }
+  },
+  "additionalProperties": false
+}

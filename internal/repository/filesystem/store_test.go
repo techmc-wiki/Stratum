@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stratummc/stratum/internal/domain/artifact"
+	"github.com/stratummc/stratum/internal/domain/artifactstaging"
 	"github.com/stratummc/stratum/internal/domain/audit"
 	"github.com/stratummc/stratum/internal/domain/checkpoint"
 	"github.com/stratummc/stratum/internal/domain/project"
@@ -149,6 +150,36 @@ func TestRuntimeObservationCreateGetListRoundTripAndReload(t *testing.T) {
 	}
 	if len(values) != 1 || !reflect.DeepEqual(values[0], want) || len(bySession) != 1 || !reflect.DeepEqual(bySession[0], want) {
 		t.Fatalf("list=%+v bySession=%+v want=%+v", values, bySession, want)
+	}
+}
+
+func TestArtifactStagingPlanPersistenceAndFilters(t *testing.T) {
+	ctx := context.Background()
+	root := filepath.Join(t.TempDir(), "data")
+	store := newTestStore(t, root)
+	want := artifactstaging.Plan{
+		ID: "artifact-staging-plan-1", SessionID: "session-1", ProjectID: "project-1", RoomID: "room-1",
+		ArtifactID: "artifact-1", ArtifactName: "Test Mod", ArtifactType: string(artifact.TypeJar), ArtifactStatus: string(artifact.StatusApproved), ArtifactHash: artifact.HashBytes([]byte("artifact")),
+		TargetStagingName: "mods/test.jar", StagingKind: artifactstaging.KindArtifact, ActorID: "actor-1", CreatedAt: testTime, Status: artifactstaging.StatusPlanned,
+	}
+	if err := store.CreateArtifactStagingPlan(ctx, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetArtifactStagingPlan(ctx, want.ID)
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("got=%+v err=%v", got, err)
+	}
+	reloaded := newTestStore(t, root)
+	bySession, err := reloaded.ListArtifactStagingPlansBySession(ctx, "session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byArtifact, err := reloaded.ListArtifactStagingPlansByArtifact(ctx, "artifact-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bySession) != 1 || !reflect.DeepEqual(bySession[0], want) || len(byArtifact) != 1 || !reflect.DeepEqual(byArtifact[0], want) {
+		t.Fatalf("bySession=%+v byArtifact=%+v want=%+v", bySession, byArtifact, want)
 	}
 }
 
