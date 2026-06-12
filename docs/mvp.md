@@ -17,6 +17,8 @@ Minecraft server.
   directories, bounded stdout/stderr logs, stop strategies, and exit tracking.
 - Trusted local RuntimeProfile JSON loading with strict validation.
 - Read-only RuntimeObservation classification and `sessions observe` CLI output.
+- Persisted RuntimeObservation records with list/inspect CLI and diagnostic audit
+  events.
 - Audited manual `mark-stopped` Controller metadata reconciliation.
 - Audited manual `stop-runtime` Agent runtime reconciliation.
 
@@ -27,9 +29,10 @@ command starts Minecraft, MCDR, Lucy, or another JVM process.
 
 ## Next phase: Additional Explicit Reconciliation
 
-RuntimeProfile loading and runtime mismatch detection are implemented. The next
-phase may add another narrowly scoped, authorized reconcile Operation. It must
-not perform automatic repair or accept arbitrary user-supplied commands.
+RuntimeProfile loading, runtime mismatch detection, and persisted observation
+history are implemented. The next phase may add another narrowly scoped,
+authorized reconcile Operation. It must not perform automatic repair or accept
+arbitrary user-supplied commands.
 
 A later phase may add **MCDR RuntimeProfile v0**, where the Agent launches MCDR
 as a trusted child process. MCDR may manage Minecraft internally, but it will not
@@ -58,7 +61,7 @@ replace Agent process supervision or become the Controller's lifecycle manager.
 
 ## Deferred
 
-- RuntimeObservation persistence and additional explicit reconciliation actions.
+- Additional explicit reconciliation actions.
 - MCDR RuntimeProfile v0 and real Minecraft process integration.
 - Production Agent authentication, TLS policy, retries, and reconciliation.
 - Real Lucy resolution and lock verification.

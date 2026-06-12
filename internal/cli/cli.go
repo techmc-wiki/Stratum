@@ -11,12 +11,14 @@ import (
 	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/agent/httptransport"
 	"github.com/stratummc/stratum/internal/agent/local"
+	"github.com/stratummc/stratum/internal/domain/audit"
 	"github.com/stratummc/stratum/internal/domain/checkpoint"
 	"github.com/stratummc/stratum/internal/domain/environment"
 	"github.com/stratummc/stratum/internal/domain/operation"
 	"github.com/stratummc/stratum/internal/domain/project"
 	"github.com/stratummc/stratum/internal/domain/resourcepolicy"
 	"github.com/stratummc/stratum/internal/domain/room"
+	"github.com/stratummc/stratum/internal/domain/runtimeobservation"
 	"github.com/stratummc/stratum/internal/domain/session"
 	stratumerrors "github.com/stratummc/stratum/internal/errors"
 	"github.com/stratummc/stratum/internal/repository/filesystem"
@@ -93,6 +95,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return listOperations(ctx, store, command[2:], stdout, stderr)
 	case "operations inspect":
 		return inspectOperation(ctx, store, command[2:], stdout, stderr)
+	case "runtime-observations list":
+		return listRuntimeObservations(ctx, store, command[2:], stdout, stderr)
+	case "runtime-observations inspect":
+		return inspectRuntimeObservation(ctx, store, command[2:], stdout, stderr)
 	case "agents list":
 		return listAgents(ctx, agentClient, stdout, stderr)
 	case "agents inspect":
@@ -359,11 +365,12 @@ func inspectSession(ctx context.Context, store *filesystem.Store, agentClient ag
 func observeSession(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {
 	flags := newFlagSet("sessions observe", stderr)
 	id := flags.String("id", "", "session ID")
+	actor := flags.String("actor", "cli", "actor user ID for observation audit")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
-	if *id == "" {
-		fmt.Fprintln(stderr, "--id is required")
+	if *id == "" || strings.TrimSpace(*actor) == "" {
+		fmt.Fprintln(stderr, "--id and --actor are required")
 		return 2
 	}
 	controller, err := store.GetSession(ctx, *id)
@@ -385,11 +392,78 @@ func observeSession(ctx context.Context, store *filesystem.Store, agentClient ag
 		options.Metadata = map[string]string{"agentInspectError": inspectErr.Error()}
 	}
 	result := observationsvc.Observe(controller, observed, options)
-	fmt.Fprintf(stdout, "id=%s session=%s controllerState=%s agentStatus=%s agent=%s runtimeProfile=%s process=%s pid=%d mismatch=%t mismatchType=%s severity=%s recommendedAction=%s observedAt=%s\n",
+	if err := store.CreateRuntimeObservation(ctx, result); err != nil {
+		return reportError(stderr, "persist runtime observation", err)
+	}
+	if err := appendRuntimeObservationAudit(ctx, store, result, *actor); err != nil {
+		return reportError(stderr, "audit runtime observation", err)
+	}
+	fmt.Fprintf(stdout, "id=%s session=%s controllerState=%s agentStatus=%s agent=%s runtimeProfile=%s process=%s pid=%d mismatch=%t mismatchType=%s severity=%s recommendedAction=%s observedAt=%s persisted=true\n",
 		result.ID, result.SessionID, result.ControllerSessionState, result.AgentRuntimeStatus, result.ObserverAgentID,
 		result.RuntimeProfileID, result.ProcessID, result.PID, result.MismatchDetected, result.MismatchType,
 		result.Severity, result.RecommendedAction, result.ObservedAt.Format(time.RFC3339Nano))
 	return 0
+}
+
+func listRuntimeObservations(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("runtime-observations list", stderr)
+	sessionID := flags.String("session", "", "filter by session ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	var values []runtimeobservation.Observation
+	var err error
+	if *sessionID != "" {
+		values, err = store.ListRuntimeObservationsBySession(ctx, *sessionID)
+	} else {
+		values, err = store.ListRuntimeObservations(ctx)
+	}
+	if err != nil {
+		return reportError(stderr, "list runtime observations", err)
+	}
+	for _, value := range values {
+		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", value.ID, value.SessionID, value.ObservedAt.Format(time.RFC3339Nano), value.MismatchType, value.Severity, value.RecommendedAction, value.ControllerSessionState, value.AgentRuntimeStatus)
+	}
+	return 0
+}
+
+func inspectRuntimeObservation(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("runtime-observations inspect", stderr)
+	id := flags.String("id", "", "runtime observation ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" {
+		fmt.Fprintln(stderr, "--id is required")
+		return 2
+	}
+	value, err := store.GetRuntimeObservation(ctx, *id)
+	if err != nil {
+		return reportError(stderr, "inspect runtime observation", err)
+	}
+	fmt.Fprintf(stdout, "id=%s session=%s project=%s room=%s observedAt=%s agent=%s controllerState=%s agentStatus=%s runtimeProfile=%s process=%s pid=%d exitCode=%s crashed=%t logsAvailable=%t mismatch=%t mismatchType=%s severity=%s recommendedAction=%s lastError=%q\n",
+		value.ID, value.SessionID, value.ProjectID, value.RoomID, value.ObservedAt.Format(time.RFC3339Nano), value.ObserverAgentID,
+		value.ControllerSessionState, value.AgentRuntimeStatus, value.RuntimeProfileID, value.ProcessID, value.PID,
+		optionalInt(value.ExitCode), value.Crashed, value.LogsAvailable, value.MismatchDetected, value.MismatchType, value.Severity, value.RecommendedAction, value.LastError)
+	return 0
+}
+
+func appendRuntimeObservationAudit(ctx context.Context, store *filesystem.Store, observation runtimeobservation.Observation, actorID string) error {
+	event, err := audit.NewEvent("audit-"+observation.ID, actorID, "runtime.observation.created", "runtime-observation", observation.ID, observation.ObservedAt)
+	if err != nil {
+		return err
+	}
+	event.ProjectID = observation.ProjectID
+	event.Metadata = map[string]string{
+		"observationId":          observation.ID,
+		"sessionId":              observation.SessionID,
+		"mismatchType":           string(observation.MismatchType),
+		"severity":               string(observation.Severity),
+		"recommendedAction":      string(observation.RecommendedAction),
+		"agentRuntimeStatus":     observation.AgentRuntimeStatus,
+		"controllerSessionState": observation.ControllerSessionState,
+	}
+	return store.AppendAuditEvent(ctx, event)
 }
 
 func reconcileSession(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, agentMode string, hasAgentURL bool, args []string, stdout, stderr io.Writer) int {
@@ -739,5 +813,5 @@ func reportError(stderr io.Writer, action string, err error) int {
 }
 
 func usage(writer io.Writer) {
-	fmt.Fprintln(writer, "usage: stratum [--data-dir PATH] [--agent-url URL] [--agent-token TOKEN] <projects|rooms|sessions|checkpoints|artifacts|operations|agents> <command> [flags]")
+	fmt.Fprintln(writer, "usage: stratum [--data-dir PATH] [--agent-url URL] [--agent-token TOKEN] <projects|rooms|sessions|checkpoints|artifacts|operations|runtime-observations|agents> <command> [flags]")
 }

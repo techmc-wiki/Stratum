@@ -150,6 +150,27 @@ URL is provided. It never stops or kills the Agent runtime; process control is
 a separate lifecycle action. Other reconciliation actions and automatic repair
 remain future work.
 
+## Persisted Runtime Observations
+
+`sessions observe --id SESSION` computes and persists a RuntimeObservation by
+default. The record captures what the Controller believed about Session metadata
+and what the Agent reported about the runtime at one point in time, including
+mismatch type, severity, recommended action, runtime profile, process details,
+and diagnostic metadata.
+
+Persisted observations are diagnostic history only. They do not mutate
+authoritative Session state, do not stop or restart Agent runtimes, do not create
+Operation records, and do not perform automatic repair. They may inform later
+manual reconciliation. Automatic reconciliation remains future work.
+
+Operators can inspect persisted history with:
+
+```powershell
+go run ./cmd/stratum --data-dir .stratum/data runtime-observations list
+go run ./cmd/stratum --data-dir .stratum/data runtime-observations list --session demo-session
+go run ./cmd/stratum --data-dir .stratum/data runtime-observations inspect --id runtime-observation-demo-session-123
+```
+
 `sessions reconcile stop-runtime` performs that separate Agent action. It
 requires an Agent URL, actor, and reason; inspects the runtime first; and records
 the observation and Agent result in the Operation and audit trail. It does not

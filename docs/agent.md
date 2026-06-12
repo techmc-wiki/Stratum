@@ -174,11 +174,12 @@ response and records any mismatch, its severity, and a recommended action.
 Observations include process/profile identifiers, exit details, optional
 resource data, and enough Controller context to diagnose the difference.
 
-This phase is detection only. Computing or printing an observation does not
-change Session state, mark a Session crashed, or stop/restart a runtime. The
-`sessions observe --id <session>` command uses the existing Agent inspect API
-and reports the comparison. Future explicit reconcile operations may consume
-the recommendation after authorization and audit rules are defined.
+This phase is detection and history only. Computing or persisting an observation
+does not change Session state, mark a Session crashed, or stop/restart a
+runtime. The `sessions observe --id <session>` command uses the existing Agent
+inspect API, persists the comparison, and writes a diagnostic audit event.
+Explicit reconcile operations may consume the recommendation after authorization
+and audit rules are defined.
 
 ## Lifecycle ordering
 

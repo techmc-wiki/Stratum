@@ -12,6 +12,7 @@ import (
 	"github.com/stratummc/stratum/internal/domain/audit"
 	"github.com/stratummc/stratum/internal/domain/checkpoint"
 	"github.com/stratummc/stratum/internal/domain/project"
+	"github.com/stratummc/stratum/internal/domain/runtimeobservation"
 	"github.com/stratummc/stratum/internal/domain/session"
 	stratumerrors "github.com/stratummc/stratum/internal/errors"
 )
@@ -96,6 +97,58 @@ func TestCheckpointAndArtifactPersistence(t *testing.T) {
 	}
 	if got, err := store.GetArtifact(ctx, artifactValue.ID); err != nil || !reflect.DeepEqual(got, artifactValue) {
 		t.Fatalf("artifact = %+v, err = %v", got, err)
+	}
+}
+
+func TestRuntimeObservationCreateGetListRoundTripAndReload(t *testing.T) {
+	ctx := context.Background()
+	root := filepath.Join(t.TempDir(), "data")
+	store := newTestStore(t, root)
+	exitCode := 1
+	want := runtimeobservation.Observation{
+		ID:                     "runtime-observation-1",
+		SessionID:              "session-1",
+		ProjectID:              "project-1",
+		RoomID:                 "room-1",
+		ObservedAt:             testTime,
+		ObserverAgentID:        "agent-1",
+		ControllerSessionState: "running",
+		AgentRuntimeStatus:     "crashed",
+		RuntimeProfileID:       "dummy-process",
+		ProcessID:              "process-1",
+		PID:                    42,
+		ExitCode:               &exitCode,
+		Crashed:                true,
+		LastError:              "runtime crashed",
+		LogsAvailable:          true,
+		MismatchDetected:       true,
+		MismatchType:           runtimeobservation.MismatchControllerRunningAgentCrashed,
+		Severity:               runtimeobservation.SeverityCritical,
+		RecommendedAction:      runtimeobservation.ActionMarkCrashed,
+		Metadata:               map[string]string{"source": "test"},
+	}
+	if err := store.CreateRuntimeObservation(ctx, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetRuntimeObservation(ctx, want.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("get = %+v, want %+v", got, want)
+	}
+
+	reloaded := newTestStore(t, root)
+	values, err := reloaded.ListRuntimeObservations(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bySession, err := reloaded.ListRuntimeObservationsBySession(ctx, "session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 1 || !reflect.DeepEqual(values[0], want) || len(bySession) != 1 || !reflect.DeepEqual(bySession[0], want) {
+		t.Fatalf("list=%+v bySession=%+v want=%+v", values, bySession, want)
 	}
 }
 

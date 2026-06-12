@@ -102,6 +102,9 @@ func TestCLIObservesRuntimeWithoutMutatingSession(t *testing.T) {
 	if !strings.Contains(stdout.String(), "controllerState=running") || !strings.Contains(stdout.String(), "agentStatus=running") || !strings.Contains(stdout.String(), "mismatch=false") || !strings.Contains(stdout.String(), "recommendedAction=none") {
 		t.Fatalf("running observation=%q", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "persisted=true") {
+		t.Fatalf("running observation was not persisted: %q", stdout.String())
+	}
 
 	stdout.Reset()
 	stderr.Reset()
@@ -124,6 +127,43 @@ func TestCLIObservesRuntimeWithoutMutatingSession(t *testing.T) {
 	value, err := store.GetSession(context.Background(), "session-1")
 	if err != nil || value.State != "stopped" {
 		t.Fatalf("session=%+v err=%v", value, err)
+	}
+	observations, err := store.ListRuntimeObservationsBySession(context.Background(), "session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(observations) != 2 || observations[0].SessionID != "session-1" || observations[1].SessionID != "session-1" {
+		t.Fatalf("observations=%+v", observations)
+	}
+	events, err := store.ListAuditEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var observationEvents int
+	for _, event := range events {
+		if event.Action == "runtime.observation.created" && event.TargetType == "runtime-observation" && event.Metadata["sessionId"] == "session-1" {
+			observationEvents++
+		}
+	}
+	if observationEvents != 2 {
+		t.Fatalf("observation audit events=%d events=%+v", observationEvents, events)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, base...), "runtime-observations", "list", "--session", "session-1"), &stdout, &stderr); code != 0 {
+		t.Fatalf("observations list: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "session-1") || !strings.Contains(stdout.String(), "\tnone\tinfo\tnone\t") {
+		t.Fatalf("observations list stdout=%q", stdout.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, base...), "runtime-observations", "inspect", "--id", observations[0].ID), &stdout, &stderr); code != 0 {
+		t.Fatalf("observations inspect: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "id="+observations[0].ID) || !strings.Contains(stdout.String(), "session=session-1") {
+		t.Fatalf("observations inspect stdout=%q", stdout.String())
 	}
 }
 

@@ -14,6 +14,7 @@ Operation metadata is retained as one atomic JSON document per operation in
   projects/<project-id>.json
   rooms/<room-id>.json
   sessions/<session-id>.json
+  runtime-observations/<observation-id>.json
   checkpoints/<checkpoint-id>.json
   artifacts/<artifact-id>.json
   environments/<environment-id>.json
@@ -29,9 +30,10 @@ directory.
 ## JSON records
 
 Projects, rooms, sessions, checkpoints, artifacts, environments, and resource
-policies use one JSON document per object. Create operations reject an existing
-ID. Updates require an existing object, and deletes/get operations return typed
-not-found errors.
+policies use one JSON document per object. Runtime observations are append-only
+diagnostic records with create/get/list behavior and optional list-by-session
+filtering. Create operations reject an existing ID. Updates require an existing
+object, and deletes/get operations return typed not-found errors.
 
 Lists read every `.json` record and return records ordered by filename. A
 malformed or unknown-field record stops the list with an actionable repository

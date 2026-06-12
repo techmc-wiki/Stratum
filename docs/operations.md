@@ -12,7 +12,8 @@ Lifecycle commands accept `--idempotency-key`, `--request-id`, and `--operation-
 
 A timeout marks the operation `timed_out`; session metadata is changed only after the underlying lifecycle action succeeds.
 
-Runtime observation is read-only and does not create an Operation.
+Runtime observation persists diagnostic RuntimeObservation records and audit
+events, but does not create an Operation or mutate Session state.
 
 ## Manual Reconciliation Operations
 

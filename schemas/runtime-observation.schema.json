@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stratummc.dev/schemas/runtime-observation.schema.json",
+  "title": "RuntimeObservation",
+  "type": "object",
+  "required": ["id", "sessionId", "observedAt", "controllerSessionState", "mismatchDetected", "mismatchType", "severity", "recommendedAction"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "projectId": { "type": "string" },
+    "roomId": { "type": "string" },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "observerAgentId": { "type": "string" },
+    "controllerSessionState": { "type": "string", "minLength": 1 },
+    "agentRuntimeStatus": { "type": "string" },
+    "runtimeProfileId": { "type": "string" },
+    "processId": { "type": "string" },
+    "pid": { "type": "integer" },
+    "exitCode": { "type": "integer" },
+    "crashed": { "type": "boolean" },
+    "lastError": { "type": "string" },
+    "logsAvailable": { "type": "boolean" },
+    "resourceSnapshot": {
+      "type": "object",
+      "properties": {
+        "cpuCapacity": { "type": "integer" },
+        "memoryTotalMB": { "type": "integer" },
+        "memoryUsedMB": { "type": "integer" },
+        "diskTotalMB": { "type": "integer" },
+        "diskUsedMB": { "type": "integer" },
+        "runningSessions": { "type": "integer" },
+        "reportedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "mismatchDetected": { "type": "boolean" },
+    "mismatchType": { "type": "string", "minLength": 1 },
+    "severity": { "type": "string", "minLength": 1 },
+    "recommendedAction": { "type": "string", "minLength": 1 },
+    "metadata": { "type": "object", "additionalProperties": { "type": "string" } }
+  },
+  "additionalProperties": false
+}

@@ -21,6 +21,7 @@ import (
 	"github.com/stratummc/stratum/internal/domain/project"
 	"github.com/stratummc/stratum/internal/domain/resourcepolicy"
 	"github.com/stratummc/stratum/internal/domain/room"
+	"github.com/stratummc/stratum/internal/domain/runtimeobservation"
 	"github.com/stratummc/stratum/internal/domain/session"
 	stratumerrors "github.com/stratummc/stratum/internal/errors"
 )
@@ -40,7 +41,7 @@ func New(root string) (*Store, error) {
 	root = filepath.Clean(root)
 	for _, directory := range []string{
 		"projects", "rooms", "sessions", "checkpoints", "artifacts",
-		"environments", "resource-policies", "operations", "audit",
+		"environments", "resource-policies", "operations", "runtime-observations", "audit",
 	} {
 		if err := os.MkdirAll(filepath.Join(root, directory), directoryPermissions); err != nil {
 			return nil, repositoryError(stratumerrors.KindConflict, operation, "create metadata directory", err)
@@ -346,6 +347,40 @@ func (s *Store) ListActiveOperationsBySession(ctx context.Context, sessionID str
 	return result, nil
 }
 
+func (s *Store) CreateRuntimeObservation(_ context.Context, value runtimeobservation.Observation) error {
+	const op = "filesystem.CreateRuntimeObservation"
+	if err := validateRuntimeObservation(op, value); err != nil {
+		return err
+	}
+	return createJSON(s.entityPath("runtime-observations", value.ID), op, value)
+}
+
+func (s *Store) GetRuntimeObservation(_ context.Context, id string) (runtimeobservation.Observation, error) {
+	const op = "filesystem.GetRuntimeObservation"
+	if err := validateID(op, id); err != nil {
+		return runtimeobservation.Observation{}, err
+	}
+	return readJSON[runtimeobservation.Observation](s.entityPath("runtime-observations", id), op)
+}
+
+func (s *Store) ListRuntimeObservations(_ context.Context) ([]runtimeobservation.Observation, error) {
+	return listJSON[runtimeobservation.Observation](filepath.Join(s.Root, "runtime-observations"), "filesystem.ListRuntimeObservations")
+}
+
+func (s *Store) ListRuntimeObservationsBySession(ctx context.Context, sessionID string) ([]runtimeobservation.Observation, error) {
+	values, err := s.ListRuntimeObservations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]runtimeobservation.Observation, 0)
+	for _, value := range values {
+		if value.SessionID == sessionID {
+			result = append(result, value)
+		}
+	}
+	return result, nil
+}
+
 func (s *Store) CreateCheckpoint(_ context.Context, value checkpoint.Checkpoint) error {
 	const op = "filesystem.CreateCheckpoint"
 	if err := validateCheckpoint(op, value); err != nil {
@@ -580,6 +615,15 @@ func validateOperation(op string, value operation.Operation) error {
 	}
 	if value.RequestID == "" || value.ActorID == "" || value.Action == "" || value.TargetType == "" || value.TargetID == "" || value.Status == "" || value.CreatedAt.IsZero() {
 		return validationError(op, "operation requires request, actor, action, target, status, and creation time")
+	}
+	return nil
+}
+func validateRuntimeObservation(op string, value runtimeobservation.Observation) error {
+	if err := validateID(op, value.ID); err != nil {
+		return err
+	}
+	if value.SessionID == "" || value.ObservedAt.IsZero() || value.ControllerSessionState == "" || value.MismatchType == "" || value.Severity == "" || value.RecommendedAction == "" {
+		return validationError(op, "runtime observation requires session, observed time, controller state, mismatch type, severity, and recommended action")
 	}
 	return nil
 }
