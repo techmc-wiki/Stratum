@@ -34,6 +34,17 @@ func TestLoadTrustedFile(t *testing.T) {
 	}
 }
 
+func TestLoadTrustedFileAcceptsUTF8BOM(t *testing.T) {
+	content := append([]byte{0xEF, 0xBB, 0xBF}, []byte(`{"runtime_profiles":[]}`)...)
+	path := filepath.Join(t.TempDir(), "runtime-profiles.json")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadTrustedFile(path); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLoadTrustedFileRejectsInvalidInput(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -1,6 +1,7 @@
 package runtimeprofile
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -48,7 +49,12 @@ func LoadTrustedFile(path string) ([]Profile, error) {
 		return nil, fmt.Errorf("runtime profile config %q exceeds %d bytes", path, maxConfigBytes)
 	}
 
-	decoder := json.NewDecoder(io.LimitReader(file, maxConfigBytes+1))
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("read runtime profile config %q: %w", path, err)
+	}
+	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
+	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var document configDocument
 	if err := decoder.Decode(&document); err != nil {
