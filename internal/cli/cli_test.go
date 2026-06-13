@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -625,6 +626,136 @@ func TestCLIArtifactCreateValidationAndDuplicate(t *testing.T) {
 	stderr.Reset()
 	if code := Run(valid, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "already exists") {
 		t.Fatalf("duplicate: code=%d stderr=%q", code, stderr.String())
+	}
+}
+
+func TestCLIArtifactInspectIsReadOnlyAndShowsReviewMetadata(t *testing.T) {
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	var stdout, stderr bytes.Buffer
+	commands := [][]string{
+		{"--data-dir", dataDirectory, "projects", "create", "--id", "project-1", "--name", "Project"},
+		{"--data-dir", dataDirectory, "artifacts", "create", "--id", "artifact-1", "--name", "Test Artifact", "--type", "jar", "--project", "project-1", "--actor", "creator-1"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(command, &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.GetArtifact(context.Background(), "artifact-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventsBefore, err := store.ListAuditEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	operationsBefore, err := store.ListOperations(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "inspect", "--id", "artifact-1"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("inspect: code=%d stderr=%q", code, stderr.String())
+	}
+	for _, want := range []string{"id=artifact-1", `name="Test Artifact"`, "type=jar", "project=project-1", "status=pending", "uploadedBy=creator-1", "createdAt=", "payload=metadata-only"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("inspect stdout=%q missing %q", stdout.String(), want)
+		}
+	}
+	for _, absent := range []string{"reviewedBy=", "reviewedAt=", "reviewReason=", "hash=", "size=", "targetVersions=", "loaders="} {
+		if strings.Contains(stdout.String(), absent) {
+			t.Fatalf("inspect stdout=%q unexpectedly contains %q", stdout.String(), absent)
+		}
+	}
+	after, err := store.GetArtifact(context.Background(), "artifact-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventsAfter, err := store.ListAuditEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	operationsAfter, err := store.ListOperations(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(after, before) || len(eventsAfter) != len(eventsBefore) || len(operationsAfter) != len(operationsBefore) {
+		t.Fatalf("inspect mutated state: before=%+v after=%+v events=%d->%d operations=%d->%d", before, after, len(eventsBefore), len(eventsAfter), len(operationsBefore), len(operationsAfter))
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "approve", "--id", "artifact-1", "--actor", "reviewer-1", "--reason", "trusted fixture"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("approve: code=%d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "inspect", "--id", "artifact-1"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("inspect approved: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "status=approved") || !strings.Contains(stdout.String(), "reviewedBy=reviewer-1") || !strings.Contains(stdout.String(), `reviewReason="trusted fixture"`) || !strings.Contains(stdout.String(), "reviewedAt=202") {
+		t.Fatalf("approved inspect stdout=%q", stdout.String())
+	}
+}
+
+func TestCLIArtifactInspectMissingAndRejected(t *testing.T) {
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "inspect", "--id", "missing"}, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), `artifact "missing" not found`) {
+		t.Fatalf("missing: code=%d stderr=%q", code, stderr.String())
+	}
+	commands := [][]string{
+		{"--data-dir", dataDirectory, "projects", "create", "--id", "project-1", "--name", "Project"},
+		{"--data-dir", dataDirectory, "artifacts", "create", "--id", "artifact-1", "--name", "Rejected Artifact", "--type", "jar", "--project", "project-1", "--actor", "creator-1"},
+		{"--data-dir", dataDirectory, "artifacts", "reject", "--id", "artifact-1", "--actor", "reviewer-1", "--reason", "unsafe fixture"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(command, &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "inspect", "--id", "artifact-1"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("inspect rejected: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "status=rejected") || !strings.Contains(stdout.String(), "reviewedBy=reviewer-1") || !strings.Contains(stdout.String(), `reviewReason="unsafe fixture"`) {
+		t.Fatalf("rejected inspect stdout=%q", stdout.String())
+	}
+}
+
+func TestCLIArtifactInspectShowsAvailablePayloadMetadata(t *testing.T) {
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := artifact.Artifact{
+		ID: "artifact-1", Name: "Stored Artifact", Type: artifact.TypeJar, UploaderID: "uploader-1",
+		SHA256: artifact.HashBytes([]byte("artifact")), SizeBytes: 8, PayloadStatus: artifact.PayloadAvailable,
+		TargetMinecraftVersions: []string{"1.17", "1.20.6"}, LoaderCompatibility: []string{"fabric"},
+		Status: artifact.StatusPending, CreatedAt: time.Now().UTC(),
+	}
+	if err := store.CreateArtifact(context.Background(), value); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "inspect", "--id", value.ID}, &stdout, &stderr); code != 0 {
+		t.Fatalf("inspect: code=%d stderr=%q", code, stderr.String())
+	}
+	for _, want := range []string{"payload=available", "hash=" + value.SHA256, "size=8", "targetVersions=1.17,1.20.6", "loaders=fabric"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("inspect stdout=%q missing %q", stdout.String(), want)
+		}
 	}
 }
 

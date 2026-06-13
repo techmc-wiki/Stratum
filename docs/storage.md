@@ -55,6 +55,10 @@ be referenced by a staging plan after approval, but an empty artifact hash in
 that plan means no payload blob is available. Payload upload and blob storage
 remain future work.
 
+`artifacts inspect --id <artifact-id>` reads and prints the stored Artifact
+metadata without changing it or writing an audit event. It does not read or
+inspect payload files because payload storage remains future work.
+
 Lists read every `.json` record and return records ordered by filename. A
 malformed or unknown-field record stops the list with an actionable repository
 error rather than silently dropping metadata.

@@ -95,6 +95,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return getCheckpoint(ctx, store, command[2:], stdout, stderr)
 	case "artifacts list":
 		return listArtifacts(ctx, store, stdout, stderr)
+	case "artifacts inspect":
+		return inspectArtifact(ctx, store, command[2:], stdout, stderr)
 	case "artifacts create":
 		return createArtifact(ctx, store, command[2:], stdout, stderr)
 	case "artifacts approve", "artifacts reject":
@@ -788,6 +790,53 @@ func listArtifacts(ctx context.Context, store *filesystem.Store, stdout, stderr 
 		}
 		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\treviewedBy=%s\treviewedAt=%s\treviewReason=%s\tproject=%s\tpayload=%s\n", value.ID, value.Name, value.Type, value.Status, value.ReviewedBy, reviewedAt, value.ReviewReason, value.ProjectID, value.PayloadStatus)
 	}
+	return 0
+}
+
+func inspectArtifact(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("artifacts inspect", stderr)
+	id := flags.String("id", "", "artifact ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" {
+		fmt.Fprintln(stderr, "--id is required")
+		return 2
+	}
+	value, err := store.GetArtifact(ctx, *id)
+	if err != nil {
+		if stratumerrors.IsKind(err, stratumerrors.KindNotFound) {
+			err = fmt.Errorf("artifact %q not found: %w", *id, err)
+		}
+		return reportError(stderr, "inspect artifact", err)
+	}
+	fmt.Fprintf(stdout, "id=%s name=%q type=%s status=%s uploadedBy=%s createdAt=%s",
+		value.ID, value.Name, value.Type, value.Status, value.UploaderID, value.CreatedAt.Format(time.RFC3339Nano))
+	if value.ProjectID != "" {
+		fmt.Fprintf(stdout, " project=%s", value.ProjectID)
+	}
+	if value.ReviewedBy != "" {
+		fmt.Fprintf(stdout, " reviewedBy=%s", value.ReviewedBy)
+	}
+	if value.ReviewedAt != nil {
+		fmt.Fprintf(stdout, " reviewedAt=%s", value.ReviewedAt.Format(time.RFC3339Nano))
+	}
+	if value.ReviewReason != "" {
+		fmt.Fprintf(stdout, " reviewReason=%q", value.ReviewReason)
+	}
+	if value.PayloadStatus != "" {
+		fmt.Fprintf(stdout, " payload=%s", value.PayloadStatus)
+	}
+	if value.SHA256 != "" {
+		fmt.Fprintf(stdout, " hash=%s size=%d", value.SHA256, value.SizeBytes)
+	}
+	if len(value.TargetMinecraftVersions) > 0 {
+		fmt.Fprintf(stdout, " targetVersions=%s", strings.Join(value.TargetMinecraftVersions, ","))
+	}
+	if len(value.LoaderCompatibility) > 0 {
+		fmt.Fprintf(stdout, " loaders=%s", strings.Join(value.LoaderCompatibility, ","))
+	}
+	fmt.Fprintln(stdout)
 	return 0
 }
 

@@ -27,6 +27,7 @@ Minecraft server.
 - Metadata-only approved artifact staging plans with audit history.
 - Metadata-only artifact approval/rejection with reviewer audit history.
 - Metadata-only pending artifact creation with project and actor attribution.
+- Read-only Artifact metadata inspection through the CLI.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active
