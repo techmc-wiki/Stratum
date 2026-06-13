@@ -20,6 +20,12 @@ Prioritize correctness, reproducibility, safe boundaries, and clean architecture
 
 ---
 
+## Project Skills
+
+If you don't have access to golang skills defined in @skills-lock.json , you should run `npx skills -y experimental_install` to fetch those skills, and tell your human partner to restart their agent client.
+
+---
+
 ## Primary Language
 
 Use **Go** as the primary implementation language.
