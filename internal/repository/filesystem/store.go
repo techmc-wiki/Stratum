@@ -697,12 +697,15 @@ func validateArtifact(op string, value artifact.Artifact) error {
 	}
 	switch value.PayloadStatus {
 	case artifact.PayloadMetadataOnly:
-		if value.SHA256 != "" || value.SizeBytes != 0 {
-			return validationError(op, "metadata-only artifact must not define payload hash or size")
+		if value.SHA256 != "" || value.SizeBytes != 0 || value.PayloadAlgorithm != "" || value.PayloadReference != "" || value.PayloadImportedBy != "" || value.PayloadImportedAt != nil {
+			return validationError(op, "metadata-only artifact must not define payload metadata")
 		}
 	case artifact.PayloadAvailable:
 		if len(value.SHA256) != 64 {
 			return validationError(op, "available artifact requires a SHA-256 hash")
+		}
+		if value.PayloadAlgorithm != "" && value.PayloadAlgorithm != "sha256" {
+			return validationError(op, fmt.Sprintf("unsupported artifact payload algorithm %q", value.PayloadAlgorithm))
 		}
 	case "":
 		if value.SHA256 == "" {

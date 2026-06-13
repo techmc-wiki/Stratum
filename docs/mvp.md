@@ -29,6 +29,7 @@ Minecraft server.
 - Metadata-only pending artifact creation with project and actor attribution.
 - Read-only Artifact metadata inspection through the CLI.
 - Separate content-addressed Artifact blob storage with SHA-256 verification.
+- Trusted local-file payload import for pending Artifact metadata.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active

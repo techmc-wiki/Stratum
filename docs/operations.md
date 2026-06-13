@@ -27,6 +27,10 @@ Artifact metadata creation writes `artifact.created` with artifact, project,
 actor, type, and pending status metadata. It does not create an Operation or
 accept an artifact payload.
 
+Artifact payload import writes `artifact.payload.imported` with the artifact,
+actor, recomputed SHA-256 algorithm/hash, and payload size. It does not create
+an Operation, approve the Artifact, or copy payload content into a runtime.
+
 ## Manual Reconciliation Operations
 
 Reconciliation is an explicit human-confirmed metadata repair. Supported

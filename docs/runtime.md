@@ -157,7 +157,9 @@ reject` transition pending artifact metadata, record reviewer and reason fields,
 and append audit events. Approval does not copy, mount, install, or execute
 payloads; it only makes the artifact eligible for future staging plans. Rejected
 artifacts cannot be staged. A content-addressed BlobStore exists independently,
-but upload/import, metadata linking, and runtime mounting remain future work.
+and `artifacts import-file` can link a trusted local file to pending Artifact
+metadata. Import does not copy or mount the blob into an Agent runtime;
+runtime staging and mounting remain future work.
 
 `artifacts create` creates the pending metadata record used by this workflow.
 It records project ownership, type, creator, and an explicit `metadata-only`

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/stratummc/stratum/internal/agent/local"
 	"github.com/stratummc/stratum/internal/domain/artifact"
 	"github.com/stratummc/stratum/internal/domain/audit"
+	"github.com/stratummc/stratum/internal/repository/artifactblob"
 	"github.com/stratummc/stratum/internal/repository/filesystem"
 )
 
@@ -756,6 +758,86 @@ func TestCLIArtifactInspectShowsAvailablePayloadMetadata(t *testing.T) {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("inspect stdout=%q missing %q", stdout.String(), want)
 		}
+	}
+}
+
+func TestCLIArtifactImportFileStoresAndInspectsPayload(t *testing.T) {
+	root := t.TempDir()
+	dataDirectory := filepath.Join(root, "data")
+	blobRoot := filepath.Join(root, "artifacts")
+	path := filepath.Join(root, "payload.jar")
+	if err := os.WriteFile(path, []byte("hello artifact"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	base := []string{"--data-dir", dataDirectory, "--artifact-blob-root", blobRoot}
+	var stdout, stderr bytes.Buffer
+	commands := [][]string{
+		{"projects", "create", "--id", "project-1", "--name", "Project"},
+		{"artifacts", "create", "--id", "artifact-1", "--name", "Artifact", "--type", "jar", "--project", "project-1", "--actor", "creator-1"},
+		{"artifacts", "import-file", "--id", "artifact-1", "--file", path, "--actor", "importer-1"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(append(append([]string{}, base...), command...), &stdout, &stderr); code != 0 {
+			t.Fatalf("command=%v code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+	if !strings.Contains(stdout.String(), "payloadAlgorithm=sha256") || !strings.Contains(stdout.String(), "payloadSize=14") || !strings.Contains(stdout.String(), "payloadStatus=available") || !strings.Contains(stdout.String(), "remains pending") {
+		t.Fatalf("import stdout=%q", stdout.String())
+	}
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := store.GetArtifact(context.Background(), "artifact-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	blobs, err := artifactblob.New(blobRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := blobs.Verify(context.Background(), value.SHA256); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, base...), "artifacts", "inspect", "--id", "artifact-1"), &stdout, &stderr); code != 0 {
+		t.Fatalf("inspect code=%d stderr=%q", code, stderr.String())
+	}
+	for _, want := range []string{"status=pending", "payload=available", "payloadAlgorithm=sha256", "hash=" + value.SHA256, "size=14", "payloadReference=", "payloadImportedBy=importer-1", "payloadImportedAt="} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("inspect stdout=%q missing %q", stdout.String(), want)
+		}
+	}
+	events, err := store.ListAuditEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var imported int
+	for _, event := range events {
+		if event.Action == "artifact.payload.imported" {
+			imported++
+		}
+	}
+	if imported != 1 {
+		t.Fatalf("import audit count=%d events=%+v", imported, events)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, base...), "artifacts", "import-file", "--id", "artifact-1", "--file", path, "--actor", "importer-2"), &stdout, &stderr); code != 0 {
+		t.Fatalf("duplicate import code=%d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, base...), "artifacts", "import-file", "--id", "artifact-1", "--file", path), &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--actor") {
+		t.Fatalf("missing actor code=%d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, base...), "artifacts", "import-file", "--id", "missing", "--file", path, "--actor", "importer-1"), &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), `artifact "missing" not found`) {
+		t.Fatalf("missing artifact code=%d stderr=%q", code, stderr.String())
 	}
 }
 

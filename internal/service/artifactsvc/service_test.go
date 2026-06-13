@@ -2,6 +2,8 @@ package artifactsvc
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -10,9 +12,92 @@ import (
 	"github.com/stratummc/stratum/internal/domain/artifactstaging"
 	"github.com/stratummc/stratum/internal/domain/project"
 	"github.com/stratummc/stratum/internal/domain/session"
+	"github.com/stratummc/stratum/internal/repository/artifactblob"
 	"github.com/stratummc/stratum/internal/repository/memory"
 	"github.com/stratummc/stratum/internal/service/artifactstagingsvc"
 )
+
+func TestImportFileStoresBlobUpdatesPendingArtifactAndAudits(t *testing.T) {
+	store := artifactImportStore(t, artifact.StatusPending)
+	blobs, err := artifactblob.New(filepath.Join(t.TempDir(), "artifacts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := writeArtifactFile(t, "payload.jar", "hello artifact")
+	service := NewWithBlobStore(store, blobs)
+	service.now = fixedReviewTime
+	service.newID = fixedReviewID
+	value, err := service.ImportFile(context.Background(), "artifact-1", path, "actor-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.Status != artifact.StatusPending || value.PayloadStatus != artifact.PayloadAvailable || value.PayloadAlgorithm != artifactblob.Algorithm || value.SHA256 == "" || value.SizeBytes != 14 || value.PayloadReference == "" || value.PayloadImportedBy != "actor-1" || value.PayloadImportedAt == nil || !value.PayloadImportedAt.Equal(fixedReviewTime()) {
+		t.Fatalf("artifact=%+v", value)
+	}
+	if _, err := blobs.Verify(context.Background(), value.SHA256); err != nil {
+		t.Fatal(err)
+	}
+	events, _ := store.ListAuditEvents(context.Background())
+	if len(events) != 1 || events[0].Action != ActionPayloadImported || events[0].Metadata["artifactId"] != "artifact-1" || events[0].Metadata["artifactName"] != "Artifact" || events[0].Metadata["actor"] != "actor-1" || events[0].Metadata["payloadAlgorithm"] != "sha256" || events[0].Metadata["payloadHash"] != value.SHA256 || events[0].Metadata["payloadSize"] != "14" {
+		t.Fatalf("events=%+v", events)
+	}
+}
+
+func TestImportFileValidationIdempotencyAndConflict(t *testing.T) {
+	store := artifactImportStore(t, artifact.StatusPending)
+	blobs, err := artifactblob.New(filepath.Join(t.TempDir(), "artifacts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewWithBlobStore(store, blobs)
+	path := writeArtifactFile(t, "payload.jar", "same payload")
+	first, err := service.ImportFile(context.Background(), "artifact-1", path, "actor-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventsBefore, _ := store.ListAuditEvents(context.Background())
+	second, err := service.ImportFile(context.Background(), "artifact-1", path, "actor-2")
+	if err != nil || second.SHA256 != first.SHA256 || second.PayloadImportedBy != "actor-1" {
+		t.Fatalf("second=%+v err=%v", second, err)
+	}
+	eventsAfter, _ := store.ListAuditEvents(context.Background())
+	if len(eventsAfter) != len(eventsBefore) {
+		t.Fatalf("duplicate import wrote audit: %d -> %d", len(eventsBefore), len(eventsAfter))
+	}
+	different := writeArtifactFile(t, "different.jar", "different payload")
+	if _, err := service.ImportFile(context.Background(), "artifact-1", different, "actor-1"); err == nil || !strings.Contains(err.Error(), "replace is not supported") {
+		t.Fatalf("different payload err=%v", err)
+	}
+	for _, args := range [][3]string{{"", path, "actor"}, {"artifact-1", "", "actor"}, {"artifact-1", path, ""}} {
+		if _, err := service.ImportFile(context.Background(), args[0], args[1], args[2]); err == nil {
+			t.Fatalf("args=%v should fail", args)
+		}
+	}
+	if _, err := service.ImportFile(context.Background(), "missing", path, "actor-1"); err == nil || !strings.Contains(err.Error(), `artifact "missing" not found`) {
+		t.Fatalf("missing artifact err=%v", err)
+	}
+	if _, err := service.ImportFile(context.Background(), "artifact-1", filepath.Join(t.TempDir(), "missing.jar"), "actor-1"); err == nil || !strings.Contains(err.Error(), "inspect import file") {
+		t.Fatalf("missing file err=%v", err)
+	}
+	if _, err := service.ImportFile(context.Background(), "artifact-1", t.TempDir(), "actor-1"); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("directory err=%v", err)
+	}
+}
+
+func TestImportFileRejectsNonPendingArtifacts(t *testing.T) {
+	path := writeArtifactFile(t, "payload.jar", "payload")
+	for _, status := range []artifact.Status{artifact.StatusApproved, artifact.StatusRejected, artifact.StatusDeprecated} {
+		t.Run(string(status), func(t *testing.T) {
+			blobs, err := artifactblob.New(filepath.Join(t.TempDir(), "artifacts"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := NewWithBlobStore(artifactImportStore(t, status), blobs).ImportFile(context.Background(), "artifact-1", path, "actor-1"); err == nil || !strings.Contains(err.Error(), "must be pending") {
+				t.Fatalf("status=%s err=%v", status, err)
+			}
+		})
+	}
+}
 
 func TestCreateMetadataCreatesPendingArtifactAndAudit(t *testing.T) {
 	store := memory.New()
@@ -183,6 +268,28 @@ func artifactReviewStore(t *testing.T, status artifact.Status) *memory.Store {
 	_ = store.SaveArtifact(context.Background(), artifact.Artifact{ID: "artifact-1", Name: "Test Artifact", Type: artifact.TypeJar, UploaderID: "uploader-1", SHA256: artifact.HashBytes([]byte("artifact")), SizeBytes: 8, Status: status, CreatedAt: now})
 	_ = store.SaveSession(context.Background(), session.Session{ID: "session-1", ProjectID: "project-1", RoomID: "room-1", OwnerUserID: "owner-1", Type: session.TypeShared, State: session.StateCreated, EnvironmentID: "env-1", CreatedAt: now, LastActiveAt: now})
 	return store
+}
+
+func artifactImportStore(t *testing.T, status artifact.Status) *memory.Store {
+	t.Helper()
+	store := memory.New()
+	if err := store.SaveArtifact(context.Background(), artifact.Artifact{
+		ID: "artifact-1", ProjectID: "project-1", Name: "Artifact", Type: artifact.TypeJar,
+		UploaderID: "creator-1", PayloadStatus: artifact.PayloadMetadataOnly,
+		TargetMinecraftVersions: []string{}, LoaderCompatibility: []string{}, Status: status, CreatedAt: fixedReviewTime(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
+func writeArtifactFile(t *testing.T, name, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func fixedReviewTime() time.Time { return time.Date(2026, 6, 12, 12, 0, 0, 0, time.UTC) }

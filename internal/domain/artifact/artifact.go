@@ -50,6 +50,10 @@ type Artifact struct {
 	SHA256                  string        `json:"sha256"`
 	SizeBytes               int64         `json:"sizeBytes"`
 	PayloadStatus           PayloadStatus `json:"payloadStatus,omitempty"`
+	PayloadAlgorithm        string        `json:"payloadAlgorithm,omitempty"`
+	PayloadReference        string        `json:"payloadReference,omitempty"`
+	PayloadImportedBy       string        `json:"payloadImportedBy,omitempty"`
+	PayloadImportedAt       *time.Time    `json:"payloadImportedAt,omitempty"`
 	TargetMinecraftVersions []string      `json:"targetMinecraftVersions"`
 	LoaderCompatibility     []string      `json:"loaderCompatibility"`
 	Status                  Status        `json:"status"`

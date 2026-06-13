@@ -70,6 +70,15 @@ func ComputeSHA256(reader io.Reader) (hash string, size int64, err error) {
 	return hex.EncodeToString(digest.Sum(nil)), size, nil
 }
 
+func ComputeFileSHA256(path string) (hash string, size int64, err error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", 0, storageError("artifactblob.ComputeFileSHA256", "open blob source", err)
+	}
+	defer file.Close()
+	return ComputeSHA256(file)
+}
+
 func (s *Store) Put(ctx context.Context, reader io.Reader) (Metadata, error) {
 	const operation = "artifactblob.Put"
 	if reader == nil {
@@ -136,6 +145,19 @@ func (s *Store) PutFile(ctx context.Context, path string) (Metadata, error) {
 	}
 	defer file.Close()
 	return s.Put(ctx, file)
+}
+
+func (s *Store) HashFile(path string) (algorithm, hash string, size int64, err error) {
+	hash, size, err = ComputeFileSHA256(path)
+	return Algorithm, hash, size, err
+}
+
+func (s *Store) StoreFile(ctx context.Context, path string) (algorithm, hash, reference string, size int64, err error) {
+	metadata, err := s.PutFile(ctx, path)
+	if err != nil {
+		return "", "", "", 0, err
+	}
+	return metadata.Algorithm, metadata.Hash, metadata.Reference, metadata.Size, nil
 }
 
 func (s *Store) Verify(ctx context.Context, hash string) (Metadata, error) {

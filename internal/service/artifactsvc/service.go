@@ -3,18 +3,27 @@ package artifactsvc
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/stratummc/stratum/internal/domain/artifact"
 	"github.com/stratummc/stratum/internal/domain/audit"
 	"github.com/stratummc/stratum/internal/domain/project"
+	stratumerrors "github.com/stratummc/stratum/internal/errors"
 	"github.com/stratummc/stratum/internal/util"
 )
 
 const ActionCreated = "artifact.created"
 const ActionApproved = "artifact.approved"
 const ActionRejected = "artifact.rejected"
+const ActionPayloadImported = "artifact.payload.imported"
+
+type BlobStore interface {
+	HashFile(string) (algorithm, hash string, size int64, err error)
+	StoreFile(context.Context, string) (algorithm, hash, reference string, size int64, err error)
+}
 
 type Repository interface {
 	CreateArtifact(context.Context, artifact.Artifact) error
@@ -27,6 +36,7 @@ type Repository interface {
 
 type Service struct {
 	repository Repository
+	blobStore  BlobStore
 	now        func() time.Time
 	newID      func(string) (string, error)
 }
@@ -59,6 +69,96 @@ func New(repository Repository) *Service {
 	return &Service{repository: repository, now: func() time.Time { return time.Now().UTC() }, newID: util.NewID}
 }
 
+func NewWithBlobStore(repository Repository, blobStore BlobStore) *Service {
+	service := New(repository)
+	service.blobStore = blobStore
+	return service
+}
+
+func (s *Service) ImportFile(ctx context.Context, id, path, actor string) (artifact.Artifact, error) {
+	if strings.TrimSpace(id) == "" || strings.TrimSpace(path) == "" || strings.TrimSpace(actor) == "" {
+		return artifact.Artifact{}, fmt.Errorf("artifact payload import requires id, file, and actor")
+	}
+	if s.blobStore == nil {
+		return artifact.Artifact{}, fmt.Errorf("artifact blob store is required")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return artifact.Artifact{}, fmt.Errorf("inspect import file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return artifact.Artifact{}, fmt.Errorf("import file %q is not a regular file", path)
+	}
+	value, err := s.repository.GetArtifact(ctx, id)
+	if err != nil {
+		if stratumerrors.IsKind(err, stratumerrors.KindNotFound) {
+			return artifact.Artifact{}, fmt.Errorf("artifact %q not found: %w", id, err)
+		}
+		return artifact.Artifact{}, fmt.Errorf("load artifact %q: %w", id, err)
+	}
+	if value.Status != artifact.StatusPending {
+		return artifact.Artifact{}, fmt.Errorf("artifact %q must be pending to import a payload; current status is %q", id, value.Status)
+	}
+
+	hasPayload := value.PayloadStatus == artifact.PayloadAvailable || value.SHA256 != ""
+	if hasPayload {
+		algorithm, hash, size, err := s.blobStore.HashFile(path)
+		if err != nil {
+			return artifact.Artifact{}, fmt.Errorf("hash import file: %w", err)
+		}
+		currentAlgorithm := value.PayloadAlgorithm
+		if currentAlgorithm == "" && value.SHA256 != "" {
+			currentAlgorithm = algorithm
+		}
+		if currentAlgorithm == algorithm && value.SHA256 == hash && value.SizeBytes == size {
+			storedAlgorithm, storedHash, storedReference, storedSize, err := s.blobStore.StoreFile(ctx, path)
+			if err != nil {
+				return artifact.Artifact{}, fmt.Errorf("verify idempotent artifact payload: %w", err)
+			}
+			if storedAlgorithm != algorithm || storedHash != hash || storedSize != size || (value.PayloadReference != "" && value.PayloadReference != storedReference) {
+				return artifact.Artifact{}, fmt.Errorf("artifact %q payload metadata does not match blob storage", id)
+			}
+			return value, nil
+		}
+		return artifact.Artifact{}, fmt.Errorf("artifact %q already has a different payload; replace is not supported", id)
+	}
+
+	algorithm, hash, reference, size, err := s.blobStore.StoreFile(ctx, path)
+	if err != nil {
+		return artifact.Artifact{}, fmt.Errorf("store artifact payload: %w", err)
+	}
+	importedAt := s.now()
+	value.PayloadAlgorithm = algorithm
+	value.SHA256 = hash
+	value.SizeBytes = size
+	value.PayloadReference = reference
+	value.PayloadStatus = artifact.PayloadAvailable
+	value.PayloadImportedBy = actor
+	value.PayloadImportedAt = &importedAt
+	if err := s.repository.SaveArtifact(ctx, value); err != nil {
+		return artifact.Artifact{}, err
+	}
+	if err := s.auditPayloadImported(ctx, value, actor); err != nil {
+		return artifact.Artifact{}, err
+	}
+	return value, nil
+}
+
+func (s *Service) auditPayloadImported(ctx context.Context, value artifact.Artifact, actor string) error {
+	id, err := s.newID("audit")
+	if err != nil {
+		return err
+	}
+	return s.repository.AppendAuditEvent(ctx, audit.Event{
+		ID: id, ProjectID: value.ProjectID, ActorID: actor, Action: ActionPayloadImported, TargetType: "artifact", TargetID: value.ID,
+		Metadata: map[string]string{
+			"artifactId": value.ID, "artifactName": value.Name, "actor": actor,
+			"payloadAlgorithm": value.PayloadAlgorithm, "payloadHash": value.SHA256, "payloadSize": strconv.FormatInt(value.SizeBytes, 10),
+		},
+		CreatedAt: s.now(),
+	})
+}
+
 func (s *Service) RegisterFile(ctx context.Context, id, name, path, uploader string, kind artifact.Type, versions, loaders []string) (artifact.Artifact, error) {
 	if id == "" || name == "" || uploader == "" {
 		return artifact.Artifact{}, fmt.Errorf("artifact requires id, name, and uploader")
@@ -67,7 +167,7 @@ func (s *Service) RegisterFile(ctx context.Context, id, name, path, uploader str
 	if err != nil {
 		return artifact.Artifact{}, fmt.Errorf("hash artifact: %w", err)
 	}
-	value := artifact.Artifact{ID: id, Name: name, Type: kind, UploaderID: uploader, SHA256: hash, SizeBytes: size, PayloadStatus: artifact.PayloadAvailable, TargetMinecraftVersions: versions, LoaderCompatibility: loaders, Status: artifact.StatusPending, CreatedAt: time.Now().UTC()}
+	value := artifact.Artifact{ID: id, Name: name, Type: kind, UploaderID: uploader, SHA256: hash, SizeBytes: size, PayloadStatus: artifact.PayloadAvailable, PayloadAlgorithm: "sha256", TargetMinecraftVersions: versions, LoaderCompatibility: loaders, Status: artifact.StatusPending, CreatedAt: time.Now().UTC()}
 	if err := s.repository.SaveArtifact(ctx, value); err != nil {
 		return artifact.Artifact{}, err
 	}

@@ -23,6 +23,7 @@ import (
 	"github.com/stratummc/stratum/internal/domain/runtimeobservation"
 	"github.com/stratummc/stratum/internal/domain/session"
 	stratumerrors "github.com/stratummc/stratum/internal/errors"
+	"github.com/stratummc/stratum/internal/repository/artifactblob"
 	"github.com/stratummc/stratum/internal/repository/filesystem"
 	"github.com/stratummc/stratum/internal/service/artifactstagingsvc"
 	"github.com/stratummc/stratum/internal/service/artifactsvc"
@@ -32,11 +33,13 @@ import (
 )
 
 const defaultDataDirectory = ".stratum/data"
+const defaultArtifactBlobRoot = ".stratum/artifacts"
 
 func Run(args []string, stdout, stderr io.Writer) int {
 	global := flag.NewFlagSet("stratum", flag.ContinueOnError)
 	global.SetOutput(stderr)
 	dataDirectory := global.String("data-dir", defaultDataDirectory, "metadata data directory")
+	artifactBlobRoot := global.String("artifact-blob-root", defaultArtifactBlobRoot, "artifact blob storage root")
 	agentURL := global.String("agent-url", "", "agent HTTP endpoint; empty uses local fake")
 	agentToken := global.String("agent-token", "", "agent HTTP bearer token")
 	agentTimeout := global.Duration("agent-timeout", 10*time.Second, "agent HTTP request timeout")
@@ -99,6 +102,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return inspectArtifact(ctx, store, command[2:], stdout, stderr)
 	case "artifacts create":
 		return createArtifact(ctx, store, command[2:], stdout, stderr)
+	case "artifacts import-file":
+		return importArtifactFile(ctx, store, *artifactBlobRoot, command[2:], stdout, stderr)
 	case "artifacts approve", "artifacts reject":
 		return reviewArtifact(ctx, store, action, command[2:], stdout, stderr)
 	case "artifacts staging":
@@ -827,8 +832,20 @@ func inspectArtifact(ctx context.Context, store *filesystem.Store, args []string
 	if value.PayloadStatus != "" {
 		fmt.Fprintf(stdout, " payload=%s", value.PayloadStatus)
 	}
+	if value.PayloadAlgorithm != "" {
+		fmt.Fprintf(stdout, " payloadAlgorithm=%s", value.PayloadAlgorithm)
+	}
 	if value.SHA256 != "" {
 		fmt.Fprintf(stdout, " hash=%s size=%d", value.SHA256, value.SizeBytes)
+	}
+	if value.PayloadReference != "" {
+		fmt.Fprintf(stdout, " payloadReference=%s", value.PayloadReference)
+	}
+	if value.PayloadImportedBy != "" {
+		fmt.Fprintf(stdout, " payloadImportedBy=%s", value.PayloadImportedBy)
+	}
+	if value.PayloadImportedAt != nil {
+		fmt.Fprintf(stdout, " payloadImportedAt=%s", value.PayloadImportedAt.Format(time.RFC3339Nano))
 	}
 	if len(value.TargetMinecraftVersions) > 0 {
 		fmt.Fprintf(stdout, " targetVersions=%s", strings.Join(value.TargetMinecraftVersions, ","))
@@ -860,6 +877,31 @@ func createArtifact(ctx context.Context, store *filesystem.Store, args []string,
 	}
 	fmt.Fprintf(stdout, "Artifact %s name=%q type=%s status=%s project=%s payload=%s. Metadata only; no payload was uploaded, hashed, copied, mounted, installed, or executed.\n",
 		value.ID, value.Name, value.Type, value.Status, value.ProjectID, value.PayloadStatus)
+	return 0
+}
+
+func importArtifactFile(ctx context.Context, store *filesystem.Store, blobRoot string, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("artifacts import-file", stderr)
+	id := flags.String("id", "", "artifact ID")
+	path := flags.String("file", "", "local artifact payload file")
+	actor := flags.String("actor", "", "importing actor ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" || strings.TrimSpace(*path) == "" || strings.TrimSpace(*actor) == "" {
+		fmt.Fprintln(stderr, "--id, --file, and --actor are required")
+		return 2
+	}
+	blobs, err := artifactblob.New(blobRoot)
+	if err != nil {
+		return reportError(stderr, "open artifact blob store", err)
+	}
+	value, err := artifactsvc.NewWithBlobStore(store, blobs).ImportFile(ctx, *id, *path, *actor)
+	if err != nil {
+		return reportError(stderr, "import artifact payload", err)
+	}
+	fmt.Fprintf(stdout, "Artifact %s payloadAlgorithm=%s payloadHash=%s payloadSize=%d payloadStatus=%s. The artifact remains %s and was not approved, mounted, installed, or executed.\n",
+		value.ID, value.PayloadAlgorithm, value.SHA256, value.SizeBytes, value.PayloadStatus, value.Status)
 	return 0
 }
 
@@ -1034,5 +1076,5 @@ func reportError(stderr io.Writer, action string, err error) int {
 }
 
 func usage(writer io.Writer) {
-	fmt.Fprintln(writer, "usage: stratum [--data-dir PATH] [--agent-url URL] [--agent-token TOKEN] <projects|rooms|sessions|checkpoints|artifacts|operations|runtime-observations|agents> <command> [flags]")
+	fmt.Fprintln(writer, "usage: stratum [--data-dir PATH] [--artifact-blob-root PATH] [--agent-url URL] [--agent-token TOKEN] <projects|rooms|sessions|checkpoints|artifacts|operations|runtime-observations|agents> <command> [flags]")
 }

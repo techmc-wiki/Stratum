@@ -76,8 +76,26 @@ recomputed SHA-256 digest:
 The first two hexadecimal characters shard the blob directory. Repeated writes
 of identical content are idempotent, and verification recomputes the stored
 digest. Artifact metadata may later reference the returned internal blob
-reference, but this storage contract does not implement upload, import,
-mounting, copying, installation, execution, Lucy, MCDR, or Minecraft behavior.
+reference. This storage contract does not implement web upload, mounting,
+copying, installation, execution, Lucy, MCDR, or Minecraft behavior.
+
+## Artifact Payload Import
+
+`artifacts import-file --id <artifact-id> --file <path> --actor <actor>` imports
+one trusted operator-provided local regular file into the separately configured
+content-addressed blob store. The BlobStore recomputes SHA-256 and size, then
+the pending Artifact metadata records the algorithm, hash, size, internal blob
+reference, importing actor, and import time.
+
+The CLI defaults the separate blob root to `.stratum/artifacts`; operators may
+set `--artifact-blob-root <path>` before the command.
+
+Only pending Artifacts may import payloads. Repeating the same import is
+idempotent; importing different content requires a future explicit replace
+operation. Import does not approve, mount, install, copy to a runtime, or
+execute the Artifact. Approval remains a separate step, and runtime
+staging/copying remains future work. The current payload status value for a
+successfully linked blob is `available`.
 
 Lists read every `.json` record and return records ordered by filename. A
 malformed or unknown-field record stops the list with an actionable repository
@@ -120,10 +138,10 @@ exists. Agent-backed lifecycle audit events add `agentId`, `agentResult`, and
 ## Scope
 
 The metadata repository stores metadata only. Artifact blobs use the separate
-content-addressed store described above; no current CLI or service imports files
-into it or links blobs to Artifact metadata. Live session files, base worlds,
-checkpoint world snapshots, secrets, and MCDR/Lucy runtime state remain behind
-separate storage and runtime interfaces.
+content-addressed store described above, and `import-file` links Artifact
+metadata to those blobs. Live session files, base worlds, checkpoint world
+snapshots, secrets, and MCDR/Lucy runtime state remain behind separate storage
+and runtime interfaces.
 
 Agent runtime files live under the Agent `--runtime-root`, not the Controller
 metadata `--data-dir`. The current runtime layout creates per-session `work`,
