@@ -142,6 +142,10 @@ Inspection derives the manifest location from the safe runtime layout and never
 accepts an arbitrary filesystem path. Missing manifests represent an empty
 materialized-artifact list.
 
+Individual entries may be selected by their staging plan ID through the Agent
+API. The lookup reads the same fixed manifest path and introduces no additional
+Controller or Agent persistence.
+
 Lists read every `.json` record and return records ordered by filename. A
 malformed or unknown-field record stops the list with an actionable repository
 error rather than silently dropping metadata.

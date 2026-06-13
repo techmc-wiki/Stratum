@@ -48,9 +48,23 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/sessions/{id}/inspect", s.inspectSession)
 	s.mux.HandleFunc("GET /v1/sessions/{id}/logs", s.logs)
 	s.mux.HandleFunc("GET /v1/sessions/{id}/artifacts", s.materializedArtifacts)
+	s.mux.HandleFunc("GET /v1/sessions/{id}/artifacts/{plan}", s.materializedArtifact)
 	s.mux.HandleFunc("POST /v1/checkpoints/create-stub", s.checkpointStub(true))
 	s.mux.HandleFunc("POST /v1/checkpoints/restore-stub", s.checkpointStub(false))
 	s.mux.HandleFunc("POST /v1/artifacts/materialize", s.materializeArtifact)
+}
+
+func (s *Server) materializedArtifact(w http.ResponseWriter, r *http.Request) {
+	item, err := s.client.InspectMaterializedArtifact(r.Context(), r.PathValue("id"), r.PathValue("plan"))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, agent.ErrMaterializedArtifactNotFound) {
+			status = http.StatusNotFound
+		}
+		s.writeError(w, r, status, "inspect-materialized-artifact", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, MaterializedArtifactResponse{AgentID: item.AgentID, SessionID: item.SessionID, ArtifactID: item.ArtifactID, StagingPlanID: item.StagingPlanID, ArtifactName: item.ArtifactName, ArtifactType: item.ArtifactType, TargetName: item.TargetName, PayloadAlgorithm: item.PayloadAlgorithm, PayloadHash: item.PayloadHash, PayloadSize: item.PayloadSize, RuntimeRelativePath: item.RuntimeRelativePath, MaterializedAt: item.MaterializedAt, ActorID: item.ActorID, Status: item.Status, Metadata: item.Metadata, RequestID: requestID(r)})
 }
 
 func (s *Server) materializedArtifacts(w http.ResponseWriter, r *http.Request) {

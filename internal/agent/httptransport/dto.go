@@ -113,6 +113,8 @@ type ArtifactMaterializationResponse struct {
 }
 
 type MaterializedArtifactResponse struct {
+	AgentID             string            `json:"agentId,omitempty"`
+	SessionID           string            `json:"sessionId,omitempty"`
 	ArtifactID          string            `json:"artifactId"`
 	StagingPlanID       string            `json:"stagingPlanId,omitempty"`
 	ArtifactName        string            `json:"artifactName,omitempty"`
@@ -126,6 +128,7 @@ type MaterializedArtifactResponse struct {
 	ActorID             string            `json:"actorId,omitempty"`
 	Status              string            `json:"status,omitempty"`
 	Metadata            map[string]string `json:"metadata,omitempty"`
+	RequestID           string            `json:"requestId,omitempty"`
 }
 
 type MaterializedArtifactsResponse struct {

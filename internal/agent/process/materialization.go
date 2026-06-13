@@ -115,6 +115,36 @@ func InspectMaterializedArtifacts(ctx context.Context, runtimeRoot, sessionID st
 	return agent.MaterializedArtifacts{SessionID: sessionID, Status: status, Items: items}, nil
 }
 
+func InspectMaterializedArtifact(ctx context.Context, runtimeRoot, sessionID, stagingPlanID string) (agent.MaterializedArtifact, error) {
+	if err := validateMaterializationIdentifier("staging plan", stagingPlanID); err != nil {
+		return agent.MaterializedArtifact{}, err
+	}
+	result, err := InspectMaterializedArtifacts(ctx, runtimeRoot, sessionID)
+	if err != nil {
+		return agent.MaterializedArtifact{}, err
+	}
+	for _, item := range result.Items {
+		if item.StagingPlanID == stagingPlanID {
+			item.SessionID = sessionID
+			return item, nil
+		}
+	}
+	return agent.MaterializedArtifact{}, fmt.Errorf("%w: staging plan %q in session %q", agent.ErrMaterializedArtifactNotFound, stagingPlanID, sessionID)
+}
+
+func validateMaterializationIdentifier(kind, value string) error {
+	if value == "" || value == "." || value == ".." {
+		return fmt.Errorf("%s id is required", kind)
+	}
+	for _, character := range value {
+		if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') || (character >= '0' && character <= '9') || character == '-' || character == '_' || character == '.' {
+			continue
+		}
+		return fmt.Errorf("%s id %q contains unsupported characters", kind, value)
+	}
+	return nil
+}
+
 func cloneStringMap(values map[string]string) map[string]string {
 	if len(values) == 0 {
 		return nil

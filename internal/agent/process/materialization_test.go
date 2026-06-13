@@ -3,6 +3,7 @@ package process
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -135,6 +136,35 @@ func TestInspectMaterializedArtifactsRejectsUnsafeSessionAndMalformedManifest(t 
 	}
 	if _, err := InspectMaterializedArtifacts(context.Background(), root, "session-1"); err == nil || !strings.Contains(err.Error(), "decode staging manifest") {
 		t.Fatalf("malformed manifest err=%v", err)
+	}
+}
+
+func TestInspectMaterializedArtifactByStagingPlan(t *testing.T) {
+	root := t.TempDir()
+	request := materializationRequest([]byte("artifact"))
+	if _, err := MaterializeArtifact(context.Background(), root, request, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	item, err := InspectMaterializedArtifact(context.Background(), root, request.SessionID, request.StagingPlanID)
+	if err != nil || item.ArtifactID != request.ArtifactID || item.StagingPlanID != request.StagingPlanID || item.RuntimeRelativePath != "artifacts/mods/test.jar" {
+		t.Fatalf("item=%+v err=%v", item, err)
+	}
+}
+
+func TestInspectMaterializedArtifactNotFoundAndUnsafePlan(t *testing.T) {
+	root := t.TempDir()
+	if _, err := InspectMaterializedArtifact(context.Background(), root, "session-1", "plan-1"); !errors.Is(err, agent.ErrMaterializedArtifactNotFound) {
+		t.Fatalf("missing manifest err=%v", err)
+	}
+	request := materializationRequest([]byte("artifact"))
+	if _, err := MaterializeArtifact(context.Background(), root, request, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := InspectMaterializedArtifact(context.Background(), root, request.SessionID, "missing-plan"); !errors.Is(err, agent.ErrMaterializedArtifactNotFound) {
+		t.Fatalf("missing plan err=%v", err)
+	}
+	if _, err := InspectMaterializedArtifact(context.Background(), root, request.SessionID, "../escape"); err == nil || !strings.Contains(err.Error(), "unsupported characters") {
+		t.Fatalf("unsafe plan err=%v", err)
 	}
 }
 

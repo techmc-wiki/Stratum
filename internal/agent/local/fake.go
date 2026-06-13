@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -185,6 +186,10 @@ func (f *Fake) MaterializeArtifact(_ context.Context, request agent.ArtifactMate
 
 func (f *Fake) InspectMaterializedArtifacts(_ context.Context, sessionID string) (agent.MaterializedArtifacts, error) {
 	return agent.MaterializedArtifacts{AgentID: f.id, SessionID: sessionID, Status: "empty", Items: []agent.MaterializedArtifact{}}, nil
+}
+
+func (f *Fake) InspectMaterializedArtifact(_ context.Context, sessionID, stagingPlanID string) (agent.MaterializedArtifact, error) {
+	return agent.MaterializedArtifact{}, fmt.Errorf("%w: staging plan %q in session %q", agent.ErrMaterializedArtifactNotFound, stagingPlanID, sessionID)
 }
 
 func (f *Fake) record(operation agent.Operation) error {

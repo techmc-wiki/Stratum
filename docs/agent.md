@@ -153,6 +153,13 @@ This endpoint confirms what has been staged into the Agent runtime layout. It
 does not read artifact payload contents or install, mount, load, execute, or
 remove files.
 
+## Inspecting One Materialized Artifact
+
+`GET /v1/sessions/{id}/artifacts/{staging-plan-id}` validates both identifiers
+and finds one entry in the Agent-owned materialization manifest. Missing
+manifests and missing entries return HTTP 404. The lookup is read-only and never
+opens the materialized payload.
+
 ## Why Agent controls MCDR, not the other way around
 
 MCDR is itself a process that requires supervision. A future trusted

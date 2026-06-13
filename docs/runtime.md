@@ -180,6 +180,13 @@ artifact manifest and reports the materialized entries for that Session. A
 missing manifest returns an empty result. Inspection is read-only: it does not
 verify payload files, install, mount, load, execute, or inspect jar contents.
 
+## Inspecting One Materialized Artifact
+
+`sessions artifacts inspect --id <session-id> --plan <staging-plan-id>` performs
+a read-only lookup by Session and staging plan ID. It reads the same Agent-owned
+manifest and returns one entry; a missing manifest or plan returns not found.
+The command does not verify, install, mount, load, or execute the artifact.
+
 ## Artifact Approval
 
 Artifact approval is metadata-only review. `artifacts approve` and `artifacts

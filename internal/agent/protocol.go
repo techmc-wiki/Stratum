@@ -2,10 +2,13 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
 )
+
+var ErrMaterializedArtifactNotFound = errors.New("materialized artifact not found")
 
 type requestIDContextKey struct{}
 type logMaxBytesContextKey struct{}
@@ -88,6 +91,8 @@ type ArtifactMaterializationResult struct {
 }
 
 type MaterializedArtifact struct {
+	AgentID             string
+	SessionID           string
 	ArtifactID          string
 	StagingPlanID       string
 	ArtifactName        string
@@ -193,6 +198,7 @@ type AgentClient interface {
 	RestoreCheckpointStub(context.Context, CheckpointRequest) (OperationResult, error)
 	MaterializeArtifact(context.Context, ArtifactMaterializationRequest) (ArtifactMaterializationResult, error)
 	InspectMaterializedArtifacts(context.Context, string) (MaterializedArtifacts, error)
+	InspectMaterializedArtifact(context.Context, string, string) (MaterializedArtifact, error)
 }
 
 type RuntimeAgent interface {

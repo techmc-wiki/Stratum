@@ -1156,6 +1156,11 @@ func TestCLIArtifactStagingMaterialize(t *testing.T) {
 	if code := Run([]string{"--data-dir", dataDirectory, "--agent-url", server.URL, "sessions", "artifacts", "--id", "session-1"}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "artifact=artifact-1") || !strings.Contains(stdout.String(), "runtimePath=artifacts/mods/test.jar") || !strings.Contains(stdout.String(), "status=materialized") {
 		t.Fatalf("inspect materialized: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "--agent-url", server.URL, "sessions", "artifacts", "inspect", "--id", "session-1", "--plan", planned.ID}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "artifact=artifact-1") || !strings.Contains(stdout.String(), "plan="+planned.ID) || !strings.Contains(stdout.String(), "runtimePath=artifacts/mods/test.jar") {
+		t.Fatalf("inspect one materialized: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
 }
 
 func TestCLIArtifactStagingMaterializeRequiresActorAndAgentURL(t *testing.T) {
@@ -1181,6 +1186,11 @@ func TestCLISessionArtifactsRequiresIDAndAgentURL(t *testing.T) {
 	stderr.Reset()
 	if code := Run([]string{"--data-dir", dataDirectory, "sessions", "artifacts", "--id", "session-1"}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--agent-url") {
 		t.Fatalf("agent URL code=%d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "sessions", "artifacts", "inspect", "--id", "session-1"}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--plan") {
+		t.Fatalf("plan code=%d stderr=%q", code, stderr.String())
 	}
 }
 

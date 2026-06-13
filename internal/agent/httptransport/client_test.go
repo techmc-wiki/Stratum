@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -128,6 +130,15 @@ func TestClientMaterializesArtifactThroughHTTP(t *testing.T) {
 	if err != nil || inspected.Status != "available" || len(inspected.Items) != 1 || inspected.Items[0].ArtifactID != "artifact-1" || inspected.Items[0].RuntimeRelativePath != "artifacts/test.jar" {
 		t.Fatalf("inspected=%+v err=%v", inspected, err)
 	}
+	item, err := client.InspectMaterializedArtifact(context.Background(), "session-1", "plan-1")
+	if err != nil || item.ArtifactID != "artifact-1" || item.StagingPlanID != "plan-1" || item.RuntimeRelativePath != "artifacts/test.jar" {
+		t.Fatalf("item=%+v err=%v", item, err)
+	}
+	_, err = client.InspectMaterializedArtifact(context.Background(), "session-1", "missing-plan")
+	var httpErr HTTPError
+	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusNotFound || !strings.Contains(httpErr.Message, "materialized artifact not found") {
+		t.Fatalf("missing item err=%#v", err)
+	}
 }
 
 func TestClientMaterializedArtifactsMissingManifestIsEmpty(t *testing.T) {
@@ -140,6 +151,28 @@ func TestClientMaterializedArtifactsMissingManifestIsEmpty(t *testing.T) {
 	result, err := newTestClient(t, server.URL, "").InspectMaterializedArtifacts(context.Background(), "session-1")
 	if err != nil || result.Status != "empty" || len(result.Items) != 0 {
 		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestClientMaterializedArtifactMalformedManifestReturnsStructuredError(t *testing.T) {
+	runtimeRoot := t.TempDir()
+	runtime, err := local.NewProcessAgentWithRegistryAndRoot(local.DefaultAgentID, nil, runtimeRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := filepath.Join(runtimeRoot, "sessions", "session-1", "artifacts", "staged-artifacts.json")
+	if err := os.MkdirAll(filepath.Dir(manifest), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, []byte("not-json"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(NewServer(runtime, "", nil).Handler())
+	defer server.Close()
+	_, err = newTestClient(t, server.URL, "").InspectMaterializedArtifact(context.Background(), "session-1", "plan-1")
+	var httpErr HTTPError
+	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusBadRequest || !strings.Contains(httpErr.Message, "decode staging manifest") {
+		t.Fatalf("err=%#v", err)
 	}
 }
 

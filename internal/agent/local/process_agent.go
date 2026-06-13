@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -174,6 +175,18 @@ func (a *ProcessAgent) InspectMaterializedArtifacts(ctx context.Context, session
 	result, err := agentprocess.InspectMaterializedArtifacts(ctx, a.supervisor.RuntimeRoot(), sessionID)
 	if err != nil {
 		return agent.MaterializedArtifacts{}, agent.Error{AgentID: a.id, Operation: agent.OperationInspect, Message: err.Error()}
+	}
+	result.AgentID = a.id
+	return result, nil
+}
+
+func (a *ProcessAgent) InspectMaterializedArtifact(ctx context.Context, sessionID, stagingPlanID string) (agent.MaterializedArtifact, error) {
+	result, err := agentprocess.InspectMaterializedArtifact(ctx, a.supervisor.RuntimeRoot(), sessionID, stagingPlanID)
+	if err != nil {
+		if errors.Is(err, agent.ErrMaterializedArtifactNotFound) {
+			return agent.MaterializedArtifact{}, err
+		}
+		return agent.MaterializedArtifact{}, agent.Error{AgentID: a.id, Operation: agent.OperationInspect, Message: err.Error()}
 	}
 	result.AgentID = a.id
 	return result, nil

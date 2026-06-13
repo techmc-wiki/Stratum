@@ -652,6 +652,9 @@ func sessionLogs(ctx context.Context, agentClient agent.AgentClient, args []stri
 }
 
 func sessionArtifacts(ctx context.Context, agentClient agent.AgentClient, hasAgentURL bool, args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "inspect" {
+		return inspectSessionArtifact(ctx, agentClient, hasAgentURL, args[1:], stdout, stderr)
+	}
 	flags := newFlagSet("sessions artifacts", stderr)
 	id := flags.String("id", "", "session ID")
 	if err := flags.Parse(args); err != nil {
@@ -676,6 +679,29 @@ func sessionArtifacts(ctx context.Context, agentClient agent.AgentClient, hasAge
 	for _, item := range result.Items {
 		fmt.Fprintf(stdout, "session=%s artifact=%s plan=%s name=%q type=%s target=%s algorithm=%s hash=%s size=%d runtimePath=%s actor=%s status=%s materializedAt=%s\n", result.SessionID, item.ArtifactID, item.StagingPlanID, item.ArtifactName, item.ArtifactType, item.TargetName, item.PayloadAlgorithm, item.PayloadHash, item.PayloadSize, item.RuntimeRelativePath, item.ActorID, item.Status, item.MaterializedAt.Format(time.RFC3339Nano))
 	}
+	return 0
+}
+
+func inspectSessionArtifact(ctx context.Context, agentClient agent.AgentClient, hasAgentURL bool, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("sessions artifacts inspect", stderr)
+	id := flags.String("id", "", "session ID")
+	planID := flags.String("plan", "", "staging plan ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" || *planID == "" {
+		fmt.Fprintln(stderr, "--id and --plan are required")
+		return 2
+	}
+	if !hasAgentURL {
+		fmt.Fprintln(stderr, "--agent-url is required for materialized artifact inspection")
+		return 2
+	}
+	item, err := agentClient.InspectMaterializedArtifact(ctx, *id, *planID)
+	if err != nil {
+		return reportError(stderr, "inspect materialized artifact", err)
+	}
+	fmt.Fprintf(stdout, "session=%s agent=%s artifact=%s plan=%s name=%q type=%s target=%s algorithm=%s hash=%s size=%d runtimePath=%s actor=%s status=%s materializedAt=%s\n", item.SessionID, item.AgentID, item.ArtifactID, item.StagingPlanID, item.ArtifactName, item.ArtifactType, item.TargetName, item.PayloadAlgorithm, item.PayloadHash, item.PayloadSize, item.RuntimeRelativePath, item.ActorID, item.Status, item.MaterializedAt.Format(time.RFC3339Nano))
 	return 0
 }
 
