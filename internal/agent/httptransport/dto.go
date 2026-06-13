@@ -170,6 +170,35 @@ type MaterializedArtifactsVerificationResponse struct {
 	RequestID      string                                     `json:"requestId"`
 }
 
+type ArtifactApplyDryRunRequestDTO struct {
+	ApplyPlanID        string `json:"applyPlanId"`
+	SessionID          string `json:"sessionId"`
+	StagingPlanID      string `json:"stagingPlanId"`
+	ArtifactID         string `json:"artifactId"`
+	TargetRoot         string `json:"targetRoot"`
+	TargetRelativePath string `json:"targetRelativePath"`
+	ExpectedHash       string `json:"expectedHash"`
+	ExpectedSize       int64  `json:"expectedSize"`
+}
+
+type ArtifactApplyDryRunResultDTO struct {
+	AgentID                          string    `json:"agentId"`
+	ApplyPlanID                      string    `json:"applyPlanId"`
+	SessionID                        string    `json:"sessionId"`
+	ArtifactID                       string    `json:"artifactId"`
+	StagingPlanID                    string    `json:"stagingPlanId"`
+	ApplyKind                        string    `json:"applyKind"`
+	TargetRoot                       string    `json:"targetRoot"`
+	TargetRelativePath               string    `json:"targetRelativePath"`
+	SourceRuntimeRelativePath        string    `json:"sourceRuntimeRelativePath"`
+	PlannedTargetRuntimeRelativePath string    `json:"plannedTargetRuntimeRelativePath"`
+	Action                           string    `json:"action"`
+	Status                           string    `json:"status"`
+	Issues                           []string  `json:"issues"`
+	CheckedAt                        time.Time `json:"checkedAt"`
+	RequestID                        string    `json:"requestId"`
+}
+
 type ErrorResponse struct {
 	Error     string `json:"error"`
 	Operation string `json:"operation,omitempty"`

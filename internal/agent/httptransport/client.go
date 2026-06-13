@@ -178,6 +178,15 @@ func (c *Client) VerifyMaterializedArtifacts(ctx context.Context, sessionID stri
 	return agent.MaterializedArtifactsVerification{AgentID: response.AgentID, SessionID: response.SessionID, VerifiedAt: response.VerifiedAt, Total: response.Total, ValidCount: response.ValidCount, MissingCount: response.MissingCount, CorruptedCount: response.CorruptedCount, ErrorCount: response.ErrorCount, Entries: entries}, nil
 }
 
+func (c *Client) DryRunArtifactApply(ctx context.Context, req agent.ArtifactApplyDryRunRequest) (agent.ArtifactApplyDryRunResult, error) {
+	var response ArtifactApplyDryRunResultDTO
+	body := ArtifactApplyDryRunRequestDTO{ApplyPlanID: req.ApplyPlanID, SessionID: req.SessionID, StagingPlanID: req.StagingPlanID, ArtifactID: req.ArtifactID, TargetRoot: req.TargetRoot, TargetRelativePath: req.TargetRelativePath, ExpectedHash: req.ExpectedHash, ExpectedSize: req.ExpectedSize}
+	if err := c.do(ctx, http.MethodPost, "/v1/artifacts/apply/dry-run", body, &response); err != nil {
+		return agent.ArtifactApplyDryRunResult{}, err
+	}
+	return agent.ArtifactApplyDryRunResult{AgentID: response.AgentID, ApplyPlanID: response.ApplyPlanID, SessionID: response.SessionID, ArtifactID: response.ArtifactID, StagingPlanID: response.StagingPlanID, ApplyKind: response.ApplyKind, TargetRoot: response.TargetRoot, TargetRelativePath: response.TargetRelativePath, SourceRuntimeRelativePath: response.SourceRuntimeRelativePath, PlannedTargetRuntimeRelativePath: response.PlannedTargetRuntimeRelativePath, Action: response.Action, Status: response.Status, Issues: response.Issues, CheckedAt: response.CheckedAt}, nil
+}
+
 func (c *Client) sessionOperation(ctx context.Context, request agent.SessionRequest, operation string) (agent.OperationResult, error) {
 	var response SessionOperationResponse
 	body := SessionOperationRequest{ProjectID: request.ProjectID, EnvironmentID: request.EnvironmentID, RuntimeProfileID: request.RuntimeProfileID}

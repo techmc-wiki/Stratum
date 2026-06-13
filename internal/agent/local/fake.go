@@ -200,6 +200,10 @@ func (f *Fake) VerifyMaterializedArtifacts(_ context.Context, sessionID string) 
 	return agent.MaterializedArtifactsVerification{AgentID: f.id, SessionID: sessionID, Entries: []agent.MaterializedArtifactVerification{}}, nil
 }
 
+func (f *Fake) DryRunArtifactApply(_ context.Context, req agent.ArtifactApplyDryRunRequest) (agent.ArtifactApplyDryRunResult, error) {
+	return agent.ArtifactApplyDryRunResult{AgentID: f.id, ApplyPlanID: req.ApplyPlanID, SessionID: req.SessionID, Status: "ready", Action: "would_copy", Issues: []string{}}, nil
+}
+
 func (f *Fake) record(operation agent.Operation) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

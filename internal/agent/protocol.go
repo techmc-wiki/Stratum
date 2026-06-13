@@ -144,6 +144,34 @@ type MaterializedArtifactsVerification struct {
 	Entries        []MaterializedArtifactVerification
 }
 
+type ArtifactApplyDryRunRequest struct {
+	ApplyPlanID        string
+	SessionID          string
+	StagingPlanID      string
+	ArtifactID         string
+	TargetRoot         string
+	TargetRelativePath string
+	ExpectedHash       string
+	ExpectedSize       int64
+}
+
+type ArtifactApplyDryRunResult struct {
+	AgentID                          string
+	ApplyPlanID                      string
+	SessionID                        string
+	ArtifactID                       string
+	StagingPlanID                    string
+	ApplyKind                        string
+	TargetRoot                       string
+	TargetRelativePath               string
+	SourceRuntimeRelativePath        string
+	PlannedTargetRuntimeRelativePath string
+	Action                           string
+	Status                           string
+	Issues                           []string
+	CheckedAt                        time.Time
+}
+
 type OperationResult struct {
 	AgentID string
 	Status  string
@@ -230,6 +258,7 @@ type AgentClient interface {
 	InspectMaterializedArtifact(context.Context, string, string) (MaterializedArtifact, error)
 	VerifyMaterializedArtifact(context.Context, string, string) (MaterializedArtifactVerification, error)
 	VerifyMaterializedArtifacts(context.Context, string) (MaterializedArtifactsVerification, error)
+	DryRunArtifactApply(context.Context, ArtifactApplyDryRunRequest) (ArtifactApplyDryRunResult, error)
 }
 
 type RuntimeAgent interface {

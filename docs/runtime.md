@@ -332,6 +332,31 @@ Operators may combine `sessions observe`, `sessions reconcile mark-crashed`,
 separate manual steps when Controller metadata and Agent runtime state diverge.
 Automatic reconciliation remains future work.
 
+## Artifact Apply Dry-Run
+
+Agent artifact apply dry-run is a read-only diagnostic that computes would-be
+target placement actions without copying, mounting, installing, or executing
+artifacts. It validates that the materialized artifact file exists, matches the
+expected hash and size, and that the target path is safe (no traversal, not
+absolute).
+
+The dry-run returns:
+
+- status: `ready`, `not_ready`, or `error`,
+- action: currently `would_copy`,
+- source runtime relative path,
+- planned target runtime relative path,
+- issues list.
+
+Dry-run does not create target directories, copy files, modify manifests,
+inspect jar contents, or execute artifacts. Actual apply execution remains
+future work. Dry-run is invoked through the Agent API at
+`POST /v1/artifacts/apply/dry-run` or via CLI:
+
+```powershell
+go run ./cmd/stratum --data-dir .stratum/data --agent-url http://127.0.0.1:8787 artifacts apply dry-run --plan <apply-plan-id> --actor bryan
+```
+
 ## MCDR RuntimeProfile future shape
 
 The following profile is conceptual and not implemented:

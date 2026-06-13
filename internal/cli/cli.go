@@ -1323,7 +1323,7 @@ func ensureResourcePolicy(ctx context.Context, store *filesystem.Store) (resourc
 
 func artifactApply(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: stratum artifacts apply <plan|list|inspect> [flags]")
+		fmt.Fprintln(stderr, "usage: stratum artifacts apply <plan|list|inspect|dry-run> [flags]")
 		return 2
 	}
 	switch args[0] {
@@ -1333,6 +1333,8 @@ func artifactApply(ctx context.Context, store *filesystem.Store, agentClient age
 		return artifactApplyList(ctx, store, args[1:], stdout, stderr)
 	case "inspect":
 		return artifactApplyInspect(ctx, store, args[1:], stdout, stderr)
+	case "dry-run":
+		return artifactApplyDryRun(ctx, store, agentClient, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown artifacts apply command %q\n", args[0])
 		return 2
@@ -1411,6 +1413,45 @@ func artifactApplyInspect(ctx context.Context, store *filesystem.Store, args []s
 	if plan.RejectionReason != "" {
 		fmt.Fprintf(stdout, "Rejection: %s\n", plan.RejectionReason)
 	}
+	return 0
+}
+
+func artifactApplyDryRun(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("artifacts apply dry-run", stderr)
+	planID := flags.String("plan", "", "apply plan ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *planID == "" {
+		fmt.Fprintln(stderr, "--plan is required")
+		return 2
+	}
+	service := artifactapplysvc.New(store, nil)
+	plan, err := service.Get(ctx, *planID)
+	if err != nil {
+		return reportError(stderr, "get artifact apply plan", err)
+	}
+	if plan.Status != artifactapply.StatusPlanned {
+		fmt.Fprintf(stderr, "apply plan status is %s, not planned\n", plan.Status)
+		return 1
+	}
+	req := agent.ArtifactApplyDryRunRequest{ApplyPlanID: plan.ID, SessionID: plan.SessionID, StagingPlanID: plan.SourceStagingPlanID, ArtifactID: plan.ArtifactID, TargetRoot: string(plan.TargetRoot), TargetRelativePath: plan.TargetRelativePath, ExpectedHash: plan.MaterializedArtifactHash}
+	result, err := agentClient.DryRunArtifactApply(ctx, req)
+	if err != nil {
+		return reportError(stderr, "dry-run artifact apply", err)
+	}
+	fmt.Fprintf(stdout, "Dry-run result for apply plan %s:\n", result.ApplyPlanID)
+	fmt.Fprintf(stdout, "Status: %s\n", result.Status)
+	fmt.Fprintf(stdout, "Action: %s\n", result.Action)
+	fmt.Fprintf(stdout, "Source: %s\n", result.SourceRuntimeRelativePath)
+	fmt.Fprintf(stdout, "Target: %s\n", result.PlannedTargetRuntimeRelativePath)
+	if len(result.Issues) > 0 {
+		fmt.Fprintf(stdout, "Issues:\n")
+		for _, issue := range result.Issues {
+			fmt.Fprintf(stdout, "  - %s\n", issue)
+		}
+	}
+	fmt.Fprintln(stdout, "No files were copied, mounted, installed, or executed.")
 	return 0
 }
 

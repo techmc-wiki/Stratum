@@ -262,3 +262,29 @@ The current transport supplies request IDs, a client timeout, and a shared
 token placeholder. MCDR, Minecraft, Lucy, runtime reconciliation, production
 authentication, TLS configuration, retry policy, durable Agent runtime
 recovery, and transactional outbox behavior remain TODO.
+
+## Artifact Apply Dry-Run
+
+Agent dry-run reads apply plans and materialized artifacts to compute would-be
+target placement actions without copying, mounting, installing, loading, or
+executing artifacts. Dry-run validates:
+
+- session runtime layout exists,
+- materialized artifact manifest contains the staging plan,
+- materialized artifact file exists and matches expected hash/size,
+- target relative path is safe (not absolute, no traversal),
+- target root is supported (mods, config, datapacks, plugins, schematics,
+  worlds, custom).
+
+The dry-run result includes:
+
+- status: `ready`, `not_ready`, or `error`,
+- action: `would_copy` (future: `would_link`),
+- source runtime relative path,
+- planned target runtime relative path,
+- issues.
+
+Dry-run is read-only. It does not create target directories, copy files, modify
+manifests, inspect jar contents, or execute artifacts. Actual apply execution
+remains future work.
+

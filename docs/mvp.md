@@ -43,6 +43,9 @@ Minecraft server.
 - Metadata-only artifact apply plans with validated target paths, mapped kinds,
   and readiness-checked materialization references. Plans do not copy, mount, or
   execute anything.
+- Agent-side artifact apply dry-run that validates materialized file integrity,
+  computes would-be target placement paths, and returns readiness status without
+  copying, mounting, installing, or executing artifacts.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active

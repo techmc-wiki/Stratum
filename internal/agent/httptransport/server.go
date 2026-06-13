@@ -54,6 +54,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/checkpoints/create-stub", s.checkpointStub(true))
 	s.mux.HandleFunc("POST /v1/checkpoints/restore-stub", s.checkpointStub(false))
 	s.mux.HandleFunc("POST /v1/artifacts/materialize", s.materializeArtifact)
+	s.mux.HandleFunc("POST /v1/artifacts/apply/dry-run", s.dryRunArtifactApply)
 }
 
 func (s *Server) verifyMaterializedArtifacts(w http.ResponseWriter, r *http.Request) {
@@ -310,6 +311,21 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 }
 
 func requestID(r *http.Request) string { return r.Header.Get(requestIDHeader) }
+
+func (s *Server) dryRunArtifactApply(w http.ResponseWriter, r *http.Request) {
+	var dto ArtifactApplyDryRunRequestDTO
+	if err := decodeJSONLimited(r, &dto, 4096); err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "dry-run-artifact-apply", err)
+		return
+	}
+	req := agent.ArtifactApplyDryRunRequest{ApplyPlanID: dto.ApplyPlanID, SessionID: dto.SessionID, StagingPlanID: dto.StagingPlanID, ArtifactID: dto.ArtifactID, TargetRoot: dto.TargetRoot, TargetRelativePath: dto.TargetRelativePath, ExpectedHash: dto.ExpectedHash, ExpectedSize: dto.ExpectedSize}
+	result, err := s.client.DryRunArtifactApply(r.Context(), req)
+	if err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "dry-run-artifact-apply", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ArtifactApplyDryRunResultDTO{AgentID: result.AgentID, ApplyPlanID: result.ApplyPlanID, SessionID: result.SessionID, ArtifactID: result.ArtifactID, StagingPlanID: result.StagingPlanID, ApplyKind: result.ApplyKind, TargetRoot: result.TargetRoot, TargetRelativePath: result.TargetRelativePath, SourceRuntimeRelativePath: result.SourceRuntimeRelativePath, PlannedTargetRuntimeRelativePath: result.PlannedTargetRuntimeRelativePath, Action: result.Action, Status: result.Status, Issues: result.Issues, CheckedAt: result.CheckedAt, RequestID: requestID(r)})
+}
 
 func newRequestID() string {
 	bytes := make([]byte, 12)

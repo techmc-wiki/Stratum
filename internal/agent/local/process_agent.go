@@ -216,6 +216,15 @@ func (a *ProcessAgent) VerifyMaterializedArtifacts(ctx context.Context, sessionI
 	return result, nil
 }
 
+func (a *ProcessAgent) DryRunArtifactApply(ctx context.Context, req agent.ArtifactApplyDryRunRequest) (agent.ArtifactApplyDryRunResult, error) {
+	result, err := agentprocess.DryRunArtifactApply(ctx, a.supervisor.RuntimeRoot(), req, time.Now().UTC())
+	if err != nil {
+		return agent.ArtifactApplyDryRunResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationInspect, Message: err.Error()}
+	}
+	result.AgentID = a.id
+	return result, nil
+}
+
 func (a *ProcessAgent) result(message string) agent.OperationResult {
 	return agent.OperationResult{AgentID: a.id, Status: "success", Message: message, Mode: agentprocess.RuntimeModeDummy}
 }
