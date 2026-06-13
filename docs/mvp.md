@@ -40,6 +40,9 @@ Minecraft server.
 - Read-only batch verification of a Session's materialized Artifact manifest.
 - Read-only materialization readiness across Controller staging metadata and
   Agent artifact verification.
+- Metadata-only artifact apply plans with validated target paths, mapped kinds,
+  and readiness-checked materialization references. Plans do not copy, mount, or
+  execute anything.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active

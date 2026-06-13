@@ -14,6 +14,7 @@ import (
 	"github.com/stratummc/stratum/internal/agent/httptransport"
 	"github.com/stratummc/stratum/internal/agent/local"
 	"github.com/stratummc/stratum/internal/domain/artifact"
+	"github.com/stratummc/stratum/internal/domain/artifactapply"
 	"github.com/stratummc/stratum/internal/domain/artifactstaging"
 	"github.com/stratummc/stratum/internal/domain/audit"
 	"github.com/stratummc/stratum/internal/domain/checkpoint"
@@ -27,6 +28,7 @@ import (
 	stratumerrors "github.com/stratummc/stratum/internal/errors"
 	"github.com/stratummc/stratum/internal/repository/artifactblob"
 	"github.com/stratummc/stratum/internal/repository/filesystem"
+	"github.com/stratummc/stratum/internal/service/artifactapplysvc"
 	"github.com/stratummc/stratum/internal/service/artifactstagingsvc"
 	"github.com/stratummc/stratum/internal/service/artifactsvc"
 	"github.com/stratummc/stratum/internal/service/observationsvc"
@@ -115,6 +117,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return reviewArtifact(ctx, store, *artifactBlobRoot, action, command[2:], stdout, stderr)
 	case "artifacts staging":
 		return artifactStaging(ctx, store, *artifactBlobRoot, agentClient, agentMode, strings.TrimSpace(*agentURL) != "", command[2:], stdout, stderr)
+	case "artifacts apply":
+		return artifactApply(ctx, store, agentClient, command[2:], stdout, stderr)
 	case "operations list":
 		return listOperations(ctx, store, command[2:], stdout, stderr)
 	case "operations inspect":
@@ -1315,6 +1319,99 @@ func ensureResourcePolicy(ctx context.Context, store *filesystem.Store) (resourc
 		return resourcepolicy.Policy{}, err
 	}
 	return value, nil
+}
+
+func artifactApply(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "usage: stratum artifacts apply <plan|list|inspect> [flags]")
+		return 2
+	}
+	switch args[0] {
+	case "plan":
+		return artifactApplyPlan(ctx, store, agentClient, args[1:], stdout, stderr)
+	case "list":
+		return artifactApplyList(ctx, store, args[1:], stdout, stderr)
+	case "inspect":
+		return artifactApplyInspect(ctx, store, args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown artifacts apply command %q\n", args[0])
+		return 2
+	}
+}
+
+func artifactApplyPlan(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("artifacts apply plan", stderr)
+	sessionID := flags.String("session", "", "session ID")
+	stagingPlanID := flags.String("staging-plan", "", "staging plan ID")
+	actor := flags.String("actor", "", "actor ID")
+	target := flags.String("target", "", "target relative path")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *sessionID == "" || *stagingPlanID == "" || *actor == "" || *target == "" {
+		fmt.Fprintln(stderr, "--session, --staging-plan, --actor, and --target are required")
+		return 2
+	}
+	service := artifactapplysvc.New(store, agentClient)
+	plan, err := service.CreatePlan(ctx, artifactapplysvc.CreateParams{SessionID: *sessionID, StagingPlanID: *stagingPlanID, ActorID: *actor, TargetPath: *target})
+	if err != nil {
+		return reportError(stderr, "create artifact apply plan", err)
+	}
+	fmt.Fprintf(stdout, "Artifact apply plan %s status=%s kind=%s root=%s target=%s rejection=%q. No file was copied, mounted, installed, or executed.\n", plan.ID, plan.Status, plan.ApplyKind, plan.TargetRoot, plan.TargetRelativePath, plan.RejectionReason)
+	return 0
+}
+
+func artifactApplyList(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("artifacts apply list", stderr)
+	sessionID := flags.String("session", "", "filter by session ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	service := artifactapplysvc.New(store, nil)
+	var values []artifactapply.Plan
+	var err error
+	if *sessionID != "" {
+		values, err = service.ListBySession(ctx, *sessionID)
+	} else {
+		values, err = service.List(ctx)
+	}
+	if err != nil {
+		return reportError(stderr, "list artifact apply plans", err)
+	}
+	for _, value := range values {
+		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\t%s\t%s\n", value.ID, value.SessionID, value.ArtifactID, value.Status, value.ApplyKind, value.TargetRelativePath)
+	}
+	return 0
+}
+
+func artifactApplyInspect(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("artifacts apply inspect", stderr)
+	id := flags.String("id", "", "apply plan ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" {
+		fmt.Fprintln(stderr, "--id is required")
+		return 2
+	}
+	service := artifactapplysvc.New(store, nil)
+	plan, err := service.Get(ctx, *id)
+	if err != nil {
+		return reportError(stderr, "get artifact apply plan", err)
+	}
+	fmt.Fprintf(stdout, "Apply Plan %s\n", plan.ID)
+	fmt.Fprintf(stdout, "Session: %s\n", plan.SessionID)
+	fmt.Fprintf(stdout, "Artifact: %s\n", plan.ArtifactID)
+	fmt.Fprintf(stdout, "Status: %s\n", plan.Status)
+	fmt.Fprintf(stdout, "ApplyKind: %s\n", plan.ApplyKind)
+	fmt.Fprintf(stdout, "TargetRoot: %s\n", plan.TargetRoot)
+	fmt.Fprintf(stdout, "TargetPath: %s\n", plan.TargetRelativePath)
+	fmt.Fprintf(stdout, "Hash: %s\n", plan.MaterializedArtifactHash)
+	fmt.Fprintf(stdout, "Name: %s\n", plan.MaterializedArtifactName)
+	if plan.RejectionReason != "" {
+		fmt.Fprintf(stdout, "Rejection: %s\n", plan.RejectionReason)
+	}
+	return 0
 }
 
 func buildAgentClient(rawURL, token string, timeout time.Duration) (agent.AgentClient, string, error) {
