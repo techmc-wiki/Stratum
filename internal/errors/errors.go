@@ -1,6 +1,9 @@
 package errors
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 type Kind string
 
@@ -28,15 +31,6 @@ func (e Error) Error() string {
 func (e Error) Unwrap() error { return e.Cause }
 
 func IsKind(err error, kind Kind) bool {
-	for err != nil {
-		if typed, ok := err.(Error); ok && typed.Kind == kind {
-			return true
-		}
-		unwrapper, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return false
-		}
-		err = unwrapper.Unwrap()
-	}
-	return false
+	var target Error
+	return errors.As(err, &target) && target.Kind == kind
 }
