@@ -138,3 +138,17 @@ func TestPutFileComputesContentAddress(t *testing.T) {
 		t.Fatalf("verified=%+v err=%v", verified, err)
 	}
 }
+
+func TestOpenIsReadOnly(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "missing-artifact-storage")
+	store, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Verify(context.Background(), strings.Repeat("a", 64)); err == nil || !stratumerrors.IsKind(err, stratumerrors.KindNotFound) {
+		t.Fatalf("verify err=%v", err)
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Fatalf("read-only open created root: err=%v", err)
+	}
+}

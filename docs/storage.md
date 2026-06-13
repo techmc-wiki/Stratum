@@ -97,6 +97,18 @@ execute the Artifact. Approval remains a separate step, and runtime
 staging/copying remains future work. The current payload status value for a
 successfully linked blob is `available`.
 
+## Blob Verification
+
+`artifacts blobs verify --sha256 <hash>` opens the configured Artifact BlobStore
+and recomputes the stored content hash. It reports the SHA-256 algorithm, hash,
+size, internal reference, and `valid` status for intact content; missing and
+corrupted blobs return explicit failure statuses. The command is read-only and
+does not create the blob root when it is absent.
+
+Verification does not change Artifact metadata, write audit or Operation
+records, approve Artifacts, mount or copy blobs, install mods, or execute files.
+Runtime staging remains future work.
+
 Lists read every `.json` record and return records ordered by filename. A
 malformed or unknown-field record stops the list with an actionable repository
 error rather than silently dropping metadata.

@@ -104,6 +104,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return createArtifact(ctx, store, command[2:], stdout, stderr)
 	case "artifacts import-file":
 		return importArtifactFile(ctx, store, *artifactBlobRoot, command[2:], stdout, stderr)
+	case "artifacts blobs":
+		return artifactBlobs(ctx, *artifactBlobRoot, command[2:], stdout, stderr)
 	case "artifacts approve", "artifacts reject":
 		return reviewArtifact(ctx, store, action, command[2:], stdout, stderr)
 	case "artifacts staging":
@@ -902,6 +904,39 @@ func importArtifactFile(ctx context.Context, store *filesystem.Store, blobRoot s
 	}
 	fmt.Fprintf(stdout, "Artifact %s payloadAlgorithm=%s payloadHash=%s payloadSize=%d payloadStatus=%s. The artifact remains %s and was not approved, mounted, installed, or executed.\n",
 		value.ID, value.PayloadAlgorithm, value.SHA256, value.SizeBytes, value.PayloadStatus, value.Status)
+	return 0
+}
+
+func artifactBlobs(ctx context.Context, blobRoot string, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 || args[0] != "verify" {
+		fmt.Fprintln(stderr, "usage: stratum artifacts blobs verify --sha256 HASH")
+		return 2
+	}
+	flags := newFlagSet("artifacts blobs verify", stderr)
+	hash := flags.String("sha256", "", "SHA-256 content hash")
+	if err := flags.Parse(args[1:]); err != nil {
+		return 2
+	}
+	if *hash == "" {
+		fmt.Fprintln(stderr, "--sha256 is required")
+		return 2
+	}
+	blobs, err := artifactblob.Open(blobRoot)
+	if err != nil {
+		return reportError(stderr, "open artifact blob store", err)
+	}
+	metadata, err := blobs.Verify(ctx, *hash)
+	if err != nil {
+		if stratumerrors.IsKind(err, stratumerrors.KindNotFound) {
+			fmt.Fprintf(stderr, "algorithm=sha256 hash=%s status=missing\n", *hash)
+		} else if stratumerrors.IsKind(err, stratumerrors.KindValidation) {
+			return reportError(stderr, "verify artifact blob", err)
+		} else if strings.Contains(err.Error(), "hash mismatch") {
+			fmt.Fprintf(stderr, "algorithm=sha256 hash=%s status=corrupted\n", *hash)
+		}
+		return reportError(stderr, "verify artifact blob", err)
+	}
+	fmt.Fprintf(stdout, "algorithm=%s hash=%s size=%d status=valid reference=%s\n", metadata.Algorithm, metadata.Hash, metadata.Size, metadata.Reference)
 	return 0
 }
 

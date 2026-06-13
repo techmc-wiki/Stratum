@@ -161,6 +161,10 @@ and `artifacts import-file` can link a trusted local file to pending Artifact
 metadata. Import does not copy or mount the blob into an Agent runtime;
 runtime staging and mounting remain future work.
 
+`artifacts blobs verify` only recomputes a content-addressed blob's SHA-256. It
+does not mutate Artifact metadata, approve content, or interact with Agent
+runtime directories.
+
 `artifacts create` creates the pending metadata record used by this workflow.
 It records project ownership, type, creator, and an explicit `metadata-only`
 payload status. It accepts no path and does not produce a placeholder hash.

@@ -37,6 +37,27 @@ type Store struct {
 
 func New(root string) (*Store, error) {
 	const operation = "artifactblob.New"
+	store, err := open(root, operation)
+	if err != nil {
+		return nil, err
+	}
+	for _, directory := range []string{filepath.Join(store.BlobRoot, Algorithm), store.tempRoot} {
+		if err := os.MkdirAll(directory, directoryPermissions); err != nil {
+			return nil, storageError(operation, "create artifact blob directory", err)
+		}
+	}
+	store.resolvedBlobRoot, err = filepath.EvalSymlinks(store.BlobRoot)
+	if err != nil {
+		return nil, storageError(operation, "resolve artifact blob directory", err)
+	}
+	return store, nil
+}
+
+func Open(root string) (*Store, error) {
+	return open(root, "artifactblob.Open")
+}
+
+func open(root, operation string) (*Store, error) {
 	if strings.TrimSpace(root) == "" {
 		return nil, validationError(operation, "artifact blob storage root is required")
 	}
@@ -45,17 +66,7 @@ func New(root string) (*Store, error) {
 		return nil, storageError(operation, "resolve artifact blob storage root", err)
 	}
 	blobRoot := filepath.Join(filepath.Clean(absoluteRoot), "blobs")
-	store := &Store{Root: filepath.Clean(absoluteRoot), BlobRoot: blobRoot, tempRoot: filepath.Join(blobRoot, ".tmp")}
-	for _, directory := range []string{filepath.Join(blobRoot, Algorithm), store.tempRoot} {
-		if err := os.MkdirAll(directory, directoryPermissions); err != nil {
-			return nil, storageError(operation, "create artifact blob directory", err)
-		}
-	}
-	store.resolvedBlobRoot, err = filepath.EvalSymlinks(blobRoot)
-	if err != nil {
-		return nil, storageError(operation, "resolve artifact blob directory", err)
-	}
-	return store, nil
+	return &Store{Root: filepath.Clean(absoluteRoot), BlobRoot: blobRoot, tempRoot: filepath.Join(blobRoot, ".tmp")}, nil
 }
 
 func ComputeSHA256(reader io.Reader) (hash string, size int64, err error) {

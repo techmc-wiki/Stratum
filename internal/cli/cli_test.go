@@ -841,6 +841,101 @@ func TestCLIArtifactImportFileStoresAndInspectsPayload(t *testing.T) {
 	}
 }
 
+func TestCLIArtifactBlobVerifyIsReadOnly(t *testing.T) {
+	root := t.TempDir()
+	dataDirectory := filepath.Join(root, "data")
+	blobRoot := filepath.Join(root, "artifacts")
+	payloadPath := filepath.Join(root, "payload.jar")
+	if err := os.WriteFile(payloadPath, []byte("verified payload"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	base := []string{"--data-dir", dataDirectory, "--artifact-blob-root", blobRoot}
+	var stdout, stderr bytes.Buffer
+	for _, command := range [][]string{
+		{"projects", "create", "--id", "project-1", "--name", "Project"},
+		{"artifacts", "create", "--id", "artifact-1", "--name", "Artifact", "--type", "jar", "--project", "project-1", "--actor", "creator-1"},
+		{"artifacts", "import-file", "--id", "artifact-1", "--file", payloadPath, "--actor", "importer-1"},
+	} {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(append(append([]string{}, base...), command...), &stdout, &stderr); code != 0 {
+			t.Fatalf("command=%v code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.GetArtifact(context.Background(), "artifact-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventsBefore, err := store.ListAuditEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	operationsBefore, err := store.ListOperations(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, base...), "artifacts", "blobs", "verify", "--sha256", before.SHA256), &stdout, &stderr); code != 0 {
+		t.Fatalf("verify code=%d stderr=%q", code, stderr.String())
+	}
+	for _, want := range []string{"algorithm=sha256", "hash=" + before.SHA256, "size=16", "status=valid", "reference=sha256/"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("verify stdout=%q missing %q", stdout.String(), want)
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	missingHash := strings.Repeat("a", 64)
+	if code := Run(append(append([]string{}, base...), "artifacts", "blobs", "verify", "--sha256", missingHash), &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "status=missing") || !strings.Contains(stderr.String(), "blob does not exist") {
+		t.Fatalf("missing code=%d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, base...), "artifacts", "blobs", "verify", "--sha256", "invalid"), &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "validation") {
+		t.Fatalf("invalid code=%d stderr=%q", code, stderr.String())
+	}
+
+	blobs, err := artifactblob.Open(blobRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blobPath, err := blobs.Path(before.SHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(blobPath, []byte("corrupted"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, base...), "artifacts", "blobs", "verify", "--sha256", before.SHA256), &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "status=corrupted") || !strings.Contains(stderr.String(), "hash mismatch") {
+		t.Fatalf("corrupted code=%d stderr=%q", code, stderr.String())
+	}
+
+	after, err := store.GetArtifact(context.Background(), "artifact-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventsAfter, err := store.ListAuditEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	operationsAfter, err := store.ListOperations(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(after, before) || len(eventsAfter) != len(eventsBefore) || len(operationsAfter) != len(operationsBefore) {
+		t.Fatalf("verify mutated control-plane state: artifact=%t events=%d->%d operations=%d->%d", !reflect.DeepEqual(after, before), len(eventsBefore), len(eventsAfter), len(operationsBefore), len(operationsAfter))
+	}
+}
+
 func TestCLIArtifactStagingPlanListAndInspect(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")
