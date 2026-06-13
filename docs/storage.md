@@ -52,12 +52,32 @@ The command does not upload, hash, copy, mount, install, or execute anything.
 
 Approval remains a separate explicit review step. A metadata-only artifact may
 be referenced by a staging plan after approval, but an empty artifact hash in
-that plan means no payload blob is available. Payload upload and blob storage
-remain future work.
+that plan means no payload blob is linked. Payload upload/import remains future
+work.
 
 `artifacts inspect --id <artifact-id>` reads and prints the stored Artifact
-metadata without changing it or writing an audit event. It does not read or
-inspect payload files because payload storage remains future work.
+metadata without changing it or writing an audit event. It does not read blob
+content because payload import and Artifact-to-blob linking remain future work.
+
+## Artifact Blob Storage
+
+Artifact blobs use a separate, explicitly configured storage root rather than
+the metadata `--data-dir`. `ArtifactBlobStore` stores immutable content by its
+recomputed SHA-256 digest:
+
+```text
+<artifact-root>/
+  blobs/
+    sha256/
+      ab/
+        <full-sha256>
+```
+
+The first two hexadecimal characters shard the blob directory. Repeated writes
+of identical content are idempotent, and verification recomputes the stored
+digest. Artifact metadata may later reference the returned internal blob
+reference, but this storage contract does not implement upload, import,
+mounting, copying, installation, execution, Lucy, MCDR, or Minecraft behavior.
 
 Lists read every `.json` record and return records ordered by filename. A
 malformed or unknown-field record stops the list with an actionable repository
@@ -99,10 +119,11 @@ exists. Agent-backed lifecycle audit events add `agentId`, `agentResult`, and
 
 ## Scope
 
-This repository stores metadata only. It does not store uploaded artifact
-payloads, live session files, base worlds, checkpoint world snapshots, secrets,
-or MCDR/Lucy runtime state. Those remain behind separate storage and runtime
-interfaces.
+The metadata repository stores metadata only. Artifact blobs use the separate
+content-addressed store described above; no current CLI or service imports files
+into it or links blobs to Artifact metadata. Live session files, base worlds,
+checkpoint world snapshots, secrets, and MCDR/Lucy runtime state remain behind
+separate storage and runtime interfaces.
 
 Agent runtime files live under the Agent `--runtime-root`, not the Controller
 metadata `--data-dir`. The current runtime layout creates per-session `work`,

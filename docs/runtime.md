@@ -156,8 +156,8 @@ Artifact approval is metadata-only review. `artifacts approve` and `artifacts
 reject` transition pending artifact metadata, record reviewer and reason fields,
 and append audit events. Approval does not copy, mount, install, or execute
 payloads; it only makes the artifact eligible for future staging plans. Rejected
-artifacts cannot be staged. Payload storage, upload, and runtime mounting remain
-future work.
+artifacts cannot be staged. A content-addressed BlobStore exists independently,
+but upload/import, metadata linking, and runtime mounting remain future work.
 
 `artifacts create` creates the pending metadata record used by this workflow.
 It records project ownership, type, creator, and an explicit `metadata-only`
