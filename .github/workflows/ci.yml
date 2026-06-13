@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vet-test-build:
+    name: Vet, test, and build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -count=1 ./...
+
+      - name: Build Linux amd64 binaries
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          mkdir -p dist/linux-amd64
+          go build -trimpath -o dist/linux-amd64/stratum ./cmd/stratum
+          go build -trimpath -o dist/linux-amd64/stratum-agent ./cmd/stratum-agent
+          go build -trimpath -o dist/linux-amd64/stratum-controller ./cmd/stratum-controller
+
+      - name: Upload Linux amd64 binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: stratum-linux-amd64
+          path: dist/linux-amd64/
+          if-no-files-found: error
