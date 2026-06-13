@@ -31,18 +31,21 @@ func LogMaxBytesFromContext(ctx context.Context) int {
 type Operation string
 
 const (
-	OperationPrepare           Operation = "prepare"
-	OperationStart             Operation = "start"
-	OperationStop              Operation = "stop"
-	OperationRestart           Operation = "restart"
-	OperationFreeze            Operation = "freeze"
-	OperationUnfreeze          Operation = "unfreeze"
-	OperationInspect           Operation = "inspect"
-	OperationCollectLogs       Operation = "collect-logs"
-	OperationReportResources   Operation = "report-resources"
-	OperationCreateCheckpoint  Operation = "create-checkpoint"
-	OperationRestoreCheckpoint Operation = "restore-checkpoint"
+	OperationPrepare             Operation = "prepare"
+	OperationStart               Operation = "start"
+	OperationStop                Operation = "stop"
+	OperationRestart             Operation = "restart"
+	OperationFreeze              Operation = "freeze"
+	OperationUnfreeze            Operation = "unfreeze"
+	OperationInspect             Operation = "inspect"
+	OperationCollectLogs         Operation = "collect-logs"
+	OperationReportResources     Operation = "report-resources"
+	OperationCreateCheckpoint    Operation = "create-checkpoint"
+	OperationRestoreCheckpoint   Operation = "restore-checkpoint"
+	OperationMaterializeArtifact Operation = "materialize-artifact"
 )
+
+const MaxArtifactPayloadBytes = 64 << 20
 
 type SessionRequest struct {
 	SessionID        string
@@ -54,6 +57,34 @@ type SessionRequest struct {
 type CheckpointRequest struct {
 	SessionID    string
 	CheckpointID string
+}
+
+type ArtifactMaterializationRequest struct {
+	SessionID        string
+	ArtifactID       string
+	StagingPlanID    string
+	ArtifactName     string
+	ArtifactType     string
+	TargetName       string
+	PayloadAlgorithm string
+	PayloadHash      string
+	PayloadSize      int64
+	ActorID          string
+	Payload          []byte
+}
+
+type ArtifactMaterializationResult struct {
+	AgentID             string
+	SessionID           string
+	ArtifactID          string
+	StagingPlanID       string
+	TargetName          string
+	RuntimeRelativePath string
+	PayloadHash         string
+	PayloadSize         int64
+	MaterializedAt      time.Time
+	Idempotent          bool
+	Status              string
 }
 
 type OperationResult struct {
@@ -137,6 +168,7 @@ type AgentClient interface {
 	ReportResources(context.Context) (ResourceReport, error)
 	CreateCheckpointStub(context.Context, CheckpointRequest) (OperationResult, error)
 	RestoreCheckpointStub(context.Context, CheckpointRequest) (OperationResult, error)
+	MaterializeArtifact(context.Context, ArtifactMaterializationRequest) (ArtifactMaterializationResult, error)
 }
 
 type RuntimeAgent interface {

@@ -161,6 +161,15 @@ func (a *ProcessAgent) RestoreCheckpointStub(_ context.Context, request agent.Ch
 	return a.result("checkpoint-stub-restored:" + request.CheckpointID), nil
 }
 
+func (a *ProcessAgent) MaterializeArtifact(ctx context.Context, request agent.ArtifactMaterializationRequest) (agent.ArtifactMaterializationResult, error) {
+	result, err := agentprocess.MaterializeArtifact(ctx, a.supervisor.RuntimeRoot(), request, time.Now().UTC())
+	if err != nil {
+		return agent.ArtifactMaterializationResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationMaterializeArtifact, Message: err.Error()}
+	}
+	result.AgentID = a.id
+	return result, nil
+}
+
 func (a *ProcessAgent) result(message string) agent.OperationResult {
 	return agent.OperationResult{AgentID: a.id, Status: "success", Message: message, Mode: agentprocess.RuntimeModeDummy}
 }

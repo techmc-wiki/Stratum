@@ -83,6 +83,35 @@ type CheckpointStubRequest struct {
 
 type CheckpointStubResponse = SessionOperationResponse
 
+type ArtifactMaterializationRequest struct {
+	SessionID        string `json:"sessionId"`
+	ArtifactID       string `json:"artifactId"`
+	StagingPlanID    string `json:"stagingPlanId"`
+	ArtifactName     string `json:"artifactName"`
+	ArtifactType     string `json:"artifactType"`
+	TargetName       string `json:"targetName"`
+	PayloadAlgorithm string `json:"payloadAlgorithm"`
+	PayloadHash      string `json:"payloadHash"`
+	PayloadSize      int64  `json:"payloadSize"`
+	ActorID          string `json:"actorId"`
+	Payload          []byte `json:"payload"`
+}
+
+type ArtifactMaterializationResponse struct {
+	AgentID             string    `json:"agentId"`
+	SessionID           string    `json:"sessionId"`
+	ArtifactID          string    `json:"artifactId"`
+	StagingPlanID       string    `json:"stagingPlanId"`
+	TargetName          string    `json:"targetName"`
+	RuntimeRelativePath string    `json:"runtimeRelativePath"`
+	PayloadHash         string    `json:"payloadHash"`
+	PayloadSize         int64     `json:"payloadSize"`
+	MaterializedAt      time.Time `json:"materializedAt"`
+	Idempotent          bool      `json:"idempotent"`
+	Status              string    `json:"status"`
+	RequestID           string    `json:"requestId"`
+}
+
 type ErrorResponse struct {
 	Error     string `json:"error"`
 	Operation string `json:"operation,omitempty"`

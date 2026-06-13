@@ -176,6 +176,13 @@ func (f *Fake) RestoreCheckpointStub(_ context.Context, request agent.Checkpoint
 	return f.result("checkpoint-stub-restored:" + request.CheckpointID), nil
 }
 
+func (f *Fake) MaterializeArtifact(_ context.Context, request agent.ArtifactMaterializationRequest) (agent.ArtifactMaterializationResult, error) {
+	if err := f.record(agent.OperationMaterializeArtifact); err != nil {
+		return agent.ArtifactMaterializationResult{}, err
+	}
+	return agent.ArtifactMaterializationResult{AgentID: f.id, SessionID: request.SessionID, ArtifactID: request.ArtifactID, StagingPlanID: request.StagingPlanID, TargetName: request.TargetName, RuntimeRelativePath: "artifacts/" + request.TargetName, PayloadHash: request.PayloadHash, PayloadSize: request.PayloadSize, MaterializedAt: f.now(), Status: "materialized"}, nil
+}
+
 func (f *Fake) record(operation agent.Operation) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

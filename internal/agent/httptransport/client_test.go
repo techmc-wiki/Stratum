@@ -111,6 +111,21 @@ func TestClientTokenAccepted(t *testing.T) {
 	}
 }
 
+func TestClientMaterializesArtifactThroughHTTP(t *testing.T) {
+	runtime, err := local.NewProcessAgentWithRegistryAndRoot(local.DefaultAgentID, nil, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(NewServer(runtime, "", nil).Handler())
+	defer server.Close()
+	client := newTestClient(t, server.URL, "")
+	payload := []byte("artifact")
+	result, err := client.MaterializeArtifact(context.Background(), agent.ArtifactMaterializationRequest{SessionID: "session-1", ArtifactID: "artifact-1", StagingPlanID: "plan-1", ArtifactName: "Test", ArtifactType: "jar", TargetName: "test.jar", PayloadAlgorithm: "sha256", PayloadHash: "c7c5c1d70c5dec4416ab6158afd0b223ef40c29b1dc1f97ed9428b94d4cadb1c", PayloadSize: int64(len(payload)), ActorID: "actor-1", Payload: payload})
+	if err != nil || result.Status != "materialized" || result.AgentID != local.DefaultAgentID || result.RuntimeRelativePath != "artifacts/test.jar" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
 func newTestClient(t *testing.T, rawURL, token string) *Client {
 	t.Helper()
 	client, err := NewClient(rawURL, token, time.Second)

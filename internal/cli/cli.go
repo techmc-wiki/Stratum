@@ -2,9 +2,11 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -30,6 +32,7 @@ import (
 	"github.com/stratummc/stratum/internal/service/observationsvc"
 	"github.com/stratummc/stratum/internal/service/reconcilesvc"
 	"github.com/stratummc/stratum/internal/service/sessionsvc"
+	"github.com/stratummc/stratum/internal/util"
 )
 
 const defaultDataDirectory = ".stratum/data"
@@ -109,7 +112,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "artifacts approve", "artifacts reject":
 		return reviewArtifact(ctx, store, *artifactBlobRoot, action, command[2:], stdout, stderr)
 	case "artifacts staging":
-		return artifactStaging(ctx, store, *artifactBlobRoot, command[2:], stdout, stderr)
+		return artifactStaging(ctx, store, *artifactBlobRoot, agentClient, agentMode, strings.TrimSpace(*agentURL) != "", command[2:], stdout, stderr)
 	case "operations list":
 		return listOperations(ctx, store, command[2:], stdout, stderr)
 	case "operations inspect":
@@ -976,9 +979,9 @@ func reviewArtifact(ctx context.Context, store *filesystem.Store, blobRoot, acti
 	return 0
 }
 
-func artifactStaging(ctx context.Context, store *filesystem.Store, blobRoot string, args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 || (args[0] != "plan" && args[0] != "list" && args[0] != "inspect") {
-		fmt.Fprintln(stderr, "usage: stratum artifacts staging <plan|list|inspect> [flags]")
+func artifactStaging(ctx context.Context, store *filesystem.Store, blobRoot string, agentClient agent.AgentClient, agentMode string, hasAgentURL bool, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 || (args[0] != "plan" && args[0] != "list" && args[0] != "inspect" && args[0] != "materialize") {
+		fmt.Fprintln(stderr, "usage: stratum artifacts staging <plan|list|inspect|materialize> [flags]")
 		return 2
 	}
 	switch args[0] {
@@ -988,9 +991,86 @@ func artifactStaging(ctx context.Context, store *filesystem.Store, blobRoot stri
 		return listArtifactStaging(ctx, store, args[1:], stdout, stderr)
 	case "inspect":
 		return inspectArtifactStaging(ctx, store, args[1:], stdout, stderr)
+	case "materialize":
+		return materializeArtifactStaging(ctx, store, blobRoot, agentClient, agentMode, hasAgentURL, args[1:], stdout, stderr)
 	default:
 		return 2
 	}
+}
+
+func materializeArtifactStaging(ctx context.Context, store *filesystem.Store, blobRoot string, agentClient agent.AgentClient, agentMode string, hasAgentURL bool, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("artifacts staging materialize", stderr)
+	planID := flags.String("plan", "", "planned artifact staging plan ID")
+	actor := flags.String("actor", "", "actor user ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *planID == "" || strings.TrimSpace(*actor) == "" {
+		fmt.Fprintln(stderr, "--plan and --actor are required")
+		return 2
+	}
+	if !hasAgentURL {
+		fmt.Fprintln(stderr, "--agent-url is required for artifact materialization")
+		return 2
+	}
+	plan, err := store.GetArtifactStagingPlan(ctx, *planID)
+	if err != nil {
+		return reportError(stderr, "load artifact staging plan", err)
+	}
+	if plan.Status != artifactstaging.StatusPlanned {
+		return reportError(stderr, "materialize artifact staging", fmt.Errorf("staging plan %q is %q, not planned", plan.ID, plan.Status))
+	}
+	value, err := store.GetArtifact(ctx, plan.ArtifactID)
+	if err != nil {
+		return reportError(stderr, "load staged artifact", err)
+	}
+	if value.Status != artifact.StatusApproved {
+		return reportError(stderr, "materialize artifact staging", fmt.Errorf("artifact %q is %q, not approved", value.ID, value.Status))
+	}
+	if value.SHA256 != plan.ArtifactHash || value.PayloadAlgorithm != artifactblob.Algorithm || value.PayloadStatus != artifact.PayloadAvailable {
+		return reportError(stderr, "materialize artifact staging", errors.New("artifact payload metadata does not match planned staging payload"))
+	}
+	blobs, err := artifactblob.Open(blobRoot)
+	if err != nil {
+		return reportError(stderr, "open artifact blob store", err)
+	}
+	metadata, err := blobs.Verify(ctx, value.SHA256)
+	if err != nil {
+		return reportError(stderr, "verify materialization payload", err)
+	}
+	if metadata.Algorithm != value.PayloadAlgorithm || metadata.Hash != value.SHA256 || metadata.Reference != value.PayloadReference || metadata.Size != value.SizeBytes {
+		return reportError(stderr, "verify materialization payload", errors.New("artifact metadata does not match verified blob"))
+	}
+	if metadata.Size > agent.MaxArtifactPayloadBytes {
+		return reportError(stderr, "materialize artifact staging", fmt.Errorf("artifact payload exceeds %d byte transfer limit", agent.MaxArtifactPayloadBytes))
+	}
+	path, err := blobs.Path(metadata.Hash)
+	if err != nil {
+		return reportError(stderr, "resolve materialization payload", err)
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		return reportError(stderr, "read materialization payload", err)
+	}
+	result, err := agentClient.MaterializeArtifact(ctx, agent.ArtifactMaterializationRequest{SessionID: plan.SessionID, ArtifactID: value.ID, StagingPlanID: plan.ID, ArtifactName: value.Name, ArtifactType: string(value.Type), TargetName: plan.TargetStagingName, PayloadAlgorithm: value.PayloadAlgorithm, PayloadHash: value.SHA256, PayloadSize: value.SizeBytes, ActorID: *actor, Payload: payload})
+	if err != nil {
+		return reportError(stderr, "agent materialize artifact", err)
+	}
+	auditID, err := util.NewID("audit")
+	if err != nil {
+		return reportError(stderr, "create materialization audit", err)
+	}
+	event, err := audit.NewEvent(auditID, *actor, "artifact.materialized", "artifact-staging-plan", plan.ID, result.MaterializedAt)
+	if err != nil {
+		return reportError(stderr, "create materialization audit", err)
+	}
+	event.ProjectID = plan.ProjectID
+	event.Metadata = map[string]string{"sessionId": plan.SessionID, "artifactId": value.ID, "stagingPlanId": plan.ID, "actor": *actor, "payloadHash": value.SHA256, "payloadSize": fmt.Sprintf("%d", value.SizeBytes), "targetName": plan.TargetStagingName, "runtimeRelativePath": result.RuntimeRelativePath, "agentMode": agentMode, "agentId": result.AgentID, "idempotent": fmt.Sprintf("%t", result.Idempotent)}
+	if err := store.AppendAuditEvent(ctx, event); err != nil {
+		return reportError(stderr, "write materialization audit", err)
+	}
+	fmt.Fprintf(stdout, "Artifact materialized status=%s session=%s artifact=%s plan=%s target=%s runtimePath=%s hash=%s size=%d agent=%s idempotent=%t. The payload was not installed, mounted, loaded, or executed.\n", result.Status, result.SessionID, result.ArtifactID, result.StagingPlanID, result.TargetName, result.RuntimeRelativePath, result.PayloadHash, result.PayloadSize, result.AgentID, result.Idempotent)
+	return 0
 }
 
 func planArtifactStaging(ctx context.Context, store *filesystem.Store, blobRoot string, args []string, stdout, stderr io.Writer) int {

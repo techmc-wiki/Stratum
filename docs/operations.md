@@ -25,6 +25,11 @@ the rejected plan and audit metadata include the Artifact, Session, payload
 hash, verification status, and rejection reason. Artifact metadata is not
 changed.
 
+Successful Agent materialization writes `artifact.materialized` audit metadata
+including Session, Artifact, staging plan, actor, payload hash and size, target,
+runtime-relative path, Agent identity/mode, and idempotency result. It does not
+create a lifecycle Operation.
+
 Artifact approval and rejection also write audit events without creating
 Operations. They are metadata review actions and do not copy, mount, install, or
 execute artifact payloads.

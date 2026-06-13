@@ -122,9 +122,24 @@ atomically. Disabled profiles are neither listed nor runnable, and profile
 discovery removes argv, working directory, environment, and stdin stop command
 values. See `runtime.md` for the format and trust boundary.
 
-The Agent runtime layout includes internal staging helpers for future artifact
-and config preparation. They compute safe paths and manifest stubs only; they do
-not approve artifacts, install Lucy packages, mount mods, or execute files.
+The Agent runtime layout includes internal staging helpers for artifact and
+config preparation. They compute safe paths and manifests; artifact bytes enter
+this area only through the explicit materialization contract below. They do not
+approve artifacts, install Lucy packages, mount mods, or execute files.
+
+## Artifact Materialization
+
+The Agent accepts an explicit, size-limited artifact materialization request
+containing payload bytes and trusted staging metadata. It validates the target
+inside the Session `artifacts/` directory, rejects symbolic-link traversal,
+recomputes SHA-256 before and after the atomic write, and updates
+`artifacts/staged-artifacts.json`.
+
+This endpoint only creates an Agent-owned staged file. It does not install a
+mod, copy into `work/` or `mods/`, call Lucy or MCDR, launch Minecraft, or
+inspect jar contents. The current JSON payload transfer is intentionally
+limited to 64 MiB; a future remote large-file transport can replace it without
+changing runtime ownership.
 
 ## Why Agent controls MCDR, not the other way around
 

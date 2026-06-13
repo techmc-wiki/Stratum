@@ -156,9 +156,22 @@ content-addressed BlobStore. An approved Artifact with missing metadata, an
 unsupported algorithm, an invalid hash, a missing blob, corrupted content, or
 metadata that does not match the blob produces a rejected plan.
 
-The plan remains Controller metadata only. Staging does not copy, mount,
-install, inspect, or execute payloads. Actual runtime copy or mounting into
-Agent-owned staging directories remains future work.
+The plan remains Controller metadata only. Plan creation does not copy, mount,
+install, inspect, or execute payloads. Copying into Agent-owned staging requires
+the separate explicit materialization action below.
+
+## Artifact Materialization
+
+`artifacts staging materialize` explicitly sends a reverified planned payload
+to the Agent. The Agent independently checks its SHA-256 hash and size, rejects
+unsafe or symlinked targets, and atomically copies it under
+`sessions/<session-id>/artifacts/<target-name>`. Existing identical content is
+an idempotent success; different content is never overwritten.
+
+Materialization updates the Agent-owned `staged-artifacts.json` manifest. It is
+not installation, mounting, loading, or execution: Minecraft and MCDR do not
+see the file, and Lucy is not involved. Moving materialized files into
+runtime-specific locations remains future work.
 
 ## Artifact Approval
 

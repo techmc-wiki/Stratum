@@ -390,6 +390,8 @@ func (s *Supervisor) RunningCount() int {
 	return count
 }
 
+func (s *Supervisor) RuntimeRoot() string { return s.runtimeRoot }
+
 func (s *Supervisor) finishDummy(sessionID string, item *managedProcess) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

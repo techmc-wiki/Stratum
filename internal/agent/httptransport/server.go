@@ -49,6 +49,22 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/sessions/{id}/logs", s.logs)
 	s.mux.HandleFunc("POST /v1/checkpoints/create-stub", s.checkpointStub(true))
 	s.mux.HandleFunc("POST /v1/checkpoints/restore-stub", s.checkpointStub(false))
+	s.mux.HandleFunc("POST /v1/artifacts/materialize", s.materializeArtifact)
+}
+
+func (s *Server) materializeArtifact(w http.ResponseWriter, r *http.Request) {
+	var body ArtifactMaterializationRequest
+	if err := decodeJSONLimited(r, &body, (agent.MaxArtifactPayloadBytes*4/3)+(2<<20)); err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "materialize-artifact", err)
+		return
+	}
+	request := agent.ArtifactMaterializationRequest{SessionID: body.SessionID, ArtifactID: body.ArtifactID, StagingPlanID: body.StagingPlanID, ArtifactName: body.ArtifactName, ArtifactType: body.ArtifactType, TargetName: body.TargetName, PayloadAlgorithm: body.PayloadAlgorithm, PayloadHash: body.PayloadHash, PayloadSize: body.PayloadSize, ActorID: body.ActorID, Payload: body.Payload}
+	result, err := s.client.MaterializeArtifact(r.Context(), request)
+	if err != nil {
+		s.writeError(w, r, http.StatusConflict, "materialize-artifact", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ArtifactMaterializationResponse{AgentID: result.AgentID, SessionID: result.SessionID, ArtifactID: result.ArtifactID, StagingPlanID: result.StagingPlanID, TargetName: result.TargetName, RuntimeRelativePath: result.RuntimeRelativePath, PayloadHash: result.PayloadHash, PayloadSize: result.PayloadSize, MaterializedAt: result.MaterializedAt, Idempotent: result.Idempotent, Status: result.Status, RequestID: requestID(r)})
 }
 
 func (s *Server) runtimeProfiles(w http.ResponseWriter, r *http.Request) {
@@ -204,8 +220,12 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, status int, 
 }
 
 func decodeJSON(r *http.Request, target any) error {
+	return decodeJSONLimited(r, target, 1<<20)
+}
+
+func decodeJSONLimited(r *http.Request, target any, limit int64) error {
 	defer r.Body.Close()
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	decoder := json.NewDecoder(io.LimitReader(r.Body, limit))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		return fmt.Errorf("decode request: %w", err)

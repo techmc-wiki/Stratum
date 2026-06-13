@@ -127,7 +127,15 @@ Creating a planned staging record verifies the Artifact's linked SHA-256 blob
 again rather than relying on the earlier approval check. Missing, corrupted, or
 unverifiable payloads produce rejected staging plans with no Artifact mutation.
 These plans are metadata only and do not copy, mount, install, or execute the
-blob. Runtime payload placement remains future work.
+blob. Copying into Agent-owned staging requires a separate materialization
+request; placement into Minecraft- or MCDR-specific locations remains future
+work.
+
+Materialized payloads live separately in the Agent runtime root under
+`sessions/<session-id>/artifacts/`. The Agent records them in
+`staged-artifacts.json`; no Controller materialization repository is introduced
+in this phase. Controller storage retains the staging plan and successful
+`artifact.materialized` audit event.
 
 Lists read every `.json` record and return records ordered by filename. A
 malformed or unknown-field record stops the list with an actionable repository

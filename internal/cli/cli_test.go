@@ -15,6 +15,7 @@ import (
 	"github.com/stratummc/stratum/internal/agent/httptransport"
 	"github.com/stratummc/stratum/internal/agent/local"
 	"github.com/stratummc/stratum/internal/domain/artifact"
+	"github.com/stratummc/stratum/internal/domain/artifactstaging"
 	"github.com/stratummc/stratum/internal/domain/audit"
 	"github.com/stratummc/stratum/internal/repository/artifactblob"
 	"github.com/stratummc/stratum/internal/repository/filesystem"
@@ -999,6 +1000,169 @@ func TestCLIArtifactStagingPlanListAndInspect(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "artifact=artifact-1") || !strings.Contains(stdout.String(), "target="+filepath.Clean("mods/test.jar")) {
 		t.Fatalf("inspect stdout=%q", stdout.String())
+	}
+}
+
+func TestCLIArtifactStagingMaterialize(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := t.TempDir()
+	dataDirectory := filepath.Join(root, "data")
+	blobRoot := filepath.Join(root, "blobs")
+	runtimeRoot := filepath.Join(root, "runtime")
+	payloadPath := filepath.Join(root, "artifact.jar")
+	if err := os.WriteFile(payloadPath, []byte("artifact"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := local.NewProcessAgentWithRegistryAndRoot(local.DefaultAgentID, nil, runtimeRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(httptransport.NewServer(runtime, "", nil).Handler())
+	defer server.Close()
+	base := []string{"--data-dir", dataDirectory, "--artifact-blob-root", blobRoot}
+	commands := [][]string{
+		{"projects", "create", "--id", "project-1", "--name", "Project"},
+		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
+		{"sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1", "--type", "shared"},
+		{"artifacts", "create", "--id", "artifact-1", "--name", "Artifact", "--type", "jar", "--project", "project-1", "--actor", "creator-1"},
+		{"artifacts", "staging", "plan", "--session", "session-1", "--artifact", "artifact-1", "--actor", "actor-1", "--name", "mods/test.jar"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(append(append([]string{}, base...), command...), &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plans, _ := store.ListArtifactStagingPlans(context.Background())
+	if len(plans) != 1 || plans[0].Status != artifactstaging.StatusRejected {
+		t.Fatalf("plans=%+v", plans)
+	}
+	materializeBase := append(append([]string{}, base...), "--agent-url", server.URL, "artifacts", "staging", "materialize")
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, materializeBase...), "--plan", "missing-plan", "--actor", "actor-1"), &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "not_found") {
+		t.Fatalf("missing plan: code=%d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, materializeBase...), "--plan", plans[0].ID, "--actor", "actor-1"), &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "not planned") {
+		t.Fatalf("rejected plan: code=%d stderr=%q", code, stderr.String())
+	}
+	for _, command := range [][]string{
+		{"artifacts", "import-file", "--id", "artifact-1", "--file", payloadPath, "--actor", "creator-1"},
+		{"artifacts", "approve", "--id", "artifact-1", "--actor", "reviewer-1", "--reason", "verified"},
+		{"artifacts", "staging", "plan", "--session", "session-1", "--artifact", "artifact-1", "--actor", "actor-1", "--name", "mods/test.jar"},
+	} {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(append(append([]string{}, base...), command...), &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+	plans, _ = store.ListArtifactStagingPlans(context.Background())
+	var planned artifactstaging.Plan
+	for _, value := range plans {
+		if value.Status == artifactstaging.StatusPlanned {
+			planned = value
+		}
+	}
+	if planned.ID == "" {
+		t.Fatalf("planned staging record missing: %+v", plans)
+	}
+	command := append(append([]string{}, materializeBase...), "--plan", planned.ID, "--actor", "actor-1")
+	artifactValue, err := store.GetArtifact(context.Background(), "artifact-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	blobs, err := artifactblob.Open(blobRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blobPath, err := blobs.Path(artifactValue.SHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalPayload, err := os.ReadFile(blobPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(blobPath); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(command, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "blob does not exist") {
+		t.Fatalf("missing blob: code=%d stderr=%q", code, stderr.String())
+	}
+	if err := os.WriteFile(blobPath, []byte("corrupted"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(command, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "hash mismatch") {
+		t.Fatalf("corrupted blob: code=%d stderr=%q", code, stderr.String())
+	}
+	if err := os.WriteFile(blobPath, originalPayload, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	artifactValue.Status = artifact.StatusPending
+	if err := store.SaveArtifact(context.Background(), artifactValue); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(command, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "not approved") {
+		t.Fatalf("pending artifact: code=%d stderr=%q", code, stderr.String())
+	}
+	artifactValue.Status = artifact.StatusApproved
+	if err := store.SaveArtifact(context.Background(), artifactValue); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(command, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "status=materialized") || !strings.Contains(stdout.String(), "not installed") {
+		t.Fatalf("materialize: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	target := filepath.Join(runtimeRoot, "sessions", "session-1", "artifacts", "mods", "test.jar")
+	payload, err := os.ReadFile(target)
+	if err != nil || string(payload) != "artifact" {
+		t.Fatalf("payload=%q err=%v", payload, err)
+	}
+	if _, err := os.Stat(filepath.Join(runtimeRoot, "sessions", "session-1", "artifacts", "staged-artifacts.json")); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(command, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "idempotent=true") {
+		t.Fatalf("idempotent: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	events, _ := store.ListAuditEvents(context.Background())
+	materialized := 0
+	for _, event := range events {
+		if event.Action == "artifact.materialized" && event.Metadata["stagingPlanId"] == planned.ID && event.Metadata["runtimeRelativePath"] == "artifacts/mods/test.jar" {
+			materialized++
+		}
+	}
+	if materialized != 2 {
+		t.Fatalf("materialization audits=%d events=%+v", materialized, events)
+	}
+}
+
+func TestCLIArtifactStagingMaterializeRequiresActorAndAgentURL(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	base := []string{"--data-dir", filepath.Join(t.TempDir(), "data"), "artifacts", "staging", "materialize"}
+	if code := Run(append(append([]string{}, base...), "--plan", "plan-1"), &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--actor") {
+		t.Fatalf("actor code=%d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, base...), "--plan", "plan-1", "--actor", "actor-1"), &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--agent-url") {
+		t.Fatalf("agent URL code=%d stderr=%q", code, stderr.String())
 	}
 }
 

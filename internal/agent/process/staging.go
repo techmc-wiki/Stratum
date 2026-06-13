@@ -23,11 +23,15 @@ type SessionRuntimeStaging struct {
 }
 
 type StagedRuntimeItem struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Path      string    `json:"path"`
-	Kind      string    `json:"kind"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Path          string    `json:"path"`
+	Kind          string    `json:"kind"`
+	ArtifactID    string    `json:"artifactId,omitempty"`
+	StagingPlanID string    `json:"stagingPlanId,omitempty"`
+	PayloadHash   string    `json:"payloadHash,omitempty"`
+	PayloadSize   int64     `json:"payloadSize,omitempty"`
+	CreatedAt     time.Time `json:"createdAt"`
 }
 
 type StagingManifest struct {
@@ -74,6 +78,10 @@ func (s SessionRuntimeStaging) ConfigEntry(configID, name string, at time.Time) 
 
 func (s SessionRuntimeStaging) WriteArtifactManifest(items []StagedRuntimeItem, at time.Time) error {
 	return writeStagingManifestAtomic(s.StagedArtifactsManifest, StagingManifest{SessionID: s.SessionID, Kind: "artifacts", Items: items, WrittenAt: normalizeManifestTime(at)})
+}
+
+func (s SessionRuntimeStaging) ReadArtifactManifest() (StagingManifest, error) {
+	return readStagingManifest(s.StagedArtifactsManifest, s.SessionID, "artifacts")
 }
 
 func (s SessionRuntimeStaging) WriteConfigManifest(items []StagedRuntimeItem, at time.Time) error {
@@ -151,6 +159,27 @@ func writeStagingManifestAtomic(path string, value StagingManifest) error {
 		return fmt.Errorf("replace staging manifest: %w", err)
 	}
 	return nil
+}
+
+func readStagingManifest(path, sessionID, kind string) (StagingManifest, error) {
+	file, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return StagingManifest{SessionID: sessionID, Kind: kind}, nil
+	}
+	if err != nil {
+		return StagingManifest{}, fmt.Errorf("open staging manifest: %w", err)
+	}
+	defer file.Close()
+	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields()
+	var manifest StagingManifest
+	if err := decoder.Decode(&manifest); err != nil {
+		return StagingManifest{}, fmt.Errorf("decode staging manifest: %w", err)
+	}
+	if manifest.SessionID != sessionID || manifest.Kind != kind {
+		return StagingManifest{}, errors.New("staging manifest identity does not match runtime layout")
+	}
+	return manifest, nil
 }
 
 func normalizeManifestTime(at time.Time) time.Time {

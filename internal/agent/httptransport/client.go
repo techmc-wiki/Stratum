@@ -126,6 +126,15 @@ func (c *Client) RestoreCheckpointStub(ctx context.Context, request agent.Checkp
 	return c.checkpointOperation(ctx, request, "restore-stub")
 }
 
+func (c *Client) MaterializeArtifact(ctx context.Context, request agent.ArtifactMaterializationRequest) (agent.ArtifactMaterializationResult, error) {
+	body := ArtifactMaterializationRequest{SessionID: request.SessionID, ArtifactID: request.ArtifactID, StagingPlanID: request.StagingPlanID, ArtifactName: request.ArtifactName, ArtifactType: request.ArtifactType, TargetName: request.TargetName, PayloadAlgorithm: request.PayloadAlgorithm, PayloadHash: request.PayloadHash, PayloadSize: request.PayloadSize, ActorID: request.ActorID, Payload: request.Payload}
+	var response ArtifactMaterializationResponse
+	if err := c.do(ctx, http.MethodPost, "/v1/artifacts/materialize", body, &response); err != nil {
+		return agent.ArtifactMaterializationResult{}, err
+	}
+	return agent.ArtifactMaterializationResult{AgentID: response.AgentID, SessionID: response.SessionID, ArtifactID: response.ArtifactID, StagingPlanID: response.StagingPlanID, TargetName: response.TargetName, RuntimeRelativePath: response.RuntimeRelativePath, PayloadHash: response.PayloadHash, PayloadSize: response.PayloadSize, MaterializedAt: response.MaterializedAt, Idempotent: response.Idempotent, Status: response.Status}, nil
+}
+
 func (c *Client) sessionOperation(ctx context.Context, request agent.SessionRequest, operation string) (agent.OperationResult, error) {
 	var response SessionOperationResponse
 	body := SessionOperationRequest{ProjectID: request.ProjectID, EnvironmentID: request.EnvironmentID, RuntimeProfileID: request.RuntimeProfileID}
