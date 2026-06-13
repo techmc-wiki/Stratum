@@ -1,0 +1,66 @@
+version: '3'
+
+vars:
+  DIST_DIR: dist
+  LOCAL_BIN_DIR: '{{.DIST_DIR}}/local'
+  LINUX_AMD64_DIR: '{{.DIST_DIR}}/linux-amd64'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  deps:
+    desc: Download Go module dependencies
+    cmds:
+      - go mod download
+
+  fmt:
+    desc: Format Go packages
+    cmds:
+      - go fmt ./...
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  test:
+    desc: Run the full Go test suite
+    cmds:
+      - go test -count=1 ./...
+
+  build:
+    desc: Build host binaries into dist/local
+    cmds:
+      - mkdir -p {{.LOCAL_BIN_DIR}}
+      - go build -trimpath -o {{.LOCAL_BIN_DIR}}/stratum ./cmd/stratum
+      - go build -trimpath -o {{.LOCAL_BIN_DIR}}/stratum-agent ./cmd/stratum-agent
+      - go build -trimpath -o {{.LOCAL_BIN_DIR}}/stratum-controller ./cmd/stratum-controller
+
+  build:linux-amd64:
+    desc: Build Linux amd64 binaries into dist/linux-amd64
+    env:
+      CGO_ENABLED: '0'
+      GOOS: linux
+      GOARCH: amd64
+    cmds:
+      - mkdir -p {{.LINUX_AMD64_DIR}}
+      - go build -trimpath -o {{.LINUX_AMD64_DIR}}/stratum ./cmd/stratum
+      - go build -trimpath -o {{.LINUX_AMD64_DIR}}/stratum-agent ./cmd/stratum-agent
+      - go build -trimpath -o {{.LINUX_AMD64_DIR}}/stratum-controller ./cmd/stratum-controller
+
+  ci:
+    desc: Run the same vet, test, and Linux amd64 build sequence as GitHub Actions
+    cmds:
+      - task: deps
+      - task: vet
+      - task: test
+      - task: build:linux-amd64
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf {{.DIST_DIR}}
