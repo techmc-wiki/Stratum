@@ -112,6 +112,30 @@ type ArtifactMaterializationResponse struct {
 	RequestID           string    `json:"requestId"`
 }
 
+type MaterializedArtifactResponse struct {
+	ArtifactID          string            `json:"artifactId"`
+	StagingPlanID       string            `json:"stagingPlanId,omitempty"`
+	ArtifactName        string            `json:"artifactName,omitempty"`
+	ArtifactType        string            `json:"artifactType,omitempty"`
+	TargetName          string            `json:"targetName"`
+	PayloadAlgorithm    string            `json:"payloadAlgorithm,omitempty"`
+	PayloadHash         string            `json:"payloadHash"`
+	PayloadSize         int64             `json:"payloadSize"`
+	RuntimeRelativePath string            `json:"runtimeRelativePath"`
+	MaterializedAt      time.Time         `json:"materializedAt,omitempty"`
+	ActorID             string            `json:"actorId,omitempty"`
+	Status              string            `json:"status,omitempty"`
+	Metadata            map[string]string `json:"metadata,omitempty"`
+}
+
+type MaterializedArtifactsResponse struct {
+	AgentID   string                         `json:"agentId"`
+	SessionID string                         `json:"sessionId"`
+	Status    string                         `json:"status"`
+	Items     []MaterializedArtifactResponse `json:"items"`
+	RequestID string                         `json:"requestId"`
+}
+
 type ErrorResponse struct {
 	Error     string `json:"error"`
 	Operation string `json:"operation,omitempty"`

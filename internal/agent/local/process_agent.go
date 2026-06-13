@@ -64,7 +64,7 @@ func (a *ProcessAgent) RuntimeProfiles(context.Context) ([]runtimeprofile.Profil
 }
 
 func (a *ProcessAgent) Info(context.Context) (agent.AgentInfo, error) {
-	return agent.AgentInfo{ID: a.id, Status: "available", RuntimeEndpoint: a.endpoint, Capabilities: []string{"prepare", "start", "stop", "restart", "freeze", "unfreeze", "inspect", "logs", "resources", "dummy-process", "checkpoint-stub"}, Mode: agentprocess.RuntimeModeDummy}, nil
+	return agent.AgentInfo{ID: a.id, Status: "available", RuntimeEndpoint: a.endpoint, Capabilities: []string{"prepare", "start", "stop", "restart", "freeze", "unfreeze", "inspect", "logs", "resources", "dummy-process", "checkpoint-stub", "artifact-materialize", "artifact-manifest-inspect"}, Mode: agentprocess.RuntimeModeDummy}, nil
 }
 
 func (a *ProcessAgent) PrepareSession(_ context.Context, request agent.SessionRequest) (agent.OperationResult, error) {
@@ -165,6 +165,15 @@ func (a *ProcessAgent) MaterializeArtifact(ctx context.Context, request agent.Ar
 	result, err := agentprocess.MaterializeArtifact(ctx, a.supervisor.RuntimeRoot(), request, time.Now().UTC())
 	if err != nil {
 		return agent.ArtifactMaterializationResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationMaterializeArtifact, Message: err.Error()}
+	}
+	result.AgentID = a.id
+	return result, nil
+}
+
+func (a *ProcessAgent) InspectMaterializedArtifacts(ctx context.Context, sessionID string) (agent.MaterializedArtifacts, error) {
+	result, err := agentprocess.InspectMaterializedArtifacts(ctx, a.supervisor.RuntimeRoot(), sessionID)
+	if err != nil {
+		return agent.MaterializedArtifacts{}, agent.Error{AgentID: a.id, Operation: agent.OperationInspect, Message: err.Error()}
 	}
 	result.AgentID = a.id
 	return result, nil

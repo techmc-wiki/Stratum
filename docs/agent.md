@@ -141,6 +141,18 @@ inspect jar contents. The current JSON payload transfer is intentionally
 limited to 64 MiB; a future remote large-file transport can replace it without
 changing runtime ownership.
 
+## Inspecting Materialized Artifacts
+
+`GET /v1/sessions/{id}/artifacts` reads only the known
+`artifacts/staged-artifacts.json` path derived from the validated Session
+runtime layout. It returns an empty list when no manifest exists and rejects
+unsafe Session IDs, symbolic-link paths, malformed manifests, and invalid
+manifest entries.
+
+This endpoint confirms what has been staged into the Agent runtime layout. It
+does not read artifact payload contents or install, mount, load, execute, or
+remove files.
+
 ## Why Agent controls MCDR, not the other way around
 
 MCDR is itself a process that requires supervision. A future trusted

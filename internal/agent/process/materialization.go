@@ -67,6 +67,65 @@ func MaterializeArtifact(ctx context.Context, runtimeRoot string, request agent.
 	return agent.ArtifactMaterializationResult{SessionID: request.SessionID, ArtifactID: request.ArtifactID, StagingPlanID: request.StagingPlanID, TargetName: request.TargetName, RuntimeRelativePath: filepath.ToSlash(relative), PayloadHash: request.PayloadHash, PayloadSize: request.PayloadSize, MaterializedAt: normalizeManifestTime(at), Idempotent: idempotent, Status: "materialized"}, nil
 }
 
+func InspectMaterializedArtifacts(ctx context.Context, runtimeRoot, sessionID string) (agent.MaterializedArtifacts, error) {
+	if err := ctx.Err(); err != nil {
+		return agent.MaterializedArtifacts{}, err
+	}
+	layout, err := NewSessionRuntimeLayout(runtimeRoot, sessionID)
+	if err != nil {
+		return agent.MaterializedArtifacts{}, err
+	}
+	if err := rejectSymlinkPath(layout.RuntimeRoot, layout.ArtifactsDir); err != nil {
+		return agent.MaterializedArtifacts{}, err
+	}
+	staging := layout.Staging()
+	if info, err := os.Lstat(staging.StagedArtifactsManifest); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return agent.MaterializedArtifacts{}, errors.New("artifact staging manifest must not be a symbolic link")
+	} else if err != nil && !os.IsNotExist(err) {
+		return agent.MaterializedArtifacts{}, fmt.Errorf("inspect artifact staging manifest: %w", err)
+	}
+	manifest, err := staging.ReadArtifactManifest()
+	if err != nil {
+		return agent.MaterializedArtifacts{}, err
+	}
+	items := make([]agent.MaterializedArtifact, 0, len(manifest.Items))
+	for _, item := range manifest.Items {
+		if item.Kind != "artifact" {
+			return agent.MaterializedArtifacts{}, fmt.Errorf("artifact staging manifest contains unsupported item kind %q", item.Kind)
+		}
+		target, err := staging.ArtifactPath(item.Name)
+		if err != nil {
+			return agent.MaterializedArtifacts{}, fmt.Errorf("invalid materialized artifact target %q: %w", item.Name, err)
+		}
+		relative, err := filepath.Rel(layout.SessionRoot, target)
+		if err != nil || !pathWithin(layout.SessionRoot, target) {
+			return agent.MaterializedArtifacts{}, errors.New("materialized artifact path escapes session runtime")
+		}
+		items = append(items, agent.MaterializedArtifact{
+			ArtifactID: item.ArtifactID, StagingPlanID: item.StagingPlanID, ArtifactName: item.ArtifactName,
+			ArtifactType: item.ArtifactType, TargetName: item.Name, PayloadAlgorithm: item.PayloadAlgorithm,
+			PayloadHash: item.PayloadHash, PayloadSize: item.PayloadSize, RuntimeRelativePath: filepath.ToSlash(relative),
+			MaterializedAt: item.CreatedAt, ActorID: item.ActorID, Status: item.Status, Metadata: cloneStringMap(item.Metadata),
+		})
+	}
+	status := "empty"
+	if len(items) > 0 {
+		status = "available"
+	}
+	return agent.MaterializedArtifacts{SessionID: sessionID, Status: status, Items: items}, nil
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(values))
+	for key, value := range values {
+		result[key] = value
+	}
+	return result
+}
+
 func writeMaterializedFile(ctx context.Context, artifactsRoot, target string, payload []byte, expectedHash string) (bool, error) {
 	if info, err := os.Lstat(target); err == nil {
 		if !info.Mode().IsRegular() {
@@ -183,7 +242,7 @@ func updateArtifactManifest(staging SessionRuntimeStaging, request agent.Artifac
 	if err != nil {
 		return err
 	}
-	entry := StagedRuntimeItem{ID: request.StagingPlanID, Name: request.TargetName, Path: target, Kind: "artifact", ArtifactID: request.ArtifactID, StagingPlanID: request.StagingPlanID, PayloadHash: request.PayloadHash, PayloadSize: request.PayloadSize, CreatedAt: normalizeManifestTime(at)}
+	entry := StagedRuntimeItem{ID: request.StagingPlanID, Name: request.TargetName, Path: target, Kind: "artifact", ArtifactID: request.ArtifactID, StagingPlanID: request.StagingPlanID, ArtifactName: request.ArtifactName, ArtifactType: request.ArtifactType, PayloadAlgorithm: request.PayloadAlgorithm, PayloadHash: request.PayloadHash, PayloadSize: request.PayloadSize, ActorID: request.ActorID, Status: "materialized", CreatedAt: normalizeManifestTime(at)}
 	replaced := false
 	for index := range manifest.Items {
 		if manifest.Items[index].StagingPlanID == request.StagingPlanID || manifest.Items[index].ID == request.StagingPlanID {

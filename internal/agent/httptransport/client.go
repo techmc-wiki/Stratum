@@ -135,6 +135,18 @@ func (c *Client) MaterializeArtifact(ctx context.Context, request agent.Artifact
 	return agent.ArtifactMaterializationResult{AgentID: response.AgentID, SessionID: response.SessionID, ArtifactID: response.ArtifactID, StagingPlanID: response.StagingPlanID, TargetName: response.TargetName, RuntimeRelativePath: response.RuntimeRelativePath, PayloadHash: response.PayloadHash, PayloadSize: response.PayloadSize, MaterializedAt: response.MaterializedAt, Idempotent: response.Idempotent, Status: response.Status}, nil
 }
 
+func (c *Client) InspectMaterializedArtifacts(ctx context.Context, sessionID string) (agent.MaterializedArtifacts, error) {
+	var response MaterializedArtifactsResponse
+	if err := c.do(ctx, http.MethodGet, "/v1/sessions/"+url.PathEscape(sessionID)+"/artifacts", nil, &response); err != nil {
+		return agent.MaterializedArtifacts{}, err
+	}
+	items := make([]agent.MaterializedArtifact, 0, len(response.Items))
+	for _, item := range response.Items {
+		items = append(items, agent.MaterializedArtifact{ArtifactID: item.ArtifactID, StagingPlanID: item.StagingPlanID, ArtifactName: item.ArtifactName, ArtifactType: item.ArtifactType, TargetName: item.TargetName, PayloadAlgorithm: item.PayloadAlgorithm, PayloadHash: item.PayloadHash, PayloadSize: item.PayloadSize, RuntimeRelativePath: item.RuntimeRelativePath, MaterializedAt: item.MaterializedAt, ActorID: item.ActorID, Status: item.Status, Metadata: item.Metadata})
+	}
+	return agent.MaterializedArtifacts{AgentID: response.AgentID, SessionID: response.SessionID, Status: response.Status, Items: items}, nil
+}
+
 func (c *Client) sessionOperation(ctx context.Context, request agent.SessionRequest, operation string) (agent.OperationResult, error) {
 	var response SessionOperationResponse
 	body := SessionOperationRequest{ProjectID: request.ProjectID, EnvironmentID: request.EnvironmentID, RuntimeProfileID: request.RuntimeProfileID}

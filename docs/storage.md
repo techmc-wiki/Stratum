@@ -137,6 +137,11 @@ Materialized payloads live separately in the Agent runtime root under
 in this phase. Controller storage retains the staging plan and successful
 `artifact.materialized` audit event.
 
+The Agent exposes this manifest through a read-only Session inspection endpoint.
+Inspection derives the manifest location from the safe runtime layout and never
+accepts an arbitrary filesystem path. Missing manifests represent an empty
+materialized-artifact list.
+
 Lists read every `.json` record and return records ordered by filename. A
 malformed or unknown-field record stops the list with an actionable repository
 error rather than silently dropping metadata.

@@ -23,15 +23,21 @@ type SessionRuntimeStaging struct {
 }
 
 type StagedRuntimeItem struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	Path          string    `json:"path"`
-	Kind          string    `json:"kind"`
-	ArtifactID    string    `json:"artifactId,omitempty"`
-	StagingPlanID string    `json:"stagingPlanId,omitempty"`
-	PayloadHash   string    `json:"payloadHash,omitempty"`
-	PayloadSize   int64     `json:"payloadSize,omitempty"`
-	CreatedAt     time.Time `json:"createdAt"`
+	ID               string            `json:"id"`
+	Name             string            `json:"name"`
+	Path             string            `json:"path"`
+	Kind             string            `json:"kind"`
+	ArtifactID       string            `json:"artifactId,omitempty"`
+	StagingPlanID    string            `json:"stagingPlanId,omitempty"`
+	ArtifactName     string            `json:"artifactName,omitempty"`
+	ArtifactType     string            `json:"artifactType,omitempty"`
+	PayloadAlgorithm string            `json:"payloadAlgorithm,omitempty"`
+	PayloadHash      string            `json:"payloadHash,omitempty"`
+	PayloadSize      int64             `json:"payloadSize,omitempty"`
+	ActorID          string            `json:"actorId,omitempty"`
+	Status           string            `json:"status,omitempty"`
+	Metadata         map[string]string `json:"metadata,omitempty"`
+	CreatedAt        time.Time         `json:"createdAt"`
 }
 
 type StagingManifest struct {

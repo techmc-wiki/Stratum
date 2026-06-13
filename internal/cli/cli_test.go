@@ -1151,6 +1151,11 @@ func TestCLIArtifactStagingMaterialize(t *testing.T) {
 	if materialized != 2 {
 		t.Fatalf("materialization audits=%d events=%+v", materialized, events)
 	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "--agent-url", server.URL, "sessions", "artifacts", "--id", "session-1"}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "artifact=artifact-1") || !strings.Contains(stdout.String(), "runtimePath=artifacts/mods/test.jar") || !strings.Contains(stdout.String(), "status=materialized") {
+		t.Fatalf("inspect materialized: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
 }
 
 func TestCLIArtifactStagingMaterializeRequiresActorAndAgentURL(t *testing.T) {
@@ -1162,6 +1167,19 @@ func TestCLIArtifactStagingMaterializeRequiresActorAndAgentURL(t *testing.T) {
 	stdout.Reset()
 	stderr.Reset()
 	if code := Run(append(append([]string{}, base...), "--plan", "plan-1", "--actor", "actor-1"), &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--agent-url") {
+		t.Fatalf("agent URL code=%d stderr=%q", code, stderr.String())
+	}
+}
+
+func TestCLISessionArtifactsRequiresIDAndAgentURL(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	if code := Run([]string{"--data-dir", dataDirectory, "sessions", "artifacts"}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--id") {
+		t.Fatalf("id code=%d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "sessions", "artifacts", "--id", "session-1"}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--agent-url") {
 		t.Fatalf("agent URL code=%d stderr=%q", code, stderr.String())
 	}
 }

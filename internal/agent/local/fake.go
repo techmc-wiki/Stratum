@@ -58,7 +58,7 @@ func (f *Fake) Info(context.Context) (agent.AgentInfo, error) {
 	}
 	return agent.AgentInfo{
 		ID: f.id, Status: "available", RuntimeEndpoint: f.endpoint,
-		Capabilities: []string{"prepare", "start", "stop", "restart", "freeze", "unfreeze", "inspect", "logs", "resources", "checkpoint-stub"},
+		Capabilities: []string{"prepare", "start", "stop", "restart", "freeze", "unfreeze", "inspect", "logs", "resources", "checkpoint-stub", "artifact-materialize", "artifact-manifest-inspect"},
 		Mode:         "local",
 	}, nil
 }
@@ -181,6 +181,10 @@ func (f *Fake) MaterializeArtifact(_ context.Context, request agent.ArtifactMate
 		return agent.ArtifactMaterializationResult{}, err
 	}
 	return agent.ArtifactMaterializationResult{AgentID: f.id, SessionID: request.SessionID, ArtifactID: request.ArtifactID, StagingPlanID: request.StagingPlanID, TargetName: request.TargetName, RuntimeRelativePath: "artifacts/" + request.TargetName, PayloadHash: request.PayloadHash, PayloadSize: request.PayloadSize, MaterializedAt: f.now(), Status: "materialized"}, nil
+}
+
+func (f *Fake) InspectMaterializedArtifacts(_ context.Context, sessionID string) (agent.MaterializedArtifacts, error) {
+	return agent.MaterializedArtifacts{AgentID: f.id, SessionID: sessionID, Status: "empty", Items: []agent.MaterializedArtifact{}}, nil
 }
 
 func (f *Fake) record(operation agent.Operation) error {

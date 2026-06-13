@@ -89,6 +89,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return reconcileSession(ctx, store, agentClient, agentMode, strings.TrimSpace(*agentURL) != "", command[2:], stdout, stderr)
 	case "sessions logs":
 		return sessionLogs(ctx, agentClient, command[2:], stdout, stderr)
+	case "sessions artifacts":
+		return sessionArtifacts(ctx, agentClient, strings.TrimSpace(*agentURL) != "", command[2:], stdout, stderr)
 	case "sessions prepare", "sessions start", "sessions stop", "sessions restart",
 		"sessions freeze", "sessions unfreeze", "sessions mark-crashed",
 		"sessions archive", "sessions delete":
@@ -645,6 +647,34 @@ func sessionLogs(ctx context.Context, agentClient agent.AgentClient, args []stri
 				break
 			}
 		}
+	}
+	return 0
+}
+
+func sessionArtifacts(ctx context.Context, agentClient agent.AgentClient, hasAgentURL bool, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("sessions artifacts", stderr)
+	id := flags.String("id", "", "session ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" {
+		fmt.Fprintln(stderr, "--id is required")
+		return 2
+	}
+	if !hasAgentURL {
+		fmt.Fprintln(stderr, "--agent-url is required for materialized artifact inspection")
+		return 2
+	}
+	result, err := agentClient.InspectMaterializedArtifacts(ctx, *id)
+	if err != nil {
+		return reportError(stderr, "inspect materialized artifacts", err)
+	}
+	if len(result.Items) == 0 {
+		fmt.Fprintf(stdout, "session=%s agent=%s status=%s materializedArtifacts=0\n", result.SessionID, result.AgentID, result.Status)
+		return 0
+	}
+	for _, item := range result.Items {
+		fmt.Fprintf(stdout, "session=%s artifact=%s plan=%s name=%q type=%s target=%s algorithm=%s hash=%s size=%d runtimePath=%s actor=%s status=%s materializedAt=%s\n", result.SessionID, item.ArtifactID, item.StagingPlanID, item.ArtifactName, item.ArtifactType, item.TargetName, item.PayloadAlgorithm, item.PayloadHash, item.PayloadSize, item.RuntimeRelativePath, item.ActorID, item.Status, item.MaterializedAt.Format(time.RFC3339Nano))
 	}
 	return 0
 }

@@ -91,6 +91,53 @@ func TestMaterializeArtifactRejectsSymlinkedRuntimePath(t *testing.T) {
 	}
 }
 
+func TestInspectMaterializedArtifacts(t *testing.T) {
+	root := t.TempDir()
+	request := materializationRequest([]byte("artifact"))
+	now := time.Date(2026, 6, 13, 12, 0, 0, 0, time.UTC)
+	if _, err := MaterializeArtifact(context.Background(), root, request, now); err != nil {
+		t.Fatal(err)
+	}
+	result, err := InspectMaterializedArtifacts(context.Background(), root, request.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "available" || len(result.Items) != 1 {
+		t.Fatalf("result=%+v", result)
+	}
+	item := result.Items[0]
+	if item.ArtifactID != request.ArtifactID || item.StagingPlanID != request.StagingPlanID || item.ArtifactName != request.ArtifactName || item.ArtifactType != request.ArtifactType || item.PayloadAlgorithm != request.PayloadAlgorithm || item.PayloadHash != request.PayloadHash || item.PayloadSize != request.PayloadSize || item.RuntimeRelativePath != "artifacts/mods/test.jar" || item.MaterializedAt != now || item.ActorID != request.ActorID || item.Status != "materialized" {
+		t.Fatalf("item=%+v", item)
+	}
+}
+
+func TestInspectMaterializedArtifactsMissingManifestIsEmpty(t *testing.T) {
+	result, err := InspectMaterializedArtifacts(context.Background(), t.TempDir(), "session-1")
+	if err != nil || result.Status != "empty" || len(result.Items) != 0 {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestInspectMaterializedArtifactsRejectsUnsafeSessionAndMalformedManifest(t *testing.T) {
+	if _, err := InspectMaterializedArtifacts(context.Background(), t.TempDir(), "../escape"); err == nil || !strings.Contains(err.Error(), "unsupported characters") {
+		t.Fatalf("unsafe session err=%v", err)
+	}
+	root := t.TempDir()
+	layout, err := NewSessionRuntimeLayout(root, "session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := layout.Create(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.Staging().StagedArtifactsManifest, []byte("not-json"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := InspectMaterializedArtifacts(context.Background(), root, "session-1"); err == nil || !strings.Contains(err.Error(), "decode staging manifest") {
+		t.Fatalf("malformed manifest err=%v", err)
+	}
+}
+
 func materializationRequest(payload []byte) agent.ArtifactMaterializationRequest {
 	return agent.ArtifactMaterializationRequest{SessionID: "session-1", ArtifactID: "artifact-1", StagingPlanID: "plan-1", ArtifactName: "Test", ArtifactType: "jar", TargetName: "mods/test.jar", PayloadAlgorithm: "sha256", PayloadHash: sha256Hex(payload), PayloadSize: int64(len(payload)), ActorID: "actor-1", Payload: append([]byte(nil), payload...)}
 }

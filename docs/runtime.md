@@ -173,6 +173,13 @@ not installation, mounting, loading, or execution: Minecraft and MCDR do not
 see the file, and Lucy is not involved. Moving materialized files into
 runtime-specific locations remains future work.
 
+## Inspecting Materialized Artifacts
+
+`sessions artifacts --id <session-id> --agent-url <url>` reads the Agent-owned
+artifact manifest and reports the materialized entries for that Session. A
+missing manifest returns an empty result. Inspection is read-only: it does not
+verify payload files, install, mount, load, execute, or inspect jar contents.
+
 ## Artifact Approval
 
 Artifact approval is metadata-only review. `artifacts approve` and `artifacts

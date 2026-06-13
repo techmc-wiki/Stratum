@@ -47,9 +47,23 @@ func (s *Server) routes() {
 	}
 	s.mux.HandleFunc("GET /v1/sessions/{id}/inspect", s.inspectSession)
 	s.mux.HandleFunc("GET /v1/sessions/{id}/logs", s.logs)
+	s.mux.HandleFunc("GET /v1/sessions/{id}/artifacts", s.materializedArtifacts)
 	s.mux.HandleFunc("POST /v1/checkpoints/create-stub", s.checkpointStub(true))
 	s.mux.HandleFunc("POST /v1/checkpoints/restore-stub", s.checkpointStub(false))
 	s.mux.HandleFunc("POST /v1/artifacts/materialize", s.materializeArtifact)
+}
+
+func (s *Server) materializedArtifacts(w http.ResponseWriter, r *http.Request) {
+	result, err := s.client.InspectMaterializedArtifacts(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "inspect-materialized-artifacts", err)
+		return
+	}
+	items := make([]MaterializedArtifactResponse, 0, len(result.Items))
+	for _, item := range result.Items {
+		items = append(items, MaterializedArtifactResponse{ArtifactID: item.ArtifactID, StagingPlanID: item.StagingPlanID, ArtifactName: item.ArtifactName, ArtifactType: item.ArtifactType, TargetName: item.TargetName, PayloadAlgorithm: item.PayloadAlgorithm, PayloadHash: item.PayloadHash, PayloadSize: item.PayloadSize, RuntimeRelativePath: item.RuntimeRelativePath, MaterializedAt: item.MaterializedAt, ActorID: item.ActorID, Status: item.Status, Metadata: item.Metadata})
+	}
+	writeJSON(w, http.StatusOK, MaterializedArtifactsResponse{AgentID: result.AgentID, SessionID: result.SessionID, Status: result.Status, Items: items, RequestID: requestID(r)})
 }
 
 func (s *Server) materializeArtifact(w http.ResponseWriter, r *http.Request) {

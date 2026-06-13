@@ -34,6 +34,7 @@ Minecraft server.
 - Verified-payload requirement for Artifact approval.
 - Verified-payload requirement for planned Artifact staging records.
 - Agent-side verified Artifact materialization with a staging manifest.
+- Read-only Agent inspection of materialized Artifact manifests.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active

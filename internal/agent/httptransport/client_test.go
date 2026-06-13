@@ -124,6 +124,23 @@ func TestClientMaterializesArtifactThroughHTTP(t *testing.T) {
 	if err != nil || result.Status != "materialized" || result.AgentID != local.DefaultAgentID || result.RuntimeRelativePath != "artifacts/test.jar" {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
+	inspected, err := client.InspectMaterializedArtifacts(context.Background(), "session-1")
+	if err != nil || inspected.Status != "available" || len(inspected.Items) != 1 || inspected.Items[0].ArtifactID != "artifact-1" || inspected.Items[0].RuntimeRelativePath != "artifacts/test.jar" {
+		t.Fatalf("inspected=%+v err=%v", inspected, err)
+	}
+}
+
+func TestClientMaterializedArtifactsMissingManifestIsEmpty(t *testing.T) {
+	runtime, err := local.NewProcessAgentWithRegistryAndRoot(local.DefaultAgentID, nil, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(NewServer(runtime, "", nil).Handler())
+	defer server.Close()
+	result, err := newTestClient(t, server.URL, "").InspectMaterializedArtifacts(context.Background(), "session-1")
+	if err != nil || result.Status != "empty" || len(result.Items) != 0 {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
 }
 
 func newTestClient(t *testing.T, rawURL, token string) *Client {

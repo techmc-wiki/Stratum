@@ -87,6 +87,29 @@ type ArtifactMaterializationResult struct {
 	Status              string
 }
 
+type MaterializedArtifact struct {
+	ArtifactID          string
+	StagingPlanID       string
+	ArtifactName        string
+	ArtifactType        string
+	TargetName          string
+	PayloadAlgorithm    string
+	PayloadHash         string
+	PayloadSize         int64
+	RuntimeRelativePath string
+	MaterializedAt      time.Time
+	ActorID             string
+	Status              string
+	Metadata            map[string]string
+}
+
+type MaterializedArtifacts struct {
+	AgentID   string
+	SessionID string
+	Status    string
+	Items     []MaterializedArtifact
+}
+
 type OperationResult struct {
 	AgentID string
 	Status  string
@@ -169,6 +192,7 @@ type AgentClient interface {
 	CreateCheckpointStub(context.Context, CheckpointRequest) (OperationResult, error)
 	RestoreCheckpointStub(context.Context, CheckpointRequest) (OperationResult, error)
 	MaterializeArtifact(context.Context, ArtifactMaterializationRequest) (ArtifactMaterializationResult, error)
+	InspectMaterializedArtifacts(context.Context, string) (MaterializedArtifacts, error)
 }
 
 type RuntimeAgent interface {
