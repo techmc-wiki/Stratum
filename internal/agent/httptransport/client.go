@@ -165,6 +165,19 @@ func (c *Client) VerifyMaterializedArtifact(ctx context.Context, sessionID, stag
 	return agent.MaterializedArtifactVerification{AgentID: response.AgentID, SessionID: response.SessionID, StagingPlanID: response.StagingPlanID, ArtifactID: response.ArtifactID, TargetName: response.TargetName, RuntimeRelativePath: response.RuntimeRelativePath, PayloadAlgorithm: response.PayloadAlgorithm, ExpectedHash: response.ExpectedHash, ActualHash: response.ActualHash, PayloadSize: response.PayloadSize, ActualSize: response.ActualSize, Status: response.Status, VerifiedAt: response.VerifiedAt}, nil
 }
 
+func (c *Client) VerifyMaterializedArtifacts(ctx context.Context, sessionID string) (agent.MaterializedArtifactsVerification, error) {
+	var response MaterializedArtifactsVerificationResponse
+	path := "/v1/sessions/" + url.PathEscape(sessionID) + "/artifacts/verify"
+	if err := c.do(ctx, http.MethodGet, path, nil, &response); err != nil {
+		return agent.MaterializedArtifactsVerification{}, err
+	}
+	entries := make([]agent.MaterializedArtifactVerification, 0, len(response.Entries))
+	for _, entry := range response.Entries {
+		entries = append(entries, agent.MaterializedArtifactVerification{AgentID: entry.AgentID, SessionID: entry.SessionID, StagingPlanID: entry.StagingPlanID, ArtifactID: entry.ArtifactID, TargetName: entry.TargetName, RuntimeRelativePath: entry.RuntimeRelativePath, PayloadAlgorithm: entry.PayloadAlgorithm, ExpectedHash: entry.ExpectedHash, ActualHash: entry.ActualHash, PayloadSize: entry.PayloadSize, ActualSize: entry.ActualSize, Status: entry.Status, VerifiedAt: entry.VerifiedAt, ErrorMessage: entry.ErrorMessage})
+	}
+	return agent.MaterializedArtifactsVerification{AgentID: response.AgentID, SessionID: response.SessionID, VerifiedAt: response.VerifiedAt, Total: response.Total, ValidCount: response.ValidCount, MissingCount: response.MissingCount, CorruptedCount: response.CorruptedCount, ErrorCount: response.ErrorCount, Entries: entries}, nil
+}
+
 func (c *Client) sessionOperation(ctx context.Context, request agent.SessionRequest, operation string) (agent.OperationResult, error) {
 	var response SessionOperationResponse
 	body := SessionOperationRequest{ProjectID: request.ProjectID, EnvironmentID: request.EnvironmentID, RuntimeProfileID: request.RuntimeProfileID}

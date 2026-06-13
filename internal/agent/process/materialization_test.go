@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -231,6 +232,104 @@ func TestVerifyMaterializedArtifactRejectsMissingUnsafeAndEscapingManifestPath(t
 	}
 	if _, err := VerifyMaterializedArtifact(context.Background(), root, request.SessionID, request.StagingPlanID, time.Now()); err == nil || !strings.Contains(err.Error(), "does not match safe runtime path") {
 		t.Fatalf("escaping manifest path err=%v", err)
+	}
+}
+
+func TestVerifyMaterializedArtifactsAllValidAndEmpty(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 6, 13, 15, 0, 0, 0, time.UTC)
+	for index, payload := range [][]byte{[]byte("artifact-one"), []byte("artifact-two")} {
+		request := materializationRequest(payload)
+		request.ArtifactID = fmt.Sprintf("artifact-%d", index+1)
+		request.StagingPlanID = fmt.Sprintf("plan-%d", index+1)
+		request.TargetName = fmt.Sprintf("mods/test-%d.jar", index+1)
+		if _, err := MaterializeArtifact(context.Background(), root, request, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := VerifyMaterializedArtifacts(context.Background(), root, "session-1", now)
+	if err != nil || result.Total != 2 || result.ValidCount != 2 || result.MissingCount != 0 || result.CorruptedCount != 0 || result.ErrorCount != 0 || len(result.Entries) != 2 || result.VerifiedAt != now {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	empty, err := VerifyMaterializedArtifacts(context.Background(), t.TempDir(), "session-1", now)
+	if err != nil || empty.Total != 0 || len(empty.Entries) != 0 {
+		t.Fatalf("empty=%+v err=%v", empty, err)
+	}
+}
+
+func TestVerifyMaterializedArtifactsMixedStatusesAndEntryError(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 6, 13, 16, 0, 0, 0, time.UTC)
+	requests := make([]agent.ArtifactMaterializationRequest, 4)
+	for index := range requests {
+		payload := []byte(fmt.Sprintf("artifact-%d", index+1))
+		request := materializationRequest(payload)
+		request.ArtifactID = fmt.Sprintf("artifact-%d", index+1)
+		request.StagingPlanID = fmt.Sprintf("plan-%d", index+1)
+		request.TargetName = fmt.Sprintf("mods/test-%d.jar", index+1)
+		requests[index] = request
+		if _, err := MaterializeArtifact(context.Background(), root, request, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	layout, _ := NewSessionRuntimeLayout(root, "session-1")
+	missingPath, _ := layout.Staging().ArtifactPath(requests[1].TargetName)
+	if err := os.Remove(missingPath); err != nil {
+		t.Fatal(err)
+	}
+	corruptedPath, _ := layout.Staging().ArtifactPath(requests[2].TargetName)
+	if err := os.WriteFile(corruptedPath, []byte("corrupted"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	manifest := readManifest(t, layout.Staging().StagedArtifactsManifest)
+	manifest.Items[3].Path = filepath.Join(t.TempDir(), "outside.jar")
+	writeManifest(t, layout.Staging().StagedArtifactsManifest, manifest)
+
+	result, err := VerifyMaterializedArtifacts(context.Background(), root, "session-1", now)
+	if err != nil || result.Total != 4 || result.ValidCount != 1 || result.MissingCount != 1 || result.CorruptedCount != 1 || result.ErrorCount != 1 {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	statuses := map[string]string{}
+	for _, entry := range result.Entries {
+		statuses[entry.StagingPlanID] = entry.Status
+		if entry.Status == "error" && !strings.Contains(entry.ErrorMessage, "does not match safe runtime path") {
+			t.Fatalf("error entry=%+v", entry)
+		}
+	}
+	if statuses["plan-1"] != "valid" || statuses["plan-2"] != "missing" || statuses["plan-3"] != "corrupted" || statuses["plan-4"] != "error" {
+		t.Fatalf("statuses=%v", statuses)
+	}
+}
+
+func TestVerifyMaterializedArtifactsRejectsUnsafeSessionAndMalformedManifest(t *testing.T) {
+	if _, err := VerifyMaterializedArtifacts(context.Background(), t.TempDir(), "../escape", time.Now()); err == nil || !strings.Contains(err.Error(), "unsupported characters") {
+		t.Fatalf("unsafe session err=%v", err)
+	}
+	root := t.TempDir()
+	layout, _ := NewSessionRuntimeLayout(root, "session-1")
+	if err := layout.Create(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.Staging().StagedArtifactsManifest, []byte("not-json"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyMaterializedArtifacts(context.Background(), root, "session-1", time.Now()); err == nil || !strings.Contains(err.Error(), "decode staging manifest") {
+		t.Fatalf("malformed manifest err=%v", err)
+	}
+}
+
+func writeManifest(t *testing.T, path string, manifest StagingManifest) {
+	t.Helper()
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.NewEncoder(file).Encode(manifest); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 

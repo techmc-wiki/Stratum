@@ -204,6 +204,18 @@ func (a *ProcessAgent) VerifyMaterializedArtifact(ctx context.Context, sessionID
 	return result, nil
 }
 
+func (a *ProcessAgent) VerifyMaterializedArtifacts(ctx context.Context, sessionID string) (agent.MaterializedArtifactsVerification, error) {
+	result, err := agentprocess.VerifyMaterializedArtifacts(ctx, a.supervisor.RuntimeRoot(), sessionID, time.Now().UTC())
+	if err != nil {
+		return agent.MaterializedArtifactsVerification{}, agent.Error{AgentID: a.id, Operation: agent.OperationInspect, Message: err.Error()}
+	}
+	result.AgentID = a.id
+	for index := range result.Entries {
+		result.Entries[index].AgentID = a.id
+	}
+	return result, nil
+}
+
 func (a *ProcessAgent) result(message string) agent.OperationResult {
 	return agent.OperationResult{AgentID: a.id, Status: "success", Message: message, Mode: agentprocess.RuntimeModeDummy}
 }

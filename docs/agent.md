@@ -171,6 +171,14 @@ the file only to recompute SHA-256 and size. The response reports `valid`,
 The endpoint is diagnostic and read-only. It performs no automatic repair,
 installation, mounting, loading, or execution.
 
+### Batch Verification of Materialized Artifacts
+
+`GET /v1/sessions/{id}/artifacts/verify` verifies every artifact entry in the
+Agent-owned session manifest and returns aggregate valid, missing, corrupted,
+and error counts. A malformed entry is reported without preventing practical
+verification of later entries; malformed manifest JSON remains a structured
+request error. The endpoint is read-only and never installs or executes files.
+
 ## Why Agent controls MCDR, not the other way around
 
 MCDR is itself a process that requires supervision. A future trusted

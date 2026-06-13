@@ -198,6 +198,14 @@ Verification is intended to detect runtime staging corruption or manual
 tampering. It does not repair, install, mount, load, inspect, or execute the
 artifact.
 
+### Batch Verification of Materialized Artifacts
+
+`sessions artifacts verify-all --id <session-id>` asks the Agent to recompute
+SHA-256 hashes for every entry in the session materialization manifest. The
+read-only result summarizes valid, missing, corrupted, and malformed entries;
+the CLI exits non-zero when any entry is not valid. This operator health check
+does not install, mount, load, repair, or execute artifacts.
+
 ## Artifact Approval
 
 Artifact approval is metadata-only review. `artifacts approve` and `artifacts

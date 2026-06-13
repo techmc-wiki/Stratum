@@ -196,6 +196,10 @@ func (f *Fake) VerifyMaterializedArtifact(_ context.Context, sessionID, stagingP
 	return agent.MaterializedArtifactVerification{}, fmt.Errorf("%w: staging plan %q in session %q", agent.ErrMaterializedArtifactNotFound, stagingPlanID, sessionID)
 }
 
+func (f *Fake) VerifyMaterializedArtifacts(_ context.Context, sessionID string) (agent.MaterializedArtifactsVerification, error) {
+	return agent.MaterializedArtifactsVerification{AgentID: f.id, SessionID: sessionID, Entries: []agent.MaterializedArtifactVerification{}}, nil
+}
+
 func (f *Fake) record(operation agent.Operation) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

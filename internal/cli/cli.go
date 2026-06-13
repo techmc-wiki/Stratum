@@ -658,6 +658,9 @@ func sessionArtifacts(ctx context.Context, agentClient agent.AgentClient, hasAge
 	if len(args) > 0 && args[0] == "verify" {
 		return verifySessionArtifact(ctx, agentClient, hasAgentURL, args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "verify-all" {
+		return verifySessionArtifacts(ctx, agentClient, hasAgentURL, args[1:], stdout, stderr)
+	}
 	flags := newFlagSet("sessions artifacts", stderr)
 	id := flags.String("id", "", "session ID")
 	if err := flags.Parse(args); err != nil {
@@ -681,6 +684,34 @@ func sessionArtifacts(ctx context.Context, agentClient agent.AgentClient, hasAge
 	}
 	for _, item := range result.Items {
 		fmt.Fprintf(stdout, "session=%s artifact=%s plan=%s name=%q type=%s target=%s algorithm=%s hash=%s size=%d runtimePath=%s actor=%s status=%s materializedAt=%s\n", result.SessionID, item.ArtifactID, item.StagingPlanID, item.ArtifactName, item.ArtifactType, item.TargetName, item.PayloadAlgorithm, item.PayloadHash, item.PayloadSize, item.RuntimeRelativePath, item.ActorID, item.Status, item.MaterializedAt.Format(time.RFC3339Nano))
+	}
+	return 0
+}
+
+func verifySessionArtifacts(ctx context.Context, agentClient agent.AgentClient, hasAgentURL bool, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("sessions artifacts verify-all", stderr)
+	id := flags.String("id", "", "session ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" {
+		fmt.Fprintln(stderr, "--id is required")
+		return 2
+	}
+	if !hasAgentURL {
+		fmt.Fprintln(stderr, "--agent-url is required for materialized artifact verification")
+		return 2
+	}
+	result, err := agentClient.VerifyMaterializedArtifacts(ctx, *id)
+	if err != nil {
+		return reportError(stderr, "verify materialized artifacts", err)
+	}
+	fmt.Fprintf(stdout, "session=%s agent=%s total=%d valid=%d missing=%d corrupted=%d errors=%d verifiedAt=%s\n", result.SessionID, result.AgentID, result.Total, result.ValidCount, result.MissingCount, result.CorruptedCount, result.ErrorCount, result.VerifiedAt.Format(time.RFC3339Nano))
+	for _, entry := range result.Entries {
+		fmt.Fprintf(stdout, "artifact=%s plan=%s target=%s runtimePath=%s algorithm=%s expectedHash=%s actualHash=%s payloadSize=%d actualSize=%d status=%s error=%q\n", entry.ArtifactID, entry.StagingPlanID, entry.TargetName, entry.RuntimeRelativePath, entry.PayloadAlgorithm, entry.ExpectedHash, entry.ActualHash, entry.PayloadSize, entry.ActualSize, entry.Status, entry.ErrorMessage)
+	}
+	if result.MissingCount > 0 || result.CorruptedCount > 0 || result.ErrorCount > 0 {
+		return 1
 	}
 	return 0
 }

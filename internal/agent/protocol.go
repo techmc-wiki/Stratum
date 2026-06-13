@@ -129,6 +129,19 @@ type MaterializedArtifactVerification struct {
 	ActualSize          int64
 	Status              string
 	VerifiedAt          time.Time
+	ErrorMessage        string
+}
+
+type MaterializedArtifactsVerification struct {
+	AgentID        string
+	SessionID      string
+	VerifiedAt     time.Time
+	Total          int
+	ValidCount     int
+	MissingCount   int
+	CorruptedCount int
+	ErrorCount     int
+	Entries        []MaterializedArtifactVerification
 }
 
 type OperationResult struct {
@@ -216,6 +229,7 @@ type AgentClient interface {
 	InspectMaterializedArtifacts(context.Context, string) (MaterializedArtifacts, error)
 	InspectMaterializedArtifact(context.Context, string, string) (MaterializedArtifact, error)
 	VerifyMaterializedArtifact(context.Context, string, string) (MaterializedArtifactVerification, error)
+	VerifyMaterializedArtifacts(context.Context, string) (MaterializedArtifactsVerification, error)
 }
 
 type RuntimeAgent interface {

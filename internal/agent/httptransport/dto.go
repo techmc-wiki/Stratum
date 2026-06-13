@@ -153,7 +153,21 @@ type MaterializedArtifactVerificationResponse struct {
 	ActualSize          int64     `json:"actualSize"`
 	Status              string    `json:"status"`
 	VerifiedAt          time.Time `json:"verifiedAt"`
+	ErrorMessage        string    `json:"errorMessage,omitempty"`
 	RequestID           string    `json:"requestId"`
+}
+
+type MaterializedArtifactsVerificationResponse struct {
+	AgentID        string                                     `json:"agentId"`
+	SessionID      string                                     `json:"sessionId"`
+	VerifiedAt     time.Time                                  `json:"verifiedAt"`
+	Total          int                                        `json:"total"`
+	ValidCount     int                                        `json:"validCount"`
+	MissingCount   int                                        `json:"missingCount"`
+	CorruptedCount int                                        `json:"corruptedCount"`
+	ErrorCount     int                                        `json:"errorCount"`
+	Entries        []MaterializedArtifactVerificationResponse `json:"entries"`
+	RequestID      string                                     `json:"requestId"`
 }
 
 type ErrorResponse struct {

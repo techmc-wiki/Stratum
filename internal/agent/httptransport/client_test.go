@@ -143,6 +143,10 @@ func TestClientMaterializesArtifactThroughHTTP(t *testing.T) {
 	if err != nil || verified.Status != "valid" || verified.ExpectedHash != verified.ActualHash || verified.ActualSize != int64(len(payload)) {
 		t.Fatalf("verified=%+v err=%v", verified, err)
 	}
+	verifiedAll, err := client.VerifyMaterializedArtifacts(context.Background(), "session-1")
+	if err != nil || verifiedAll.Total != 1 || verifiedAll.ValidCount != 1 || verifiedAll.MissingCount != 0 || verifiedAll.CorruptedCount != 0 || verifiedAll.ErrorCount != 0 || len(verifiedAll.Entries) != 1 || verifiedAll.Entries[0].Status != "valid" {
+		t.Fatalf("verified all=%+v err=%v", verifiedAll, err)
+	}
 }
 
 func TestClientMaterializedArtifactsMissingManifestIsEmpty(t *testing.T) {
@@ -155,6 +159,10 @@ func TestClientMaterializedArtifactsMissingManifestIsEmpty(t *testing.T) {
 	result, err := newTestClient(t, server.URL, "").InspectMaterializedArtifacts(context.Background(), "session-1")
 	if err != nil || result.Status != "empty" || len(result.Items) != 0 {
 		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	verified, err := newTestClient(t, server.URL, "").VerifyMaterializedArtifacts(context.Background(), "session-1")
+	if err != nil || verified.Total != 0 || len(verified.Entries) != 0 {
+		t.Fatalf("verified=%+v err=%v", verified, err)
 	}
 }
 
@@ -177,6 +185,10 @@ func TestClientMaterializedArtifactMalformedManifestReturnsStructuredError(t *te
 	var httpErr HTTPError
 	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusBadRequest || !strings.Contains(httpErr.Message, "decode staging manifest") {
 		t.Fatalf("err=%#v", err)
+	}
+	_, err = newTestClient(t, server.URL, "").VerifyMaterializedArtifacts(context.Background(), "session-1")
+	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusBadRequest || !strings.Contains(httpErr.Message, "decode staging manifest") {
+		t.Fatalf("verify all err=%#v", err)
 	}
 }
 

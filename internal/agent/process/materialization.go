@@ -68,54 +68,74 @@ func MaterializeArtifact(ctx context.Context, runtimeRoot string, request agent.
 }
 
 func InspectMaterializedArtifacts(ctx context.Context, runtimeRoot, sessionID string) (agent.MaterializedArtifacts, error) {
-	if err := ctx.Err(); err != nil {
-		return agent.MaterializedArtifacts{}, err
-	}
-	layout, err := NewSessionRuntimeLayout(runtimeRoot, sessionID)
+	layout, manifest, err := readMaterializedArtifactManifest(ctx, runtimeRoot, sessionID)
 	if err != nil {
-		return agent.MaterializedArtifacts{}, err
-	}
-	if err := rejectSymlinkPath(layout.RuntimeRoot, layout.ArtifactsDir); err != nil {
 		return agent.MaterializedArtifacts{}, err
 	}
 	staging := layout.Staging()
-	if info, err := os.Lstat(staging.StagedArtifactsManifest); err == nil && info.Mode()&os.ModeSymlink != 0 {
-		return agent.MaterializedArtifacts{}, errors.New("artifact staging manifest must not be a symbolic link")
-	} else if err != nil && !os.IsNotExist(err) {
-		return agent.MaterializedArtifacts{}, fmt.Errorf("inspect artifact staging manifest: %w", err)
-	}
-	manifest, err := staging.ReadArtifactManifest()
-	if err != nil {
-		return agent.MaterializedArtifacts{}, err
-	}
 	items := make([]agent.MaterializedArtifact, 0, len(manifest.Items))
 	for _, item := range manifest.Items {
-		if item.Kind != "artifact" {
-			return agent.MaterializedArtifacts{}, fmt.Errorf("artifact staging manifest contains unsupported item kind %q", item.Kind)
-		}
-		target, err := staging.ArtifactPath(item.Name)
+		converted, err := inspectMaterializedArtifactItem(layout, staging, item)
 		if err != nil {
-			return agent.MaterializedArtifacts{}, fmt.Errorf("invalid materialized artifact target %q: %w", item.Name, err)
+			return agent.MaterializedArtifacts{}, err
 		}
-		if item.Path != "" && filepath.Clean(item.Path) != filepath.Clean(target) {
-			return agent.MaterializedArtifacts{}, errors.New("materialized artifact manifest path does not match safe runtime path")
-		}
-		relative, err := filepath.Rel(layout.SessionRoot, target)
-		if err != nil || !pathWithin(layout.SessionRoot, target) {
-			return agent.MaterializedArtifacts{}, errors.New("materialized artifact path escapes session runtime")
-		}
-		items = append(items, agent.MaterializedArtifact{
-			ArtifactID: item.ArtifactID, StagingPlanID: item.StagingPlanID, ArtifactName: item.ArtifactName,
-			ArtifactType: item.ArtifactType, TargetName: item.Name, PayloadAlgorithm: item.PayloadAlgorithm,
-			PayloadHash: item.PayloadHash, PayloadSize: item.PayloadSize, RuntimeRelativePath: filepath.ToSlash(relative),
-			MaterializedAt: item.CreatedAt, ActorID: item.ActorID, Status: item.Status, Metadata: cloneStringMap(item.Metadata),
-		})
+		items = append(items, converted)
 	}
 	status := "empty"
 	if len(items) > 0 {
 		status = "available"
 	}
 	return agent.MaterializedArtifacts{SessionID: sessionID, Status: status, Items: items}, nil
+}
+
+func readMaterializedArtifactManifest(ctx context.Context, runtimeRoot, sessionID string) (SessionRuntimeLayout, StagingManifest, error) {
+	if err := ctx.Err(); err != nil {
+		return SessionRuntimeLayout{}, StagingManifest{}, err
+	}
+	layout, err := NewSessionRuntimeLayout(runtimeRoot, sessionID)
+	if err != nil {
+		return SessionRuntimeLayout{}, StagingManifest{}, err
+	}
+	if err := rejectSymlinkPath(layout.RuntimeRoot, layout.ArtifactsDir); err != nil {
+		return SessionRuntimeLayout{}, StagingManifest{}, err
+	}
+	staging := layout.Staging()
+	if info, err := os.Lstat(staging.StagedArtifactsManifest); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return SessionRuntimeLayout{}, StagingManifest{}, errors.New("artifact staging manifest must not be a symbolic link")
+	} else if err != nil && !os.IsNotExist(err) {
+		return SessionRuntimeLayout{}, StagingManifest{}, fmt.Errorf("inspect artifact staging manifest: %w", err)
+	}
+	manifest, err := staging.ReadArtifactManifest()
+	if err != nil {
+		return SessionRuntimeLayout{}, StagingManifest{}, err
+	}
+	return layout, manifest, nil
+}
+
+func inspectMaterializedArtifactItem(layout SessionRuntimeLayout, staging SessionRuntimeStaging, item StagedRuntimeItem) (agent.MaterializedArtifact, error) {
+	if item.Kind != "artifact" {
+		return agent.MaterializedArtifact{}, fmt.Errorf("artifact staging manifest contains unsupported item kind %q", item.Kind)
+	}
+	if err := validateMaterializationIdentifier("staging plan", item.StagingPlanID); err != nil {
+		return agent.MaterializedArtifact{}, err
+	}
+	target, err := staging.ArtifactPath(item.Name)
+	if err != nil {
+		return agent.MaterializedArtifact{}, fmt.Errorf("invalid materialized artifact target %q: %w", item.Name, err)
+	}
+	if item.Path != "" && filepath.Clean(item.Path) != filepath.Clean(target) {
+		return agent.MaterializedArtifact{}, errors.New("materialized artifact manifest path does not match safe runtime path")
+	}
+	relative, err := filepath.Rel(layout.SessionRoot, target)
+	if err != nil || !pathWithin(layout.SessionRoot, target) {
+		return agent.MaterializedArtifact{}, errors.New("materialized artifact path escapes session runtime")
+	}
+	return agent.MaterializedArtifact{
+		ArtifactID: item.ArtifactID, StagingPlanID: item.StagingPlanID, ArtifactName: item.ArtifactName,
+		ArtifactType: item.ArtifactType, TargetName: item.Name, PayloadAlgorithm: item.PayloadAlgorithm,
+		PayloadHash: item.PayloadHash, PayloadSize: item.PayloadSize, RuntimeRelativePath: filepath.ToSlash(relative),
+		MaterializedAt: item.CreatedAt, ActorID: item.ActorID, Status: item.Status, Metadata: cloneStringMap(item.Metadata),
+	}, nil
 }
 
 func InspectMaterializedArtifact(ctx context.Context, runtimeRoot, sessionID, stagingPlanID string) (agent.MaterializedArtifact, error) {
@@ -140,26 +160,66 @@ func VerifyMaterializedArtifact(ctx context.Context, runtimeRoot, sessionID, sta
 	if err != nil {
 		return agent.MaterializedArtifactVerification{}, err
 	}
-	if item.PayloadAlgorithm != "sha256" || !validMaterializationHash(item.PayloadHash) {
-		return agent.MaterializedArtifactVerification{}, errors.New("materialized artifact manifest requires a valid SHA-256 payload hash")
-	}
 	layout, err := NewSessionRuntimeLayout(runtimeRoot, sessionID)
 	if err != nil {
 		return agent.MaterializedArtifactVerification{}, err
 	}
+	return verifyMaterializedArtifactItem(ctx, layout, item, normalizeManifestTime(at))
+}
+
+func VerifyMaterializedArtifacts(ctx context.Context, runtimeRoot, sessionID string, at time.Time) (agent.MaterializedArtifactsVerification, error) {
+	layout, manifest, err := readMaterializedArtifactManifest(ctx, runtimeRoot, sessionID)
+	if err != nil {
+		return agent.MaterializedArtifactsVerification{}, err
+	}
+	verifiedAt := normalizeManifestTime(at)
+	result := agent.MaterializedArtifactsVerification{SessionID: sessionID, VerifiedAt: verifiedAt, Total: len(manifest.Items), Entries: make([]agent.MaterializedArtifactVerification, 0, len(manifest.Items))}
+	staging := layout.Staging()
+	for _, manifestItem := range manifest.Items {
+		item, inspectErr := inspectMaterializedArtifactItem(layout, staging, manifestItem)
+		if inspectErr != nil {
+			entry := verificationErrorEntry(sessionID, manifestItem, verifiedAt, inspectErr)
+			result.Entries = append(result.Entries, entry)
+			result.ErrorCount++
+			continue
+		}
+		entry, verifyErr := verifyMaterializedArtifactItem(ctx, layout, item, verifiedAt)
+		if verifyErr != nil {
+			entry = verificationErrorEntry(sessionID, manifestItem, verifiedAt, verifyErr)
+			entry.RuntimeRelativePath = item.RuntimeRelativePath
+			result.ErrorCount++
+		} else {
+			switch entry.Status {
+			case "valid":
+				result.ValidCount++
+			case "missing":
+				result.MissingCount++
+			case "corrupted":
+				result.CorruptedCount++
+			}
+		}
+		result.Entries = append(result.Entries, entry)
+	}
+	return result, nil
+}
+
+func verifyMaterializedArtifactItem(ctx context.Context, layout SessionRuntimeLayout, item agent.MaterializedArtifact, verifiedAt time.Time) (agent.MaterializedArtifactVerification, error) {
+	result := agent.MaterializedArtifactVerification{
+		SessionID: layout.SessionID, StagingPlanID: item.StagingPlanID, ArtifactID: item.ArtifactID,
+		TargetName: item.TargetName, RuntimeRelativePath: item.RuntimeRelativePath,
+		PayloadAlgorithm: item.PayloadAlgorithm, ExpectedHash: item.PayloadHash,
+		PayloadSize: item.PayloadSize, Status: "missing", VerifiedAt: verifiedAt,
+	}
+	if item.PayloadAlgorithm != "sha256" || !validMaterializationHash(item.PayloadHash) {
+		return result, errors.New("materialized artifact manifest requires a valid SHA-256 payload hash")
+	}
 	staging := layout.Staging()
 	target, err := staging.ArtifactPath(item.TargetName)
 	if err != nil {
-		return agent.MaterializedArtifactVerification{}, err
+		return result, err
 	}
 	if err := rejectSymlinkPath(staging.ArtifactsDir, target); err != nil {
-		return agent.MaterializedArtifactVerification{}, err
-	}
-	result := agent.MaterializedArtifactVerification{
-		SessionID: sessionID, StagingPlanID: stagingPlanID, ArtifactID: item.ArtifactID,
-		TargetName: item.TargetName, RuntimeRelativePath: item.RuntimeRelativePath,
-		PayloadAlgorithm: item.PayloadAlgorithm, ExpectedHash: item.PayloadHash,
-		PayloadSize: item.PayloadSize, Status: "missing", VerifiedAt: normalizeManifestTime(at),
+		return result, err
 	}
 	info, err := os.Lstat(target)
 	if os.IsNotExist(err) {
@@ -182,6 +242,14 @@ func VerifyMaterializedArtifact(ctx context.Context, runtimeRoot, sessionID, sta
 		result.Status = "valid"
 	}
 	return result, nil
+}
+
+func verificationErrorEntry(sessionID string, item StagedRuntimeItem, verifiedAt time.Time, err error) agent.MaterializedArtifactVerification {
+	return agent.MaterializedArtifactVerification{
+		SessionID: sessionID, StagingPlanID: item.StagingPlanID, ArtifactID: item.ArtifactID,
+		TargetName: item.Name, PayloadAlgorithm: item.PayloadAlgorithm, ExpectedHash: item.PayloadHash,
+		PayloadSize: item.PayloadSize, Status: "error", VerifiedAt: verifiedAt, ErrorMessage: err.Error(),
+	}
 }
 
 func validateMaterializationIdentifier(kind, value string) error {

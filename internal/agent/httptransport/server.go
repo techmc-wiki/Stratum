@@ -48,11 +48,25 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/sessions/{id}/inspect", s.inspectSession)
 	s.mux.HandleFunc("GET /v1/sessions/{id}/logs", s.logs)
 	s.mux.HandleFunc("GET /v1/sessions/{id}/artifacts", s.materializedArtifacts)
+	s.mux.HandleFunc("GET /v1/sessions/{id}/artifacts/verify", s.verifyMaterializedArtifacts)
 	s.mux.HandleFunc("GET /v1/sessions/{id}/artifacts/{plan}", s.materializedArtifact)
 	s.mux.HandleFunc("GET /v1/sessions/{id}/artifacts/{plan}/verify", s.verifyMaterializedArtifact)
 	s.mux.HandleFunc("POST /v1/checkpoints/create-stub", s.checkpointStub(true))
 	s.mux.HandleFunc("POST /v1/checkpoints/restore-stub", s.checkpointStub(false))
 	s.mux.HandleFunc("POST /v1/artifacts/materialize", s.materializeArtifact)
+}
+
+func (s *Server) verifyMaterializedArtifacts(w http.ResponseWriter, r *http.Request) {
+	result, err := s.client.VerifyMaterializedArtifacts(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "verify-materialized-artifacts", err)
+		return
+	}
+	entries := make([]MaterializedArtifactVerificationResponse, 0, len(result.Entries))
+	for _, entry := range result.Entries {
+		entries = append(entries, materializedArtifactVerificationResponse(entry))
+	}
+	writeJSON(w, http.StatusOK, MaterializedArtifactsVerificationResponse{AgentID: result.AgentID, SessionID: result.SessionID, VerifiedAt: result.VerifiedAt, Total: result.Total, ValidCount: result.ValidCount, MissingCount: result.MissingCount, CorruptedCount: result.CorruptedCount, ErrorCount: result.ErrorCount, Entries: entries, RequestID: requestID(r)})
 }
 
 func (s *Server) verifyMaterializedArtifact(w http.ResponseWriter, r *http.Request) {
@@ -65,7 +79,13 @@ func (s *Server) verifyMaterializedArtifact(w http.ResponseWriter, r *http.Reque
 		s.writeError(w, r, status, "verify-materialized-artifact", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, MaterializedArtifactVerificationResponse{AgentID: result.AgentID, SessionID: result.SessionID, StagingPlanID: result.StagingPlanID, ArtifactID: result.ArtifactID, TargetName: result.TargetName, RuntimeRelativePath: result.RuntimeRelativePath, PayloadAlgorithm: result.PayloadAlgorithm, ExpectedHash: result.ExpectedHash, ActualHash: result.ActualHash, PayloadSize: result.PayloadSize, ActualSize: result.ActualSize, Status: result.Status, VerifiedAt: result.VerifiedAt, RequestID: requestID(r)})
+	response := materializedArtifactVerificationResponse(result)
+	response.RequestID = requestID(r)
+	writeJSON(w, http.StatusOK, response)
+}
+
+func materializedArtifactVerificationResponse(result agent.MaterializedArtifactVerification) MaterializedArtifactVerificationResponse {
+	return MaterializedArtifactVerificationResponse{AgentID: result.AgentID, SessionID: result.SessionID, StagingPlanID: result.StagingPlanID, ArtifactID: result.ArtifactID, TargetName: result.TargetName, RuntimeRelativePath: result.RuntimeRelativePath, PayloadAlgorithm: result.PayloadAlgorithm, ExpectedHash: result.ExpectedHash, ActualHash: result.ActualHash, PayloadSize: result.PayloadSize, ActualSize: result.ActualSize, Status: result.Status, VerifiedAt: result.VerifiedAt, ErrorMessage: result.ErrorMessage}
 }
 
 func (s *Server) materializedArtifact(w http.ResponseWriter, r *http.Request) {

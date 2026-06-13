@@ -210,3 +210,7 @@ Lucy locks, or durable checkpoint metadata.
 Artifact staging plans are Controller metadata under `artifact-staging-plans/`.
 They validate approved staging intent only and do not imply that any artifact
 payload has been copied, mounted, installed, or executed.
+
+Batch materialized-artifact verification uses safe paths derived from each
+Agent manifest entry. It never follows a manifest path to arbitrary storage,
+and it leaves both the manifest and staged payloads unchanged.
