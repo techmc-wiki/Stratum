@@ -1323,7 +1323,7 @@ func ensureResourcePolicy(ctx context.Context, store *filesystem.Store) (resourc
 
 func artifactApply(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: stratum artifacts apply <plan|list|inspect|dry-run> [flags]")
+		fmt.Fprintln(stderr, "usage: stratum artifacts apply <plan|list|inspect|dry-run|execute> [flags]")
 		return 2
 	}
 	switch args[0] {
@@ -1335,6 +1335,8 @@ func artifactApply(ctx context.Context, store *filesystem.Store, agentClient age
 		return artifactApplyInspect(ctx, store, args[1:], stdout, stderr)
 	case "dry-run":
 		return artifactApplyDryRun(ctx, store, agentClient, args[1:], stdout, stderr)
+	case "execute":
+		return artifactApplyExecute(ctx, store, agentClient, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown artifacts apply command %q\n", args[0])
 		return 2
@@ -1452,6 +1454,46 @@ func artifactApplyDryRun(ctx context.Context, store *filesystem.Store, agentClie
 		}
 	}
 	fmt.Fprintln(stdout, "No files were copied, mounted, installed, or executed.")
+	return 0
+}
+
+func artifactApplyExecute(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("artifacts apply execute", stderr)
+	planID := flags.String("plan", "", "apply plan ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *planID == "" {
+		fmt.Fprintln(stderr, "--plan is required")
+		return 2
+	}
+	service := artifactapplysvc.New(store, nil)
+	plan, err := service.Get(ctx, *planID)
+	if err != nil {
+		return reportError(stderr, "get artifact apply plan", err)
+	}
+	if plan.Status != artifactapply.StatusPlanned {
+		fmt.Fprintf(stderr, "apply plan status is %s, not planned\n", plan.Status)
+		return 1
+	}
+	req := agent.ArtifactApplyExecuteRequest{ApplyPlanID: plan.ID, SessionID: plan.SessionID, StagingPlanID: plan.SourceStagingPlanID, ArtifactID: plan.ArtifactID, TargetRoot: string(plan.TargetRoot), TargetRelativePath: plan.TargetRelativePath, ExpectedHash: plan.MaterializedArtifactHash}
+	result, err := agentClient.ExecuteArtifactApply(ctx, req)
+	if err != nil {
+		return reportError(stderr, "execute artifact apply", err)
+	}
+	fmt.Fprintf(stdout, "Apply execution result for plan %s:\n", result.ApplyPlanID)
+	fmt.Fprintf(stdout, "Status: %s\n", result.Status)
+	fmt.Fprintf(stdout, "Action: %s\n", result.Action)
+	fmt.Fprintf(stdout, "Source: %s\n", result.SourcePath)
+	fmt.Fprintf(stdout, "Target: %s\n", result.TargetPath)
+	fmt.Fprintf(stdout, "Copied: %d bytes\n", result.CopiedBytes)
+	fmt.Fprintf(stdout, "Hash: %s\n", result.VerifiedTargetHash)
+	if len(result.Issues) > 0 {
+		fmt.Fprintf(stdout, "Issues:\n")
+		for _, issue := range result.Issues {
+			fmt.Fprintf(stdout, "  - %s\n", issue)
+		}
+	}
 	return 0
 }
 

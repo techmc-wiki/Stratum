@@ -75,6 +75,70 @@ func DryRunArtifactApply(ctx context.Context, runtimeRoot string, req agent.Arti
 	return result, nil
 }
 
+func ExecuteArtifactApply(ctx context.Context, runtimeRoot string, req agent.ArtifactApplyExecuteRequest, at time.Time) (agent.ArtifactApplyExecuteResult, error) {
+	result := agent.ArtifactApplyExecuteResult{ApplyPlanID: req.ApplyPlanID, SessionID: req.SessionID, ArtifactID: req.ArtifactID, StagingPlanID: req.StagingPlanID, TargetRoot: req.TargetRoot, TargetRelativePath: req.TargetRelativePath, Action: "copy", Status: "failed", Issues: []string{}, ExecutedAt: at}
+	dryRunReq := agent.ArtifactApplyDryRunRequest{ApplyPlanID: req.ApplyPlanID, SessionID: req.SessionID, StagingPlanID: req.StagingPlanID, ArtifactID: req.ArtifactID, TargetRoot: req.TargetRoot, TargetRelativePath: req.TargetRelativePath, ExpectedHash: req.ExpectedHash, ExpectedSize: req.ExpectedSize}
+	dryRun, err := DryRunArtifactApply(ctx, runtimeRoot, dryRunReq, at)
+	if err != nil {
+		result.Issues = append(result.Issues, fmt.Sprintf("dry-run failed: %v", err))
+		return result, nil
+	}
+	if dryRun.Status != "ready" {
+		result.Issues = append(result.Issues, "dry-run not ready")
+		result.Issues = append(result.Issues, dryRun.Issues...)
+		return result, nil
+	}
+	layout, _ := NewSessionRuntimeLayout(runtimeRoot, req.SessionID)
+	sourcePath := filepath.Join(layout.SessionRoot, dryRun.SourceRuntimeRelativePath)
+	targetRoot := mapTargetRootForExecution(req.TargetRoot, layout.WorkDir)
+	if targetRoot == "" {
+		result.Issues = append(result.Issues, "unsupported target root")
+		return result, nil
+	}
+	targetPath := filepath.Join(targetRoot, filepath.Clean(req.TargetRelativePath))
+	if !strings.HasPrefix(targetPath, targetRoot) {
+		result.Issues = append(result.Issues, "computed target escapes target root")
+		return result, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+		result.Issues = append(result.Issues, fmt.Sprintf("cannot create target directory: %v", err))
+		return result, nil
+	}
+	src, err := os.Open(sourcePath)
+	if err != nil {
+		result.Issues = append(result.Issues, fmt.Sprintf("cannot open source: %v", err))
+		return result, nil
+	}
+	defer src.Close()
+	dst, err := os.Create(targetPath)
+	if err != nil {
+		result.Issues = append(result.Issues, fmt.Sprintf("cannot create target: %v", err))
+		return result, nil
+	}
+	defer dst.Close()
+	copied, err := io.Copy(dst, src)
+	if err != nil {
+		result.Issues = append(result.Issues, fmt.Sprintf("copy failed: %v", err))
+		return result, nil
+	}
+	dst.Close()
+	verifiedHash, _, err := hashFile(targetPath)
+	if err != nil {
+		result.Issues = append(result.Issues, fmt.Sprintf("cannot verify target: %v", err))
+		return result, nil
+	}
+	if verifiedHash != req.ExpectedHash {
+		result.Issues = append(result.Issues, "target hash mismatch after copy")
+		return result, nil
+	}
+	result.SourcePath = sourcePath
+	result.TargetPath = targetPath
+	result.CopiedBytes = copied
+	result.VerifiedTargetHash = verifiedHash
+	result.Status = "applied"
+	return result, nil
+}
+
 func hashFile(path string) (string, int64, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -92,19 +156,40 @@ func hashFile(path string) (string, int64, error) {
 func mapTargetRoot(root string) string {
 	switch root {
 	case "mods":
-		return "mods"
+		return "work/mods"
 	case "config":
 		return "config"
 	case "datapacks":
-		return "world/datapacks"
+		return "work/datapacks"
 	case "plugins":
-		return "plugins"
+		return "work/plugins"
 	case "schematics":
-		return "schematics"
+		return "work/schematics"
 	case "worlds":
-		return "worlds"
+		return "work/worlds"
 	case "custom":
-		return "custom"
+		return "work/custom"
+	default:
+		return ""
+	}
+}
+
+func mapTargetRootForExecution(root, workDir string) string {
+	switch root {
+	case "mods":
+		return filepath.Join(workDir, "mods")
+	case "config":
+		return filepath.Join(filepath.Dir(workDir), "config")
+	case "datapacks":
+		return filepath.Join(workDir, "datapacks")
+	case "plugins":
+		return filepath.Join(workDir, "plugins")
+	case "schematics":
+		return filepath.Join(workDir, "schematics")
+	case "worlds":
+		return filepath.Join(workDir, "worlds")
+	case "custom":
+		return filepath.Join(workDir, "custom")
 	default:
 		return ""
 	}

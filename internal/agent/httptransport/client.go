@@ -187,6 +187,15 @@ func (c *Client) DryRunArtifactApply(ctx context.Context, req agent.ArtifactAppl
 	return agent.ArtifactApplyDryRunResult{AgentID: response.AgentID, ApplyPlanID: response.ApplyPlanID, SessionID: response.SessionID, ArtifactID: response.ArtifactID, StagingPlanID: response.StagingPlanID, ApplyKind: response.ApplyKind, TargetRoot: response.TargetRoot, TargetRelativePath: response.TargetRelativePath, SourceRuntimeRelativePath: response.SourceRuntimeRelativePath, PlannedTargetRuntimeRelativePath: response.PlannedTargetRuntimeRelativePath, Action: response.Action, Status: response.Status, Issues: response.Issues, CheckedAt: response.CheckedAt}, nil
 }
 
+func (c *Client) ExecuteArtifactApply(ctx context.Context, req agent.ArtifactApplyExecuteRequest) (agent.ArtifactApplyExecuteResult, error) {
+	var response ArtifactApplyExecuteResultDTO
+	body := ArtifactApplyExecuteRequestDTO{ApplyPlanID: req.ApplyPlanID, SessionID: req.SessionID, StagingPlanID: req.StagingPlanID, ArtifactID: req.ArtifactID, TargetRoot: req.TargetRoot, TargetRelativePath: req.TargetRelativePath, ExpectedHash: req.ExpectedHash, ExpectedSize: req.ExpectedSize}
+	if err := c.do(ctx, http.MethodPost, "/v1/artifacts/apply/execute", body, &response); err != nil {
+		return agent.ArtifactApplyExecuteResult{}, err
+	}
+	return agent.ArtifactApplyExecuteResult{AgentID: response.AgentID, ApplyPlanID: response.ApplyPlanID, SessionID: response.SessionID, ArtifactID: response.ArtifactID, StagingPlanID: response.StagingPlanID, TargetRoot: response.TargetRoot, TargetRelativePath: response.TargetRelativePath, SourcePath: response.SourcePath, TargetPath: response.TargetPath, Action: response.Action, Status: response.Status, Issues: response.Issues, CopiedBytes: response.CopiedBytes, VerifiedTargetHash: response.VerifiedTargetHash, ExecutedAt: response.ExecutedAt}, nil
+}
+
 func (c *Client) sessionOperation(ctx context.Context, request agent.SessionRequest, operation string) (agent.OperationResult, error) {
 	var response SessionOperationResponse
 	body := SessionOperationRequest{ProjectID: request.ProjectID, EnvironmentID: request.EnvironmentID, RuntimeProfileID: request.RuntimeProfileID}

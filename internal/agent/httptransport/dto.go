@@ -199,6 +199,36 @@ type ArtifactApplyDryRunResultDTO struct {
 	RequestID                        string    `json:"requestId"`
 }
 
+type ArtifactApplyExecuteRequestDTO struct {
+	ApplyPlanID        string `json:"applyPlanId"`
+	SessionID          string `json:"sessionId"`
+	StagingPlanID      string `json:"stagingPlanId"`
+	ArtifactID         string `json:"artifactId"`
+	TargetRoot         string `json:"targetRoot"`
+	TargetRelativePath string `json:"targetRelativePath"`
+	ExpectedHash       string `json:"expectedHash"`
+	ExpectedSize       int64  `json:"expectedSize"`
+}
+
+type ArtifactApplyExecuteResultDTO struct {
+	AgentID            string    `json:"agentId"`
+	ApplyPlanID        string    `json:"applyPlanId"`
+	SessionID          string    `json:"sessionId"`
+	ArtifactID         string    `json:"artifactId"`
+	StagingPlanID      string    `json:"stagingPlanId"`
+	TargetRoot         string    `json:"targetRoot"`
+	TargetRelativePath string    `json:"targetRelativePath"`
+	SourcePath         string    `json:"sourcePath"`
+	TargetPath         string    `json:"targetPath"`
+	Action             string    `json:"action"`
+	Status             string    `json:"status"`
+	Issues             []string  `json:"issues"`
+	CopiedBytes        int64     `json:"copiedBytes"`
+	VerifiedTargetHash string    `json:"verifiedTargetHash"`
+	ExecutedAt         time.Time `json:"executedAt"`
+	RequestID          string    `json:"requestId"`
+}
+
 type ErrorResponse struct {
 	Error     string `json:"error"`
 	Operation string `json:"operation,omitempty"`

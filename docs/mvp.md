@@ -46,6 +46,10 @@ Minecraft server.
 - Agent-side artifact apply dry-run that validates materialized file integrity,
   computes would-be target placement paths, and returns readiness status without
   copying, mounting, installing, or executing artifacts.
+- Agent-side artifact apply execution that copies verified materialized
+  artifacts to computed runtime target paths (mods, config, datapacks, plugins,
+  schematics, worlds, custom) without installing, loading, or executing
+  artifacts in a running Minecraft server.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active

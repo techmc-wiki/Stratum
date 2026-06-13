@@ -349,13 +349,57 @@ The dry-run returns:
 - issues list.
 
 Dry-run does not create target directories, copy files, modify manifests,
-inspect jar contents, or execute artifacts. Actual apply execution remains
-future work. Dry-run is invoked through the Agent API at
-`POST /v1/artifacts/apply/dry-run` or via CLI:
+inspect jar contents, or execute artifacts. Dry-run is invoked through the Agent
+API at `POST /v1/artifacts/apply/dry-run` or via CLI:
 
 ```powershell
 go run ./cmd/stratum --data-dir .stratum/data --agent-url http://127.0.0.1:8787 artifacts apply dry-run --plan <apply-plan-id> --actor bryan
 ```
+
+## Artifact Apply Execution
+
+Agent artifact apply execution copies a verified materialized artifact to the
+computed runtime target path. Apply execution:
+
+1. Runs dry-run validation first,
+2. Fails if dry-run is not ready,
+3. Computes source path from materialized artifact manifest,
+4. Computes target path under the session runtime layout,
+5. Creates parent target directory if needed,
+6. Copies file bytes from source to target,
+7. Recomputes hash of target file and ensures it matches expected payload hash,
+8. Returns apply result.
+
+Supported target roots and their mappings:
+
+- `mods` -> `work/mods/`
+- `config` -> `config/`
+- `datapacks` -> `work/datapacks/`
+- `plugins` -> `work/plugins/`
+- `schematics` -> `work/schematics/`
+- `worlds` -> `work/worlds/`
+- `custom` -> `work/custom/`
+
+The apply result includes:
+
+- status: `applied` or `failed`,
+- action: currently `copy`,
+- source absolute path,
+- target absolute path,
+- copied bytes,
+- verified target hash,
+- issues list.
+
+Apply execution does not install, load, or execute artifacts in a running
+Minecraft server. It only copies files inside the Agent-owned session runtime
+layout. Apply execution is invoked through the Agent API at
+`POST /v1/artifacts/apply/execute` or via CLI:
+
+```powershell
+go run ./cmd/stratum --data-dir .stratum/data --agent-url http://127.0.0.1:8787 artifacts apply execute --plan <apply-plan-id> --actor bryan
+```
+
+Checkpoint creation and rollback remain future work.
 
 ## MCDR RuntimeProfile future shape
 

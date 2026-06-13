@@ -285,6 +285,20 @@ The dry-run result includes:
 - issues.
 
 Dry-run is read-only. It does not create target directories, copy files, modify
-manifests, inspect jar contents, or execute artifacts. Actual apply execution
-remains future work.
+manifests, inspect jar contents, or execute artifacts.
+
+## Artifact Apply Execution
+
+Agent apply execution copies a verified materialized artifact to the computed
+runtime target path. Apply execution runs dry-run validation first, computes
+source path from the materialized artifact manifest, computes target path under
+the session runtime layout, creates parent target directory if needed, copies
+file bytes from source to target, recomputes hash of target file and ensures it
+matches expected payload hash, and returns the apply result.
+
+Apply execution does not install, load, or execute artifacts in a running
+Minecraft server. It only copies files inside the Agent-owned session runtime
+layout. The result includes status (applied or failed), action (currently copy),
+source and target absolute paths, copied bytes, verified target hash, and issues
+list. Checkpoint creation and rollback remain future work.
 

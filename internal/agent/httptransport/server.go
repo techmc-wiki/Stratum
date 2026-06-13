@@ -55,6 +55,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/checkpoints/restore-stub", s.checkpointStub(false))
 	s.mux.HandleFunc("POST /v1/artifacts/materialize", s.materializeArtifact)
 	s.mux.HandleFunc("POST /v1/artifacts/apply/dry-run", s.dryRunArtifactApply)
+	s.mux.HandleFunc("POST /v1/artifacts/apply/execute", s.executeArtifactApply)
 }
 
 func (s *Server) verifyMaterializedArtifacts(w http.ResponseWriter, r *http.Request) {
@@ -325,6 +326,21 @@ func (s *Server) dryRunArtifactApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, ArtifactApplyDryRunResultDTO{AgentID: result.AgentID, ApplyPlanID: result.ApplyPlanID, SessionID: result.SessionID, ArtifactID: result.ArtifactID, StagingPlanID: result.StagingPlanID, ApplyKind: result.ApplyKind, TargetRoot: result.TargetRoot, TargetRelativePath: result.TargetRelativePath, SourceRuntimeRelativePath: result.SourceRuntimeRelativePath, PlannedTargetRuntimeRelativePath: result.PlannedTargetRuntimeRelativePath, Action: result.Action, Status: result.Status, Issues: result.Issues, CheckedAt: result.CheckedAt, RequestID: requestID(r)})
+}
+
+func (s *Server) executeArtifactApply(w http.ResponseWriter, r *http.Request) {
+	var dto ArtifactApplyExecuteRequestDTO
+	if err := decodeJSONLimited(r, &dto, 4096); err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "execute-artifact-apply", err)
+		return
+	}
+	req := agent.ArtifactApplyExecuteRequest{ApplyPlanID: dto.ApplyPlanID, SessionID: dto.SessionID, StagingPlanID: dto.StagingPlanID, ArtifactID: dto.ArtifactID, TargetRoot: dto.TargetRoot, TargetRelativePath: dto.TargetRelativePath, ExpectedHash: dto.ExpectedHash, ExpectedSize: dto.ExpectedSize}
+	result, err := s.client.ExecuteArtifactApply(r.Context(), req)
+	if err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "execute-artifact-apply", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ArtifactApplyExecuteResultDTO{AgentID: result.AgentID, ApplyPlanID: result.ApplyPlanID, SessionID: result.SessionID, ArtifactID: result.ArtifactID, StagingPlanID: result.StagingPlanID, TargetRoot: result.TargetRoot, TargetRelativePath: result.TargetRelativePath, SourcePath: result.SourcePath, TargetPath: result.TargetPath, Action: result.Action, Status: result.Status, Issues: result.Issues, CopiedBytes: result.CopiedBytes, VerifiedTargetHash: result.VerifiedTargetHash, ExecutedAt: result.ExecutedAt, RequestID: requestID(r)})
 }
 
 func newRequestID() string {

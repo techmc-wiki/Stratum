@@ -204,6 +204,10 @@ func (f *Fake) DryRunArtifactApply(_ context.Context, req agent.ArtifactApplyDry
 	return agent.ArtifactApplyDryRunResult{AgentID: f.id, ApplyPlanID: req.ApplyPlanID, SessionID: req.SessionID, Status: "ready", Action: "would_copy", Issues: []string{}}, nil
 }
 
+func (f *Fake) ExecuteArtifactApply(_ context.Context, req agent.ArtifactApplyExecuteRequest) (agent.ArtifactApplyExecuteResult, error) {
+	return agent.ArtifactApplyExecuteResult{AgentID: f.id, ApplyPlanID: req.ApplyPlanID, SessionID: req.SessionID, Status: "applied", Action: "copy", Issues: []string{}, CopiedBytes: 100}, nil
+}
+
 func (f *Fake) record(operation agent.Operation) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

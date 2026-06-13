@@ -225,6 +225,15 @@ func (a *ProcessAgent) DryRunArtifactApply(ctx context.Context, req agent.Artifa
 	return result, nil
 }
 
+func (a *ProcessAgent) ExecuteArtifactApply(ctx context.Context, req agent.ArtifactApplyExecuteRequest) (agent.ArtifactApplyExecuteResult, error) {
+	result, err := agentprocess.ExecuteArtifactApply(ctx, a.supervisor.RuntimeRoot(), req, time.Now().UTC())
+	if err != nil {
+		return agent.ArtifactApplyExecuteResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationArtifactApply, Message: err.Error()}
+	}
+	result.AgentID = a.id
+	return result, nil
+}
+
 func (a *ProcessAgent) result(message string) agent.OperationResult {
 	return agent.OperationResult{AgentID: a.id, Status: "success", Message: message, Mode: agentprocess.RuntimeModeDummy}
 }

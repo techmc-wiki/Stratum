@@ -46,6 +46,7 @@ const (
 	OperationCreateCheckpoint    Operation = "create-checkpoint"
 	OperationRestoreCheckpoint   Operation = "restore-checkpoint"
 	OperationMaterializeArtifact Operation = "materialize-artifact"
+	OperationArtifactApply       Operation = "artifact-apply"
 )
 
 const MaxArtifactPayloadBytes = 64 << 20
@@ -172,6 +173,35 @@ type ArtifactApplyDryRunResult struct {
 	CheckedAt                        time.Time
 }
 
+type ArtifactApplyExecuteRequest struct {
+	ApplyPlanID        string
+	SessionID          string
+	StagingPlanID      string
+	ArtifactID         string
+	TargetRoot         string
+	TargetRelativePath string
+	ExpectedHash       string
+	ExpectedSize       int64
+}
+
+type ArtifactApplyExecuteResult struct {
+	AgentID            string
+	ApplyPlanID        string
+	SessionID          string
+	ArtifactID         string
+	StagingPlanID      string
+	TargetRoot         string
+	TargetRelativePath string
+	SourcePath         string
+	TargetPath         string
+	Action             string
+	Status             string
+	Issues             []string
+	CopiedBytes        int64
+	VerifiedTargetHash string
+	ExecutedAt         time.Time
+}
+
 type OperationResult struct {
 	AgentID string
 	Status  string
@@ -259,6 +289,7 @@ type AgentClient interface {
 	VerifyMaterializedArtifact(context.Context, string, string) (MaterializedArtifactVerification, error)
 	VerifyMaterializedArtifacts(context.Context, string) (MaterializedArtifactsVerification, error)
 	DryRunArtifactApply(context.Context, ArtifactApplyDryRunRequest) (ArtifactApplyDryRunResult, error)
+	ExecuteArtifactApply(context.Context, ArtifactApplyExecuteRequest) (ArtifactApplyExecuteResult, error)
 }
 
 type RuntimeAgent interface {
