@@ -181,7 +181,7 @@ func (s *Service) RegisterFile(ctx context.Context, id, name, path, uploader str
 	if err != nil {
 		return artifact.Artifact{}, fmt.Errorf("hash artifact: %w", err)
 	}
-	value := artifact.Artifact{ID: id, Name: name, Type: kind, UploaderID: uploader, SHA256: hash, SizeBytes: size, PayloadStatus: artifact.PayloadAvailable, PayloadAlgorithm: "sha256", TargetMinecraftVersions: versions, LoaderCompatibility: loaders, Status: artifact.StatusPending, CreatedAt: time.Now().UTC()}
+	value := artifact.Artifact{ID: id, Name: name, Type: kind, UploaderID: uploader, SHA256: hash, SizeBytes: size, PayloadStatus: artifact.PayloadAvailable, PayloadAlgorithm: "sha256", TargetMinecraftVersions: versions, LoaderCompatibility: loaders, Status: artifact.StatusPending, CreatedAt: s.now()}
 	if err := s.repository.SaveArtifact(ctx, value); err != nil {
 		return artifact.Artifact{}, err
 	}
