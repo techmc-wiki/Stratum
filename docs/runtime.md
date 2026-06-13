@@ -206,6 +206,15 @@ read-only result summarizes valid, missing, corrupted, and malformed entries;
 the CLI exits non-zero when any entry is not valid. This operator health check
 does not install, mount, load, repair, or execute artifacts.
 
+### Materialization Readiness
+
+`artifacts staging readiness --session <session-id>` is a read-only diagnostic
+before future apply or mount work. It combines current Controller staging and
+Artifact/Blob metadata with the Agent batch verification result, then reports
+missing, corrupted, stale, or unknown materialized entries. It does not install,
+mount, load, repair, or execute artifacts and does not call Lucy, MCDR, or
+Minecraft.
+
 ## Artifact Approval
 
 Artifact approval is metadata-only review. `artifacts approve` and `artifacts

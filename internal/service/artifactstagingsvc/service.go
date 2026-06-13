@@ -128,7 +128,11 @@ func (s *Service) CreatePlan(ctx context.Context, params CreateParams) (artifact
 }
 
 func (s *Service) verifyPayload(ctx context.Context, value artifact.Artifact) error {
-	if s.verifier == nil {
+	return verifyArtifactPayload(ctx, s.verifier, value)
+}
+
+func verifyArtifactPayload(ctx context.Context, verifier PayloadVerifier, value artifact.Artifact) error {
+	if verifier == nil {
 		return errors.New("payload verifier is unavailable")
 	}
 	if value.PayloadStatus != artifact.PayloadAvailable || value.PayloadAlgorithm == "" || value.SHA256 == "" || value.PayloadReference == "" || value.SizeBytes < 0 {
@@ -140,7 +144,7 @@ func (s *Service) verifyPayload(ctx context.Context, value artifact.Artifact) er
 	if !validSHA256(value.SHA256) {
 		return errors.New("invalid payload SHA-256 hash")
 	}
-	algorithm, hash, reference, size, err := s.verifier.VerifyPayload(ctx, value.SHA256)
+	algorithm, hash, reference, size, err := verifier.VerifyPayload(ctx, value.SHA256)
 	if err != nil {
 		if stratumerrors.IsKind(err, stratumerrors.KindNotFound) {
 			return fmt.Errorf("payload blob is missing: %w", err)

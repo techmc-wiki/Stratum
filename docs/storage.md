@@ -214,3 +214,8 @@ payload has been copied, mounted, installed, or executed.
 Batch materialized-artifact verification uses safe paths derived from each
 Agent manifest entry. It never follows a manifest path to arbitrary storage,
 and it leaves both the manifest and staged payloads unchanged.
+
+Materialization readiness correlates Controller records under
+`artifact-staging-plans/` with Agent manifest entries by staging plan ID. It
+reads current Artifact and Blob metadata but writes neither metadata nor Agent
+runtime storage.

@@ -1093,8 +1093,8 @@ func reviewArtifact(ctx context.Context, store *filesystem.Store, blobRoot, acti
 }
 
 func artifactStaging(ctx context.Context, store *filesystem.Store, blobRoot string, agentClient agent.AgentClient, agentMode string, hasAgentURL bool, args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 || (args[0] != "plan" && args[0] != "list" && args[0] != "inspect" && args[0] != "materialize") {
-		fmt.Fprintln(stderr, "usage: stratum artifacts staging <plan|list|inspect|materialize> [flags]")
+	if len(args) == 0 || (args[0] != "plan" && args[0] != "list" && args[0] != "inspect" && args[0] != "materialize" && args[0] != "readiness") {
+		fmt.Fprintln(stderr, "usage: stratum artifacts staging <plan|list|inspect|materialize|readiness> [flags]")
 		return 2
 	}
 	switch args[0] {
@@ -1106,9 +1106,46 @@ func artifactStaging(ctx context.Context, store *filesystem.Store, blobRoot stri
 		return inspectArtifactStaging(ctx, store, args[1:], stdout, stderr)
 	case "materialize":
 		return materializeArtifactStaging(ctx, store, blobRoot, agentClient, agentMode, hasAgentURL, args[1:], stdout, stderr)
+	case "readiness":
+		return artifactStagingReadiness(ctx, store, blobRoot, agentClient, hasAgentURL, args[1:], stdout, stderr)
 	default:
 		return 2
 	}
+}
+
+func artifactStagingReadiness(ctx context.Context, store *filesystem.Store, blobRoot string, agentClient agent.AgentClient, hasAgentURL bool, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("artifacts staging readiness", stderr)
+	sessionID := flags.String("session", "", "session ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *sessionID == "" {
+		fmt.Fprintln(stderr, "--session is required")
+		return 2
+	}
+	if !hasAgentURL {
+		fmt.Fprintln(stderr, "--agent-url is required for full materialization readiness")
+		return 2
+	}
+	blobs, err := artifactblob.Open(blobRoot)
+	if err != nil {
+		return reportError(stderr, "open artifact blob store", err)
+	}
+	result, err := artifactstagingsvc.NewReadinessService(store, blobs, agentClient).Check(ctx, *sessionID)
+	if err != nil {
+		return reportError(stderr, "check artifact materialization readiness", err)
+	}
+	fmt.Fprintf(stdout, "session=%s status=%s planned=%d materialized=%d valid=%d missing=%d corrupted=%d unknown=%d issues=%d checkedAt=%s\n", result.SessionID, result.Status, result.PlannedCount, result.MaterializedCount, result.ValidMaterializedCount, result.MissingMaterializedCount, result.CorruptedMaterializedCount, result.UnknownMaterializedCount, len(result.Issues), result.CheckedAt.Format(time.RFC3339Nano))
+	for _, issue := range result.Issues {
+		fmt.Fprintf(stdout, "issue=%s severity=%s plan=%s artifact=%s message=%q\n", issue.Code, issue.Severity, issue.StagingPlanID, issue.ArtifactID, issue.Message)
+	}
+	for _, entry := range result.Entries {
+		fmt.Fprintf(stdout, "plan=%s artifact=%s artifactStatus=%s materialized=%t verification=%s recommendedAction=%q\n", entry.StagingPlanID, entry.ArtifactID, entry.ArtifactStatus, entry.Materialized, entry.VerificationStatus, entry.RecommendedAction)
+	}
+	if result.Status != "ready" {
+		return 1
+	}
+	return 0
 }
 
 func materializeArtifactStaging(ctx context.Context, store *filesystem.Store, blobRoot string, agentClient agent.AgentClient, agentMode string, hasAgentURL bool, args []string, stdout, stderr io.Writer) int {

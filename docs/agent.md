@@ -179,6 +179,14 @@ and error counts. A malformed entry is reported without preventing practical
 verification of later entries; malformed manifest JSON remains a structured
 request error. The endpoint is read-only and never installs or executes files.
 
+### Materialization Readiness
+
+The Controller-side readiness diagnostic consumes the Agent's existing batch
+verification response and correlates entries by staging plan ID. The Agent
+remains a read-only source of runtime file observations for this check; it does
+not mutate manifests, repair files, mount artifacts, or invoke Lucy, MCDR, or
+Minecraft.
+
 ## Why Agent controls MCDR, not the other way around
 
 MCDR is itself a process that requires supervision. A future trusted

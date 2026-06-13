@@ -2,6 +2,7 @@ package artifactstagingsvc
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/domain/artifact"
 	"github.com/stratummc/stratum/internal/domain/artifactstaging"
 	"github.com/stratummc/stratum/internal/domain/session"
@@ -153,6 +155,127 @@ func TestCreatePlanRejectsMissingEntitiesUnsafeNameAndUnknownType(t *testing.T) 
 	if _, err := New(unknown).CreatePlan(ctx, CreateParams{SessionID: "session-1", ArtifactID: "artifact-1", ActorID: "actor-1", Name: "test.bin"}); err == nil || !strings.Contains(err.Error(), "unsupported artifact type") {
 		t.Fatalf("unknown type err=%v", err)
 	}
+}
+
+func TestMaterializationReadinessNoPlansAndNotMaterialized(t *testing.T) {
+	store := stagingStore(t, artifact.StatusApproved, artifact.TypeJar)
+	service := NewReadinessService(store, matchingVerifier(store), materializationVerifierFunc(func(context.Context, string) (agent.MaterializedArtifactsVerification, error) {
+		return agent.MaterializedArtifactsVerification{SessionID: "session-1", Entries: []agent.MaterializedArtifactVerification{}}, nil
+	}))
+	service.now = fixedTime
+	result, err := service.Check(context.Background(), "session-1")
+	if err != nil || result.Status != "not_ready" || result.PlannedCount != 0 || !hasReadinessIssue(result, "no_planned_artifacts") {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+
+	addPlannedArtifact(store)
+	result, err = service.Check(context.Background(), "session-1")
+	if err != nil || result.Status != "not_ready" || result.PlannedCount != 1 || result.MissingMaterializedCount != 1 || len(result.Entries) != 1 || result.Entries[0].Materialized || result.Entries[0].VerificationStatus != "not_materialized" || !hasReadinessIssue(result, "staging_plan_not_materialized") {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestMaterializationReadinessValidIsReady(t *testing.T) {
+	store := stagingStore(t, artifact.StatusApproved, artifact.TypeJar)
+	addPlannedArtifact(store)
+	service := readinessServiceWithStatus(store, "valid")
+	service.now = fixedTime
+	result, err := service.Check(context.Background(), "session-1")
+	if err != nil || result.Status != "ready" || result.CheckedAt != fixedTime() || result.PlannedCount != 1 || result.MaterializedCount != 1 || result.ValidMaterializedCount != 1 || len(result.Issues) != 0 || len(result.Entries) != 1 || !result.Entries[0].Materialized || result.Entries[0].VerificationStatus != "valid" || result.Entries[0].RecommendedAction != "none" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	events, _ := store.ListAuditEvents(context.Background())
+	if len(events) != 0 {
+		t.Fatalf("readiness created audit events: %+v", events)
+	}
+}
+
+func TestMaterializationReadinessMissingCorruptedAndUnapproved(t *testing.T) {
+	for _, test := range []struct {
+		status    string
+		issueCode string
+	}{
+		{status: "missing", issueCode: "materialized_file_missing"},
+		{status: "corrupted", issueCode: "materialized_file_corrupted"},
+	} {
+		t.Run(test.status, func(t *testing.T) {
+			store := stagingStore(t, artifact.StatusApproved, artifact.TypeJar)
+			addPlannedArtifact(store)
+			result, err := readinessServiceWithStatus(store, test.status).Check(context.Background(), "session-1")
+			if err != nil || result.Status != "not_ready" || result.Entries[0].VerificationStatus != test.status || !hasReadinessIssue(result, test.issueCode) {
+				t.Fatalf("result=%+v err=%v", result, err)
+			}
+		})
+	}
+
+	store := stagingStore(t, artifact.StatusApproved, artifact.TypeJar)
+	addPlannedArtifact(store)
+	value := store.Artifacts["artifact-1"]
+	value.Status = artifact.StatusRejected
+	store.Artifacts[value.ID] = value
+	result, err := readinessServiceWithStatus(store, "valid").Check(context.Background(), "session-1")
+	if err != nil || result.Status != "not_ready" || result.Entries[0].ArtifactStatus != "rejected" || !hasReadinessIssue(result, "artifact_not_approved") {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestMaterializationReadinessUnknownEntryAndAgentFailure(t *testing.T) {
+	store := stagingStore(t, artifact.StatusApproved, artifact.TypeJar)
+	addPlannedArtifact(store)
+	verifier := materializationVerifierFunc(func(context.Context, string) (agent.MaterializedArtifactsVerification, error) {
+		return agent.MaterializedArtifactsVerification{SessionID: "session-1", Total: 2, ValidCount: 2, Entries: []agent.MaterializedArtifactVerification{
+			{StagingPlanID: "plan-1", ArtifactID: "artifact-1", Status: "valid"},
+			{StagingPlanID: "unknown-plan", ArtifactID: "unknown-artifact", Status: "valid"},
+		}}, nil
+	})
+	result, err := NewReadinessService(store, matchingVerifier(store), verifier).Check(context.Background(), "session-1")
+	if err != nil || result.Status != "not_ready" || result.UnknownMaterializedCount != 1 || !hasReadinessIssue(result, "unknown_materialized_artifact") {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+
+	failing := materializationVerifierFunc(func(context.Context, string) (agent.MaterializedArtifactsVerification, error) {
+		return agent.MaterializedArtifactsVerification{}, errors.New("agent unavailable")
+	})
+	result, err = NewReadinessService(store, matchingVerifier(store), failing).Check(context.Background(), "session-1")
+	if err != nil || result.Status != "error" || !hasReadinessIssue(result, "agent_verification_failed") {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func addPlannedArtifact(store *memory.Store) {
+	value := store.Artifacts["artifact-1"]
+	store.Plans["plan-1"] = artifactstaging.Plan{ID: "plan-1", SessionID: "session-1", ArtifactID: value.ID, ArtifactHash: value.SHA256, Status: artifactstaging.StatusPlanned}
+}
+
+func readinessServiceWithStatus(store *memory.Store, status string) *ReadinessService {
+	verifier := materializationVerifierFunc(func(context.Context, string) (agent.MaterializedArtifactsVerification, error) {
+		result := agent.MaterializedArtifactsVerification{SessionID: "session-1", Total: 1, Entries: []agent.MaterializedArtifactVerification{{StagingPlanID: "plan-1", ArtifactID: "artifact-1", Status: status}}}
+		switch status {
+		case "valid":
+			result.ValidCount = 1
+		case "missing":
+			result.MissingCount = 1
+		case "corrupted":
+			result.CorruptedCount = 1
+		}
+		return result, nil
+	})
+	return NewReadinessService(store, matchingVerifier(store), verifier)
+}
+
+func hasReadinessIssue(result ReadinessResult, code string) bool {
+	for _, issue := range result.Issues {
+		if issue.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+type materializationVerifierFunc func(context.Context, string) (agent.MaterializedArtifactsVerification, error)
+
+func (function materializationVerifierFunc) VerifyMaterializedArtifacts(ctx context.Context, sessionID string) (agent.MaterializedArtifactsVerification, error) {
+	return function(ctx, sessionID)
 }
 
 func stagingStore(t *testing.T, status artifact.Status, kind artifact.Type) *memory.Store {

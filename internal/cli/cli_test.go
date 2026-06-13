@@ -1123,6 +1123,12 @@ func TestCLIArtifactStagingMaterialize(t *testing.T) {
 	if err := store.SaveArtifact(context.Background(), artifactValue); err != nil {
 		t.Fatal(err)
 	}
+	readinessCommand := append(append([]string{}, base...), "--agent-url", server.URL, "artifacts", "staging", "readiness", "--session", "session-1")
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(readinessCommand, &stdout, &stderr); code != 1 || !strings.Contains(stdout.String(), "status=not_ready") || !strings.Contains(stdout.String(), "issue=staging_plan_not_materialized") || !strings.Contains(stdout.String(), "verification=not_materialized") {
+		t.Fatalf("readiness before materialization: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
 	stdout.Reset()
 	stderr.Reset()
 	if code := Run(command, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "status=materialized") || !strings.Contains(stdout.String(), "not installed") {
@@ -1171,6 +1177,11 @@ func TestCLIArtifactStagingMaterialize(t *testing.T) {
 	if code := Run([]string{"--data-dir", dataDirectory, "--agent-url", server.URL, "sessions", "artifacts", "verify-all", "--id", "session-1"}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "total=1 valid=1 missing=0 corrupted=0 errors=0") || !strings.Contains(stdout.String(), "status=valid") {
 		t.Fatalf("verify all materialized: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(readinessCommand, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "status=ready") || !strings.Contains(stdout.String(), "planned=1 materialized=1 valid=1") || !strings.Contains(stdout.String(), "verification=valid") {
+		t.Fatalf("readiness after materialization: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
 	if err := os.WriteFile(target, []byte("corrupted"), 0o640); err != nil {
 		t.Fatal(err)
 	}
@@ -1178,6 +1189,11 @@ func TestCLIArtifactStagingMaterialize(t *testing.T) {
 	stderr.Reset()
 	if code := Run([]string{"--data-dir", dataDirectory, "--agent-url", server.URL, "sessions", "artifacts", "verify-all", "--id", "session-1"}, &stdout, &stderr); code != 1 || !strings.Contains(stdout.String(), "corrupted=1") || !strings.Contains(stdout.String(), "status=corrupted") {
 		t.Fatalf("verify all corrupted: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(readinessCommand, &stdout, &stderr); code != 1 || !strings.Contains(stdout.String(), "status=not_ready") || !strings.Contains(stdout.String(), "issue=materialized_file_corrupted") {
+		t.Fatalf("readiness corrupted: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 }
 
@@ -1191,6 +1207,11 @@ func TestCLIArtifactStagingMaterializeRequiresActorAndAgentURL(t *testing.T) {
 	stderr.Reset()
 	if code := Run(append(append([]string{}, base...), "--plan", "plan-1", "--actor", "actor-1"), &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--agent-url") {
 		t.Fatalf("agent URL code=%d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"--data-dir", filepath.Join(t.TempDir(), "data"), "artifacts", "staging", "readiness", "--session", "session-1"}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--agent-url") {
+		t.Fatalf("readiness agent URL code=%d stderr=%q", code, stderr.String())
 	}
 }
 
