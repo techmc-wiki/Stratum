@@ -112,26 +112,43 @@ func (s *Service) CreatePlan(ctx context.Context, params CreateParams) (artifact
 	}
 	kind := mapKind(art.Type)
 	root := mapRoot(kind)
-	id, _ := s.newID("artifact-apply-plan")
+	id, err := s.newID("artifact-apply-plan")
+	if err != nil {
+		return artifactapply.Plan{}, err
+	}
 	plan := artifactapply.Plan{ID: id, SessionID: params.SessionID, ProjectID: sess.ProjectID, ActorID: params.ActorID, SourceStagingPlanID: params.StagingPlanID, ArtifactID: art.ID, MaterializedArtifactHash: mat.ExpectedHash, MaterializedArtifactName: mat.TargetName, ApplyKind: kind, TargetRoot: root, TargetRelativePath: target, Status: artifactapply.StatusPlanned, ValidationStatus: "validated", CreatedAt: s.now()}
-	_ = s.repository.CreateArtifactApplyPlan(ctx, plan)
-	_ = s.audit(ctx, ActionPlanCreated, plan, "")
+	if err := s.repository.CreateArtifactApplyPlan(ctx, plan); err != nil {
+		return artifactapply.Plan{}, err
+	}
+	if err := s.audit(ctx, ActionPlanCreated, plan, ""); err != nil {
+		return artifactapply.Plan{}, err
+	}
 	return plan, nil
 }
 
 func (s *Service) reject(ctx context.Context, sess session.Session, sp artifactstaging.Plan, art artifact.Artifact, params CreateParams, reason string) (artifactapply.Plan, error) {
-	id, _ := s.newID("artifact-apply-plan")
+	id, err := s.newID("artifact-apply-plan")
+	if err != nil {
+		return artifactapply.Plan{}, err
+	}
 	target := filepath.Clean(params.TargetPath)
 	kind := mapKind(art.Type)
 	root := mapRoot(kind)
 	plan := artifactapply.Plan{ID: id, SessionID: params.SessionID, ProjectID: sess.ProjectID, ActorID: params.ActorID, SourceStagingPlanID: params.StagingPlanID, ArtifactID: art.ID, MaterializedArtifactHash: art.SHA256, MaterializedArtifactName: sp.TargetStagingName, ApplyKind: kind, TargetRoot: root, TargetRelativePath: target, Status: artifactapply.StatusRejected, RejectionReason: reason, CreatedAt: s.now()}
-	_ = s.repository.CreateArtifactApplyPlan(ctx, plan)
-	_ = s.audit(ctx, ActionPlanRejected, plan, reason)
+	if err := s.repository.CreateArtifactApplyPlan(ctx, plan); err != nil {
+		return artifactapply.Plan{}, err
+	}
+	if err := s.audit(ctx, ActionPlanRejected, plan, reason); err != nil {
+		return artifactapply.Plan{}, err
+	}
 	return plan, nil
 }
 
 func (s *Service) audit(ctx context.Context, action string, plan artifactapply.Plan, extra string) error {
-	id, _ := s.newID("audit")
+	id, err := s.newID("audit")
+	if err != nil {
+		return err
+	}
 	return s.repository.AppendAuditEvent(ctx, audit.Event{ID: id, ActorID: plan.ActorID, Action: action, TargetType: "artifact_apply_plan", TargetID: plan.ID, ProjectID: plan.ProjectID, Metadata: map[string]string{"planId": plan.ID, "sessionId": plan.SessionID, "artifactId": plan.ArtifactID, "status": string(plan.Status), "extra": extra}, CreatedAt: s.now()})
 }
 
