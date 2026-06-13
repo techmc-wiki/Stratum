@@ -175,7 +175,7 @@ func TestCreatedMetadataArtifactApprovalAndStaging(t *testing.T) {
 	if _, err := service.ApproveArtifact(context.Background(), "artifact-1", "reviewer-1", "trusted payload"); err != nil {
 		t.Fatal(err)
 	}
-	planned, err := artifactstagingsvc.New(store).CreatePlan(context.Background(), artifactstagingsvc.CreateParams{SessionID: "session-1", ArtifactID: "artifact-1", ActorID: "actor-1", Name: "test-artifact.jar"})
+	planned, err := artifactstagingsvc.NewWithPayloadVerifier(store, blobs).CreatePlan(context.Background(), artifactstagingsvc.CreateParams{SessionID: "session-1", ArtifactID: "artifact-1", ActorID: "actor-1", Name: "test-artifact.jar"})
 	if err != nil || planned.Status != artifactstaging.StatusPlanned || planned.ArtifactHash == "" {
 		t.Fatalf("planned=%+v err=%v", planned, err)
 	}
@@ -328,7 +328,7 @@ func TestApprovedArtifactCanCreateStagingPlanAfterReview(t *testing.T) {
 	if _, err := NewWithPayloadVerifier(store, matchingPayloadVerifier(store)).ApproveArtifact(context.Background(), "artifact-1", "reviewer-1", "trusted"); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := artifactstagingsvc.New(store).CreatePlan(context.Background(), artifactstagingsvc.CreateParams{SessionID: "session-1", ArtifactID: "artifact-1", ActorID: "actor-1", Name: "mods/test.jar"})
+	plan, err := artifactstagingsvc.NewWithPayloadVerifier(store, matchingPayloadVerifier(store)).CreatePlan(context.Background(), artifactstagingsvc.CreateParams{SessionID: "session-1", ArtifactID: "artifact-1", ActorID: "actor-1", Name: "mods/test.jar"})
 	if err != nil {
 		t.Fatal(err)
 	}

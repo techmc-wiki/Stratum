@@ -109,7 +109,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "artifacts approve", "artifacts reject":
 		return reviewArtifact(ctx, store, *artifactBlobRoot, action, command[2:], stdout, stderr)
 	case "artifacts staging":
-		return artifactStaging(ctx, store, command[2:], stdout, stderr)
+		return artifactStaging(ctx, store, *artifactBlobRoot, command[2:], stdout, stderr)
 	case "operations list":
 		return listOperations(ctx, store, command[2:], stdout, stderr)
 	case "operations inspect":
@@ -976,14 +976,14 @@ func reviewArtifact(ctx context.Context, store *filesystem.Store, blobRoot, acti
 	return 0
 }
 
-func artifactStaging(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+func artifactStaging(ctx context.Context, store *filesystem.Store, blobRoot string, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 || (args[0] != "plan" && args[0] != "list" && args[0] != "inspect") {
 		fmt.Fprintln(stderr, "usage: stratum artifacts staging <plan|list|inspect> [flags]")
 		return 2
 	}
 	switch args[0] {
 	case "plan":
-		return planArtifactStaging(ctx, store, args[1:], stdout, stderr)
+		return planArtifactStaging(ctx, store, blobRoot, args[1:], stdout, stderr)
 	case "list":
 		return listArtifactStaging(ctx, store, args[1:], stdout, stderr)
 	case "inspect":
@@ -993,7 +993,7 @@ func artifactStaging(ctx context.Context, store *filesystem.Store, args []string
 	}
 }
 
-func planArtifactStaging(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+func planArtifactStaging(ctx context.Context, store *filesystem.Store, blobRoot string, args []string, stdout, stderr io.Writer) int {
 	flags := newFlagSet("artifacts staging plan", stderr)
 	sessionID := flags.String("session", "", "session ID")
 	artifactID := flags.String("artifact", "", "artifact ID")
@@ -1006,7 +1006,11 @@ func planArtifactStaging(ctx context.Context, store *filesystem.Store, args []st
 		fmt.Fprintln(stderr, "--session, --artifact, --actor, and --name are required")
 		return 2
 	}
-	plan, err := artifactstagingsvc.New(store).CreatePlan(ctx, artifactstagingsvc.CreateParams{SessionID: *sessionID, ArtifactID: *artifactID, ActorID: *actor, Name: *name})
+	blobs, err := artifactblob.Open(blobRoot)
+	if err != nil {
+		return reportError(stderr, "open artifact blob store", err)
+	}
+	plan, err := artifactstagingsvc.NewWithPayloadVerifier(store, blobs).CreatePlan(ctx, artifactstagingsvc.CreateParams{SessionID: *sessionID, ArtifactID: *artifactID, ActorID: *actor, Name: *name})
 	if err != nil {
 		return reportError(stderr, "plan artifact staging", err)
 	}

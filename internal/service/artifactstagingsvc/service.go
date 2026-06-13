@@ -12,6 +12,7 @@ import (
 	"github.com/stratummc/stratum/internal/domain/artifactstaging"
 	"github.com/stratummc/stratum/internal/domain/audit"
 	"github.com/stratummc/stratum/internal/domain/session"
+	stratumerrors "github.com/stratummc/stratum/internal/errors"
 	"github.com/stratummc/stratum/internal/util"
 )
 
@@ -29,6 +30,10 @@ type Repository interface {
 	AppendAuditEvent(context.Context, audit.Event) error
 }
 
+type PayloadVerifier interface {
+	VerifyPayload(context.Context, string) (algorithm, hash, reference string, size int64, err error)
+}
+
 type CreateParams struct {
 	SessionID  string
 	ArtifactID string
@@ -39,12 +44,19 @@ type CreateParams struct {
 
 type Service struct {
 	repository Repository
+	verifier   PayloadVerifier
 	now        func() time.Time
 	newID      func(string) (string, error)
 }
 
 func New(repository Repository) *Service {
 	return &Service{repository: repository, now: func() time.Time { return time.Now().UTC() }, newID: util.NewID}
+}
+
+func NewWithPayloadVerifier(repository Repository, verifier PayloadVerifier) *Service {
+	service := New(repository)
+	service.verifier = verifier
+	return service
 }
 
 func (s *Service) CreatePlan(ctx context.Context, params CreateParams) (artifactstaging.Plan, error) {
@@ -68,15 +80,26 @@ func (s *Service) CreatePlan(ctx context.Context, params CreateParams) (artifact
 	}
 	status := artifactstaging.StatusPlanned
 	rejectionReason := ""
+	verificationStatus := "verified"
 	if artifactValue.Status != artifact.StatusApproved {
 		status = artifactstaging.StatusRejected
 		rejectionReason = fmt.Sprintf("artifact status %q is not approved", artifactValue.Status)
+		verificationStatus = "not_attempted"
+	} else if err := s.verifyPayload(ctx, artifactValue); err != nil {
+		status = artifactstaging.StatusRejected
+		rejectionReason = err.Error()
+		verificationStatus = "failed"
 	}
 	planID, err := s.newID("artifact-staging-plan")
 	if err != nil {
 		return artifactstaging.Plan{}, err
 	}
 	now := s.now()
+	metadata := cloneMetadata(params.Metadata)
+	if metadata == nil {
+		metadata = make(map[string]string)
+	}
+	metadata["verificationStatus"] = verificationStatus
 	plan := artifactstaging.Plan{
 		ID:                planID,
 		SessionID:         sessionValue.ID,
@@ -93,7 +116,7 @@ func (s *Service) CreatePlan(ctx context.Context, params CreateParams) (artifact
 		CreatedAt:         now,
 		Status:            status,
 		RejectionReason:   rejectionReason,
-		Metadata:          cloneMetadata(params.Metadata),
+		Metadata:          metadata,
 	}
 	if err := s.repository.CreateArtifactStagingPlan(ctx, plan); err != nil {
 		return artifactstaging.Plan{}, err
@@ -102,6 +125,47 @@ func (s *Service) CreatePlan(ctx context.Context, params CreateParams) (artifact
 		return artifactstaging.Plan{}, err
 	}
 	return plan, nil
+}
+
+func (s *Service) verifyPayload(ctx context.Context, value artifact.Artifact) error {
+	if s.verifier == nil {
+		return errors.New("payload verifier is unavailable")
+	}
+	if value.PayloadStatus != artifact.PayloadAvailable || value.PayloadAlgorithm == "" || value.SHA256 == "" || value.PayloadReference == "" || value.SizeBytes < 0 {
+		return errors.New("payload metadata is missing")
+	}
+	if value.PayloadAlgorithm != "sha256" {
+		return fmt.Errorf("unsupported payload algorithm %q", value.PayloadAlgorithm)
+	}
+	if !validSHA256(value.SHA256) {
+		return errors.New("invalid payload SHA-256 hash")
+	}
+	algorithm, hash, reference, size, err := s.verifier.VerifyPayload(ctx, value.SHA256)
+	if err != nil {
+		if stratumerrors.IsKind(err, stratumerrors.KindNotFound) {
+			return fmt.Errorf("payload blob is missing: %w", err)
+		}
+		if strings.Contains(err.Error(), "hash mismatch") {
+			return fmt.Errorf("payload blob is corrupted: %w", err)
+		}
+		return fmt.Errorf("payload verification failed: %w", err)
+	}
+	if algorithm != value.PayloadAlgorithm || hash != value.SHA256 || reference != value.PayloadReference || size != value.SizeBytes {
+		return errors.New("payload metadata does not match verified blob")
+	}
+	return nil
+}
+
+func validSHA256(hash string) bool {
+	if len(hash) != 64 {
+		return false
+	}
+	for _, character := range hash {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Service) Get(ctx context.Context, id string) (artifactstaging.Plan, error) {
@@ -136,6 +200,10 @@ func (s *Service) audit(ctx context.Context, plan artifactstaging.Plan) error {
 		"actorId":     plan.ActorID,
 		"stagingKind": string(plan.StagingKind),
 		"status":      string(plan.Status),
+		"payloadHash": plan.ArtifactHash,
+	}
+	if verificationStatus := plan.Metadata["verificationStatus"]; verificationStatus != "" {
+		metadata["verificationStatus"] = verificationStatus
 	}
 	if plan.RejectionReason != "" {
 		metadata["rejectionReason"] = plan.RejectionReason

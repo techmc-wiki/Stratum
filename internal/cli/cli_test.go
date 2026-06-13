@@ -940,7 +940,9 @@ func TestCLIArtifactBlobVerifyIsReadOnly(t *testing.T) {
 
 func TestCLIArtifactStagingPlanListAndInspect(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	dataDirectory := filepath.Join(t.TempDir(), "data")
+	root := t.TempDir()
+	dataDirectory := filepath.Join(root, "data")
+	blobRoot := filepath.Join(root, "artifacts")
 	commands := [][]string{
 		{"--data-dir", dataDirectory, "projects", "create", "--id", "project-1", "--name", "Project"},
 		{"--data-dir", dataDirectory, "rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
@@ -958,13 +960,21 @@ func TestCLIArtifactStagingPlanListAndInspect(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 6, 12, 12, 0, 0, 0, time.UTC)
-	if err := store.CreateArtifact(context.Background(), artifact.Artifact{ID: "artifact-1", Name: "Test Mod", Type: artifact.TypeJar, UploaderID: "uploader-1", SHA256: artifact.HashBytes([]byte("artifact")), SizeBytes: 8, Status: artifact.StatusApproved, CreatedAt: now}); err != nil {
+	blobs, err := artifactblob.New(blobRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := blobs.Put(context.Background(), strings.NewReader("artifact"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateArtifact(context.Background(), artifact.Artifact{ID: "artifact-1", Name: "Test Mod", Type: artifact.TypeJar, UploaderID: "uploader-1", SHA256: payload.Hash, SizeBytes: payload.Size, PayloadStatus: artifact.PayloadAvailable, PayloadAlgorithm: payload.Algorithm, PayloadReference: payload.Reference, Status: artifact.StatusApproved, CreatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "staging", "plan", "--session", "session-1", "--artifact", "artifact-1", "--actor", "actor-1", "--name", "mods/test.jar"}, &stdout, &stderr); code != 0 {
+	if code := Run([]string{"--data-dir", dataDirectory, "--artifact-blob-root", blobRoot, "artifacts", "staging", "plan", "--session", "session-1", "--artifact", "artifact-1", "--actor", "actor-1", "--name", "mods/test.jar"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("plan: code=%d stderr=%q", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "status=planned") || !strings.Contains(stdout.String(), "No payload was copied") {

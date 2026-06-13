@@ -145,10 +145,20 @@ name, staging kind, artifact status and hash, actor, and whether the plan was
 accepted or rejected. Creating a plan does not copy payloads, mount mods, call
 Lucy, call the Agent, or execute files.
 
-Only approved artifacts are planned. Pending, rejected, and deprecated artifacts
-produce rejected metadata plans with audit history. Future work may copy or mount
-approved payloads into Agent-owned staging directories after upload storage,
-approval, and sandboxing rules are implemented.
+Only approved artifacts with a currently verified payload are planned. Pending,
+rejected, and deprecated artifacts produce rejected metadata plans with audit
+history.
+
+## Staging Requires Verified Payload
+
+Staging plan creation recomputes and verifies the linked blob through the
+content-addressed BlobStore. An approved Artifact with missing metadata, an
+unsupported algorithm, an invalid hash, a missing blob, corrupted content, or
+metadata that does not match the blob produces a rejected plan.
+
+The plan remains Controller metadata only. Staging does not copy, mount,
+install, inspect, or execute payloads. Actual runtime copy or mounting into
+Agent-owned staging directories remains future work.
 
 ## Artifact Approval
 

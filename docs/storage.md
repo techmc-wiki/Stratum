@@ -121,6 +121,14 @@ Approval remains metadata-only after verification. It does not copy, mount,
 install, inspect jar contents, or execute the payload; runtime staging remains a
 later step.
 
+## Staging Requires Verified Payload
+
+Creating a planned staging record verifies the Artifact's linked SHA-256 blob
+again rather than relying on the earlier approval check. Missing, corrupted, or
+unverifiable payloads produce rejected staging plans with no Artifact mutation.
+These plans are metadata only and do not copy, mount, install, or execute the
+blob. Runtime payload placement remains future work.
+
 Lists read every `.json` record and return records ordered by filename. A
 malformed or unknown-field record stops the list with an actionable repository
 error rather than silently dropping metadata.

@@ -19,6 +19,12 @@ Artifact staging plan creation writes audit events but does not create a
 lifecycle Operation. It is metadata-only validation of staging intent and does
 not call the Agent or mutate runtime directories.
 
+Planned staging records are written only after the linked blob passes SHA-256
+verification. Verification failures follow the existing rejected-plan pattern:
+the rejected plan and audit metadata include the Artifact, Session, payload
+hash, verification status, and rejection reason. Artifact metadata is not
+changed.
+
 Artifact approval and rejection also write audit events without creating
 Operations. They are metadata review actions and do not copy, mount, install, or
 execute artifact payloads.
