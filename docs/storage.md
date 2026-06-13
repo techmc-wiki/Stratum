@@ -109,6 +109,18 @@ Verification does not change Artifact metadata, write audit or Operation
 records, approve Artifacts, mount or copy blobs, install mods, or execute files.
 Runtime staging remains future work.
 
+## Approval Requires Verified Payload
+
+All current Artifact types require an imported payload before approval.
+`artifacts approve` checks the linked payload metadata and uses the configured
+BlobStore to recompute the SHA-256 digest. Missing metadata, an unsupported
+algorithm, an invalid hash, a missing blob, or corrupted content prevents
+approval without changing status or review fields.
+
+Approval remains metadata-only after verification. It does not copy, mount,
+install, inspect jar contents, or execute the payload; runtime staging remains a
+later step.
+
 Lists read every `.json` record and return records ordered by filename. A
 malformed or unknown-field record stops the list with an actionable repository
 error rather than silently dropping metadata.

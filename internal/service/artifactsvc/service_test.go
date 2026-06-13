@@ -157,7 +157,11 @@ func TestCreatedMetadataArtifactApprovalAndStaging(t *testing.T) {
 	now := fixedReviewTime()
 	store.Projects["project-1"] = project.Project{ID: "project-1", Name: "Project", CreatedAt: now}
 	_ = store.SaveSession(context.Background(), session.Session{ID: "session-1", ProjectID: "project-1", OwnerUserID: "owner-1", Type: session.TypeShared, State: session.StateCreated, EnvironmentID: "env-1", CreatedAt: now, LastActiveAt: now})
-	service := New(store)
+	blobs, err := artifactblob.New(filepath.Join(t.TempDir(), "artifacts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewWithBlobStore(store, blobs)
 	if _, err := service.CreateMetadata(context.Background(), "artifact-1", "Artifact", artifact.TypeJar, "project-1", "actor-1"); err != nil {
 		t.Fatal(err)
 	}
@@ -165,18 +169,21 @@ func TestCreatedMetadataArtifactApprovalAndStaging(t *testing.T) {
 	if err != nil || pending.Status != artifactstaging.StatusRejected {
 		t.Fatalf("pending plan=%+v err=%v", pending, err)
 	}
-	if _, err := service.ApproveArtifact(context.Background(), "artifact-1", "reviewer-1", "trusted metadata"); err != nil {
+	if _, err := service.ImportFile(context.Background(), "artifact-1", writeArtifactFile(t, "artifact.jar", "artifact"), "actor-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ApproveArtifact(context.Background(), "artifact-1", "reviewer-1", "trusted payload"); err != nil {
 		t.Fatal(err)
 	}
 	planned, err := artifactstagingsvc.New(store).CreatePlan(context.Background(), artifactstagingsvc.CreateParams{SessionID: "session-1", ArtifactID: "artifact-1", ActorID: "actor-1", Name: "test-artifact.jar"})
-	if err != nil || planned.Status != artifactstaging.StatusPlanned || planned.ArtifactHash != "" {
+	if err != nil || planned.Status != artifactstaging.StatusPlanned || planned.ArtifactHash == "" {
 		t.Fatalf("planned=%+v err=%v", planned, err)
 	}
 }
 
 func TestApproveArtifactUpdatesReviewMetadataAndAudit(t *testing.T) {
 	store := artifactReviewStore(t, artifact.StatusPending)
-	service := New(store)
+	service := NewWithPayloadVerifier(store, matchingPayloadVerifier(store))
 	service.now = fixedReviewTime
 	service.newID = fixedReviewID
 	value, err := service.ApproveArtifact(context.Background(), "artifact-1", "reviewer-1", "trusted test artifact")
@@ -190,6 +197,75 @@ func TestApproveArtifactUpdatesReviewMetadataAndAudit(t *testing.T) {
 	if len(events) != 1 || events[0].Action != ActionApproved || events[0].Metadata["previousStatus"] != string(artifact.StatusPending) || events[0].Metadata["nextStatus"] != string(artifact.StatusApproved) || events[0].Metadata["reason"] != "trusted test artifact" {
 		t.Fatalf("events=%+v", events)
 	}
+}
+
+func TestApproveArtifactRequiresVerifiedPayloadWithoutMutation(t *testing.T) {
+	t.Run("missing payload metadata", func(t *testing.T) {
+		store := artifactImportStore(t, artifact.StatusPending)
+		blobs, err := artifactblob.Open(filepath.Join(t.TempDir(), "artifacts"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertApprovalFailureUnchanged(t, store, NewWithPayloadVerifier(store, blobs), "payload metadata is missing")
+	})
+
+	t.Run("missing blob", func(t *testing.T) {
+		store := artifactReviewStore(t, artifact.StatusPending)
+		blobs, err := artifactblob.Open(filepath.Join(t.TempDir(), "artifacts"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertApprovalFailureUnchanged(t, store, NewWithPayloadVerifier(store, blobs), "payload blob is missing")
+	})
+
+	t.Run("corrupted blob", func(t *testing.T) {
+		store := artifactImportStore(t, artifact.StatusPending)
+		blobs, err := artifactblob.New(filepath.Join(t.TempDir(), "artifacts"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		service := NewWithBlobStore(store, blobs)
+		value, err := service.ImportFile(context.Background(), "artifact-1", writeArtifactFile(t, "artifact.jar", "artifact"), "actor-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		path, err := blobs.Path(value.SHA256)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("corrupted"), 0o640); err != nil {
+			t.Fatal(err)
+		}
+		assertApprovalFailureUnchanged(t, store, service, "payload blob is corrupted")
+	})
+}
+
+func TestApproveArtifactRejectsInvalidPayloadMetadata(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*artifact.Artifact)
+		want   string
+	}{
+		{name: "unsupported algorithm", mutate: func(value *artifact.Artifact) { value.PayloadAlgorithm = "sha512" }, want: "unsupported payload algorithm"},
+		{name: "invalid hash", mutate: func(value *artifact.Artifact) { value.SHA256 = "invalid" }, want: "invalid payload SHA-256 hash"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := artifactReviewStore(t, artifact.StatusPending)
+			value := store.Artifacts["artifact-1"]
+			test.mutate(&value)
+			store.Artifacts["artifact-1"] = value
+			assertApprovalFailureUnchanged(t, store, NewWithPayloadVerifier(store, matchingPayloadVerifier(store)), test.want)
+		})
+	}
+}
+
+func TestApproveArtifactRejectsVerifiedBlobMetadataMismatch(t *testing.T) {
+	store := artifactReviewStore(t, artifact.StatusPending)
+	verifier := payloadVerifierFunc(func(_ context.Context, hash string) (string, string, string, int64, error) {
+		return "sha256", hash, "sha256/different", 999, nil
+	})
+	assertApprovalFailureUnchanged(t, store, NewWithPayloadVerifier(store, verifier), "payload metadata does not match verified blob")
 }
 
 func TestRejectArtifactUpdatesReviewMetadataAndAudit(t *testing.T) {
@@ -249,7 +325,7 @@ func TestApprovedArtifactCanCreateStagingPlanAfterReview(t *testing.T) {
 	if len(plans) != 1 || plans[0].Status != artifactstaging.StatusRejected {
 		t.Fatalf("pending plans=%+v", plans)
 	}
-	if _, err := New(store).ApproveArtifact(context.Background(), "artifact-1", "reviewer-1", "trusted"); err != nil {
+	if _, err := NewWithPayloadVerifier(store, matchingPayloadVerifier(store)).ApproveArtifact(context.Background(), "artifact-1", "reviewer-1", "trusted"); err != nil {
 		t.Fatal(err)
 	}
 	plan, err := artifactstagingsvc.New(store).CreatePlan(context.Background(), artifactstagingsvc.CreateParams{SessionID: "session-1", ArtifactID: "artifact-1", ActorID: "actor-1", Name: "mods/test.jar"})
@@ -265,7 +341,12 @@ func artifactReviewStore(t *testing.T, status artifact.Status) *memory.Store {
 	t.Helper()
 	store := memory.New()
 	now := fixedReviewTime()
-	_ = store.SaveArtifact(context.Background(), artifact.Artifact{ID: "artifact-1", Name: "Test Artifact", Type: artifact.TypeJar, UploaderID: "uploader-1", SHA256: artifact.HashBytes([]byte("artifact")), SizeBytes: 8, Status: status, CreatedAt: now})
+	_ = store.SaveArtifact(context.Background(), artifact.Artifact{
+		ID: "artifact-1", Name: "Test Artifact", Type: artifact.TypeJar, UploaderID: "uploader-1",
+		SHA256: artifact.HashBytes([]byte("artifact")), SizeBytes: 8, PayloadStatus: artifact.PayloadAvailable,
+		PayloadAlgorithm: "sha256", PayloadReference: "sha256/example", PayloadImportedBy: "uploader-1", PayloadImportedAt: &now,
+		Status: status, CreatedAt: now,
+	})
 	_ = store.SaveSession(context.Background(), session.Session{ID: "session-1", ProjectID: "project-1", RoomID: "room-1", OwnerUserID: "owner-1", Type: session.TypeShared, State: session.StateCreated, EnvironmentID: "env-1", CreatedAt: now, LastActiveAt: now})
 	return store
 }
@@ -292,6 +373,39 @@ func writeArtifactFile(t *testing.T, name, content string) string {
 	return path
 }
 
+func assertApprovalFailureUnchanged(t *testing.T, store *memory.Store, service *Service, want string) {
+	t.Helper()
+	before, err := store.GetArtifact(context.Background(), "artifact-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventsBefore, _ := store.ListAuditEvents(context.Background())
+	if _, err := service.ApproveArtifact(context.Background(), "artifact-1", "reviewer-1", "trusted"); err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("approval err=%v want=%q", err, want)
+	}
+	after, err := store.GetArtifact(context.Background(), "artifact-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventsAfter, _ := store.ListAuditEvents(context.Background())
+	if after.Status != before.Status || after.ReviewedBy != "" || after.ReviewedAt != nil || after.ReviewReason != "" || len(eventsAfter) != len(eventsBefore) {
+		t.Fatalf("failed approval mutated state: before=%+v after=%+v events=%d->%d", before, after, len(eventsBefore), len(eventsAfter))
+	}
+}
+
 func fixedReviewTime() time.Time { return time.Date(2026, 6, 12, 12, 0, 0, 0, time.UTC) }
 
 func fixedReviewID(prefix string) (string, error) { return prefix + "-fixed", nil }
+
+type payloadVerifierFunc func(context.Context, string) (algorithm, hash, reference string, size int64, err error)
+
+func (function payloadVerifierFunc) VerifyPayload(ctx context.Context, hash string) (algorithm, verifiedHash, reference string, size int64, err error) {
+	return function(ctx, hash)
+}
+
+func matchingPayloadVerifier(store *memory.Store) payloadVerifierFunc {
+	return func(_ context.Context, hash string) (string, string, string, int64, error) {
+		value := store.Artifacts["artifact-1"]
+		return value.PayloadAlgorithm, hash, value.PayloadReference, value.SizeBytes, nil
+	}
+}

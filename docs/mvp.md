@@ -31,6 +31,7 @@ Minecraft server.
 - Separate content-addressed Artifact blob storage with SHA-256 verification.
 - Trusted local-file payload import for pending Artifact metadata.
 - Read-only Artifact blob verification through the CLI.
+- Verified-payload requirement for Artifact approval.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active

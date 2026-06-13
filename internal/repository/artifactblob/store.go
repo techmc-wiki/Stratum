@@ -208,6 +208,14 @@ func (s *Store) Verify(ctx context.Context, hash string) (Metadata, error) {
 	return s.metadata(path, hash, size)
 }
 
+func (s *Store) VerifyPayload(ctx context.Context, hash string) (algorithm, verifiedHash, reference string, size int64, err error) {
+	metadata, err := s.Verify(ctx, hash)
+	if err != nil {
+		return "", "", "", 0, err
+	}
+	return metadata.Algorithm, metadata.Hash, metadata.Reference, metadata.Size, nil
+}
+
 func (s *Store) Path(hash string) (string, error) {
 	const operation = "artifactblob.Path"
 	if err := validateHash(hash); err != nil {

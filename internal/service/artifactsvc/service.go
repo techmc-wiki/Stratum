@@ -25,6 +25,10 @@ type BlobStore interface {
 	StoreFile(context.Context, string) (algorithm, hash, reference string, size int64, err error)
 }
 
+type PayloadVerifier interface {
+	VerifyPayload(context.Context, string) (algorithm, hash, reference string, size int64, err error)
+}
+
 type Repository interface {
 	CreateArtifact(context.Context, artifact.Artifact) error
 	SaveArtifact(context.Context, artifact.Artifact) error
@@ -37,6 +41,7 @@ type Repository interface {
 type Service struct {
 	repository Repository
 	blobStore  BlobStore
+	verifier   PayloadVerifier
 	now        func() time.Time
 	newID      func(string) (string, error)
 }
@@ -72,6 +77,15 @@ func New(repository Repository) *Service {
 func NewWithBlobStore(repository Repository, blobStore BlobStore) *Service {
 	service := New(repository)
 	service.blobStore = blobStore
+	if verifier, ok := blobStore.(PayloadVerifier); ok {
+		service.verifier = verifier
+	}
+	return service
+}
+
+func NewWithPayloadVerifier(repository Repository, verifier PayloadVerifier) *Service {
+	service := New(repository)
+	service.verifier = verifier
 	return service
 }
 
@@ -216,6 +230,11 @@ func (s *Service) review(ctx context.Context, id, actor, reason string, next art
 	if previous != artifact.StatusPending {
 		return artifact.Artifact{}, fmt.Errorf("artifact %q cannot transition from %q to %q by review", id, previous, next)
 	}
+	if next == artifact.StatusApproved {
+		if err := s.verifyPayloadForApproval(ctx, value); err != nil {
+			return artifact.Artifact{}, err
+		}
+	}
 	now := s.now()
 	value.Status = next
 	value.ReviewedBy = actor
@@ -228,6 +247,41 @@ func (s *Service) review(ctx context.Context, id, actor, reason string, next art
 		return artifact.Artifact{}, err
 	}
 	return value, nil
+}
+
+func (s *Service) verifyPayloadForApproval(ctx context.Context, value artifact.Artifact) error {
+	if s.verifier == nil {
+		return fmt.Errorf("artifact %q cannot be approved: payload verifier is unavailable", value.ID)
+	}
+	if value.PayloadStatus != artifact.PayloadAvailable || value.PayloadAlgorithm == "" || value.SHA256 == "" || value.SizeBytes < 0 || value.PayloadReference == "" || value.PayloadImportedBy == "" || value.PayloadImportedAt == nil {
+		return fmt.Errorf("artifact %q cannot be approved: payload metadata is missing", value.ID)
+	}
+	if value.PayloadAlgorithm != "sha256" {
+		return fmt.Errorf("artifact %q cannot be approved: unsupported payload algorithm %q", value.ID, value.PayloadAlgorithm)
+	}
+	if len(value.SHA256) != 64 {
+		return fmt.Errorf("artifact %q cannot be approved: invalid payload SHA-256 hash", value.ID)
+	}
+	for _, character := range value.SHA256 {
+		if (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') {
+			continue
+		}
+		return fmt.Errorf("artifact %q cannot be approved: invalid payload SHA-256 hash", value.ID)
+	}
+	algorithm, hash, reference, size, err := s.verifier.VerifyPayload(ctx, value.SHA256)
+	if err != nil {
+		if stratumerrors.IsKind(err, stratumerrors.KindNotFound) {
+			return fmt.Errorf("artifact %q cannot be approved: payload blob is missing: %w", value.ID, err)
+		}
+		if strings.Contains(err.Error(), "hash mismatch") {
+			return fmt.Errorf("artifact %q cannot be approved: payload blob is corrupted: %w", value.ID, err)
+		}
+		return fmt.Errorf("artifact %q cannot be approved: payload verification failed: %w", value.ID, err)
+	}
+	if algorithm != value.PayloadAlgorithm || hash != value.SHA256 || reference != value.PayloadReference || size != value.SizeBytes {
+		return fmt.Errorf("artifact %q cannot be approved: payload metadata does not match verified blob", value.ID)
+	}
+	return nil
 }
 
 func (s *Service) audit(ctx context.Context, value artifact.Artifact, previous, next artifact.Status, actor, reason, action string) error {

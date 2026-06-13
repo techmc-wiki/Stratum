@@ -23,6 +23,11 @@ Artifact approval and rejection also write audit events without creating
 Operations. They are metadata review actions and do not copy, mount, install, or
 execute artifact payloads.
 
+Approval writes `artifact.approved` only after the linked blob passes SHA-256
+verification. A failed verification leaves Artifact and review metadata
+unchanged and, consistently with current service failure handling, does not
+append a separate failed approval audit event.
+
 Artifact metadata creation writes `artifact.created` with artifact, project,
 actor, type, and pending status metadata. It does not create an Operation or
 accept an artifact payload.

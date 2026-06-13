@@ -520,7 +520,7 @@ func TestCheckpointListAndGet(t *testing.T) {
 	}
 }
 
-func TestCLIArtifactCreateApproveAndStageMetadataOnly(t *testing.T) {
+func TestCLIArtifactCreateCannotApproveOrStageWithoutPayload(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")
 	commands := [][]string{
@@ -569,26 +569,16 @@ func TestCLIArtifactCreateApproveAndStageMetadataOnly(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "approve", "--id", "artifact-1", "--actor", "actor-1", "--reason", "trusted metadata-only test"}, &stdout, &stderr); code != 0 {
+	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "approve", "--id", "artifact-1", "--actor", "actor-1", "--reason", "should fail"}, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "payload metadata is missing") {
 		t.Fatalf("approve: code=%d stderr=%q", code, stderr.String())
 	}
-	stdout.Reset()
-	stderr.Reset()
-	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "staging", "plan", "--session", "session-1", "--artifact", "artifact-1", "--actor", "actor-1", "--name", "test-artifact.jar"}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "status=planned") {
-		t.Fatalf("approved staging: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
-	}
 	plans, err := store.ListArtifactStagingPlansBySession(context.Background(), "session-1")
-	if err != nil || len(plans) != 2 {
+	if err != nil || len(plans) != 1 {
 		t.Fatalf("plans=%+v err=%v", plans, err)
 	}
-	var plannedMetadataOnly bool
-	for _, plan := range plans {
-		if plan.Status == "planned" && plan.ArtifactHash == "" {
-			plannedMetadataOnly = true
-		}
-	}
-	if !plannedMetadataOnly {
-		t.Fatalf("metadata-only planned staging missing: %+v", plans)
+	current, err := store.GetArtifact(context.Background(), "artifact-1")
+	if err != nil || current.Status != artifact.StatusPending || current.ReviewedBy != "" || current.ReviewedAt != nil || current.ReviewReason != "" {
+		t.Fatalf("artifact=%+v err=%v", current, err)
 	}
 }
 
@@ -632,16 +622,23 @@ func TestCLIArtifactCreateValidationAndDuplicate(t *testing.T) {
 }
 
 func TestCLIArtifactInspectIsReadOnlyAndShowsReviewMetadata(t *testing.T) {
-	dataDirectory := filepath.Join(t.TempDir(), "data")
+	root := t.TempDir()
+	dataDirectory := filepath.Join(root, "data")
+	blobRoot := filepath.Join(root, "artifacts")
+	payloadPath := filepath.Join(root, "payload.jar")
+	if err := os.WriteFile(payloadPath, []byte("artifact"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	base := []string{"--data-dir", dataDirectory, "--artifact-blob-root", blobRoot}
 	var stdout, stderr bytes.Buffer
 	commands := [][]string{
-		{"--data-dir", dataDirectory, "projects", "create", "--id", "project-1", "--name", "Project"},
-		{"--data-dir", dataDirectory, "artifacts", "create", "--id", "artifact-1", "--name", "Test Artifact", "--type", "jar", "--project", "project-1", "--actor", "creator-1"},
+		{"projects", "create", "--id", "project-1", "--name", "Project"},
+		{"artifacts", "create", "--id", "artifact-1", "--name", "Test Artifact", "--type", "jar", "--project", "project-1", "--actor", "creator-1"},
 	}
 	for _, command := range commands {
 		stdout.Reset()
 		stderr.Reset()
-		if code := Run(command, &stdout, &stderr); code != 0 {
+		if code := Run(append(append([]string{}, base...), command...), &stdout, &stderr); code != 0 {
 			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
 		}
 	}
@@ -663,7 +660,7 @@ func TestCLIArtifactInspectIsReadOnlyAndShowsReviewMetadata(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "inspect", "--id", "artifact-1"}, &stdout, &stderr); code != 0 {
+	if code := Run(append(append([]string{}, base...), "artifacts", "inspect", "--id", "artifact-1"), &stdout, &stderr); code != 0 {
 		t.Fatalf("inspect: code=%d stderr=%q", code, stderr.String())
 	}
 	for _, want := range []string{"id=artifact-1", `name="Test Artifact"`, "type=jar", "project=project-1", "status=pending", "uploadedBy=creator-1", "createdAt=", "payload=metadata-only"} {
@@ -694,12 +691,17 @@ func TestCLIArtifactInspectIsReadOnlyAndShowsReviewMetadata(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "approve", "--id", "artifact-1", "--actor", "reviewer-1", "--reason", "trusted fixture"}, &stdout, &stderr); code != 0 {
+	if code := Run(append(append([]string{}, base...), "artifacts", "import-file", "--id", "artifact-1", "--file", payloadPath, "--actor", "creator-1"), &stdout, &stderr); code != 0 {
+		t.Fatalf("import: code=%d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, base...), "artifacts", "approve", "--id", "artifact-1", "--actor", "reviewer-1", "--reason", "trusted fixture"), &stdout, &stderr); code != 0 {
 		t.Fatalf("approve: code=%d stderr=%q", code, stderr.String())
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "inspect", "--id", "artifact-1"}, &stdout, &stderr); code != 0 {
+	if code := Run(append(append([]string{}, base...), "artifacts", "inspect", "--id", "artifact-1"), &stdout, &stderr); code != 0 {
 		t.Fatalf("inspect approved: code=%d stderr=%q", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "status=approved") || !strings.Contains(stdout.String(), "reviewedBy=reviewer-1") || !strings.Contains(stdout.String(), `reviewReason="trusted fixture"`) || !strings.Contains(stdout.String(), "reviewedAt=202") {
@@ -992,20 +994,36 @@ func TestCLIArtifactStagingPlanListAndInspect(t *testing.T) {
 
 func TestCLIArtifactApproveReject(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	dataDirectory := filepath.Join(t.TempDir(), "data")
+	root := t.TempDir()
+	dataDirectory := filepath.Join(root, "data")
+	blobRoot := filepath.Join(root, "artifacts")
 	store, err := filesystem.New(dataDirectory)
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 6, 12, 12, 0, 0, 0, time.UTC)
-	if err := store.CreateArtifact(context.Background(), artifact.Artifact{ID: "approve-me", Name: "Approve Me", Type: artifact.TypeJar, UploaderID: "uploader-1", SHA256: artifact.HashBytes([]byte("approve")), SizeBytes: 7, Status: artifact.StatusPending, CreatedAt: now}); err != nil {
+	blobs, err := artifactblob.New(blobRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := blobs.Put(context.Background(), strings.NewReader("approve"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateArtifact(context.Background(), artifact.Artifact{
+		ID: "approve-me", Name: "Approve Me", Type: artifact.TypeJar, UploaderID: "uploader-1",
+		SHA256: payload.Hash, SizeBytes: payload.Size, PayloadStatus: artifact.PayloadAvailable, PayloadAlgorithm: payload.Algorithm,
+		PayloadReference: payload.Reference, PayloadImportedBy: "uploader-1", PayloadImportedAt: &now,
+		Status: artifact.StatusPending, CreatedAt: now,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.CreateArtifact(context.Background(), artifact.Artifact{ID: "reject-me", Name: "Reject Me", Type: artifact.TypeJar, UploaderID: "uploader-1", SHA256: artifact.HashBytes([]byte("reject")), SizeBytes: 6, Status: artifact.StatusPending, CreatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 
-	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "approve", "--id", "approve-me", "--actor", "reviewer-1", "--reason", "trusted fixture"}, &stdout, &stderr); code != 0 {
+	base := []string{"--data-dir", dataDirectory, "--artifact-blob-root", blobRoot}
+	if code := Run(append(append([]string{}, base...), "artifacts", "approve", "--id", "approve-me", "--actor", "reviewer-1", "--reason", "trusted fixture"), &stdout, &stderr); code != 0 {
 		t.Fatalf("approve: code=%d stderr=%q", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "status=approved") || !strings.Contains(stdout.String(), "No payload was copied") {
@@ -1013,7 +1031,7 @@ func TestCLIArtifactApproveReject(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "reject", "--id", "reject-me", "--actor", "reviewer-1", "--reason", "unsafe fixture"}, &stdout, &stderr); code != 0 {
+	if code := Run(append(append([]string{}, base...), "artifacts", "reject", "--id", "reject-me", "--actor", "reviewer-1", "--reason", "unsafe fixture"), &stdout, &stderr); code != 0 {
 		t.Fatalf("reject: code=%d stderr=%q", code, stderr.String())
 	}
 	approved, err := store.GetArtifact(context.Background(), "approve-me")

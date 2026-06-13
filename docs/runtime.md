@@ -154,12 +154,14 @@ approval, and sandboxing rules are implemented.
 
 Artifact approval is metadata-only review. `artifacts approve` and `artifacts
 reject` transition pending artifact metadata, record reviewer and reason fields,
-and append audit events. Approval does not copy, mount, install, or execute
-payloads; it only makes the artifact eligible for future staging plans. Rejected
-artifacts cannot be staged. A content-addressed BlobStore exists independently,
-and `artifacts import-file` can link a trusted local file to pending Artifact
-metadata. Import does not copy or mount the blob into an Agent runtime;
-runtime staging and mounting remain future work.
+and append audit events. Approval first requires complete imported payload
+metadata and successful SHA-256 verification through the content-addressed
+BlobStore. Missing or corrupted payloads remain pending. Approval does not copy,
+mount, install, or execute payloads; it only makes the Artifact eligible for
+future staging plans. Rejected artifacts cannot be staged. `artifacts
+import-file` links a trusted local file to pending Artifact metadata without
+copying it into an Agent runtime; runtime staging and mounting remain future
+work.
 
 `artifacts blobs verify` only recomputes a content-addressed blob's SHA-256. It
 does not mutate Artifact metadata, approve content, or interact with Agent

@@ -107,7 +107,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "artifacts blobs":
 		return artifactBlobs(ctx, *artifactBlobRoot, command[2:], stdout, stderr)
 	case "artifacts approve", "artifacts reject":
-		return reviewArtifact(ctx, store, action, command[2:], stdout, stderr)
+		return reviewArtifact(ctx, store, *artifactBlobRoot, action, command[2:], stdout, stderr)
 	case "artifacts staging":
 		return artifactStaging(ctx, store, command[2:], stdout, stderr)
 	case "operations list":
@@ -940,7 +940,7 @@ func artifactBlobs(ctx context.Context, blobRoot string, args []string, stdout, 
 	return 0
 }
 
-func reviewArtifact(ctx context.Context, store *filesystem.Store, action string, args []string, stdout, stderr io.Writer) int {
+func reviewArtifact(ctx context.Context, store *filesystem.Store, blobRoot, action string, args []string, stdout, stderr io.Writer) int {
 	flags := newFlagSet("artifacts "+action, stderr)
 	id := flags.String("id", "", "artifact ID")
 	actor := flags.String("actor", "", "reviewer actor ID")
@@ -956,6 +956,11 @@ func reviewArtifact(ctx context.Context, store *filesystem.Store, action string,
 	var value artifact.Artifact
 	var err error
 	if action == "approve" {
+		blobs, openErr := artifactblob.Open(blobRoot)
+		if openErr != nil {
+			return reportError(stderr, "open artifact blob store", openErr)
+		}
+		service = artifactsvc.NewWithPayloadVerifier(store, blobs)
 		value, err = service.ApproveArtifact(ctx, *id, *actor, *reason)
 	} else {
 		value, err = service.RejectArtifact(ctx, *id, *actor, *reason)
