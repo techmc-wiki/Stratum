@@ -115,6 +115,22 @@ type MaterializedArtifacts struct {
 	Items     []MaterializedArtifact
 }
 
+type MaterializedArtifactVerification struct {
+	AgentID             string
+	SessionID           string
+	StagingPlanID       string
+	ArtifactID          string
+	TargetName          string
+	RuntimeRelativePath string
+	PayloadAlgorithm    string
+	ExpectedHash        string
+	ActualHash          string
+	PayloadSize         int64
+	ActualSize          int64
+	Status              string
+	VerifiedAt          time.Time
+}
+
 type OperationResult struct {
 	AgentID string
 	Status  string
@@ -199,6 +215,7 @@ type AgentClient interface {
 	MaterializeArtifact(context.Context, ArtifactMaterializationRequest) (ArtifactMaterializationResult, error)
 	InspectMaterializedArtifacts(context.Context, string) (MaterializedArtifacts, error)
 	InspectMaterializedArtifact(context.Context, string, string) (MaterializedArtifact, error)
+	VerifyMaterializedArtifact(context.Context, string, string) (MaterializedArtifactVerification, error)
 }
 
 type RuntimeAgent interface {

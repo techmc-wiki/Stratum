@@ -146,6 +146,11 @@ Individual entries may be selected by their staging plan ID through the Agent
 API. The lookup reads the same fixed manifest path and introduces no additional
 Controller or Agent persistence.
 
+Materialized-file verification uses the target name to derive the expected path
+under the Session `artifacts/` directory and requires the manifest's stored path
+to match it. The Agent hashes the file read-only and does not update either the
+manifest or payload when content is missing or corrupted.
+
 Lists read every `.json` record and return records ordered by filename. A
 malformed or unknown-field record stops the list with an actionable repository
 error rather than silently dropping metadata.

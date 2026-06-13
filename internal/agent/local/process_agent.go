@@ -192,6 +192,18 @@ func (a *ProcessAgent) InspectMaterializedArtifact(ctx context.Context, sessionI
 	return result, nil
 }
 
+func (a *ProcessAgent) VerifyMaterializedArtifact(ctx context.Context, sessionID, stagingPlanID string) (agent.MaterializedArtifactVerification, error) {
+	result, err := agentprocess.VerifyMaterializedArtifact(ctx, a.supervisor.RuntimeRoot(), sessionID, stagingPlanID, time.Now().UTC())
+	if err != nil {
+		if errors.Is(err, agent.ErrMaterializedArtifactNotFound) {
+			return agent.MaterializedArtifactVerification{}, err
+		}
+		return agent.MaterializedArtifactVerification{}, agent.Error{AgentID: a.id, Operation: agent.OperationInspect, Message: err.Error()}
+	}
+	result.AgentID = a.id
+	return result, nil
+}
+
 func (a *ProcessAgent) result(message string) agent.OperationResult {
 	return agent.OperationResult{AgentID: a.id, Status: "success", Message: message, Mode: agentprocess.RuntimeModeDummy}
 }

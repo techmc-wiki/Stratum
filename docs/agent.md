@@ -160,6 +160,17 @@ and finds one entry in the Agent-owned materialization manifest. Missing
 manifests and missing entries return HTTP 404. The lookup is read-only and never
 opens the materialized payload.
 
+## Verifying Materialized Artifacts
+
+`GET /v1/sessions/{id}/artifacts/{staging-plan-id}/verify` validates the
+manifest entry and safely derives its file below the Session `artifacts/`
+directory. It rejects mismatched manifest paths and symbolic links, then reads
+the file only to recompute SHA-256 and size. The response reports `valid`,
+`missing`, or `corrupted` with expected and actual values.
+
+The endpoint is diagnostic and read-only. It performs no automatic repair,
+installation, mounting, loading, or execution.
+
 ## Why Agent controls MCDR, not the other way around
 
 MCDR is itself a process that requires supervision. A future trusted

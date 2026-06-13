@@ -187,6 +187,17 @@ a read-only lookup by Session and staging plan ID. It reads the same Agent-owned
 manifest and returns one entry; a missing manifest or plan returns not found.
 The command does not verify, install, mount, load, or execute the artifact.
 
+## Verifying Materialized Artifacts
+
+`sessions artifacts verify --id <session-id> --plan <staging-plan-id>` performs
+a read-only integrity check. The Agent resolves the file from the safe Session
+artifact layout, recomputes its SHA-256 hash and size, and compares both with
+the Agent-owned manifest entry. Results are `valid`, `missing`, or `corrupted`.
+
+Verification is intended to detect runtime staging corruption or manual
+tampering. It does not repair, install, mount, load, inspect, or execute the
+artifact.
+
 ## Artifact Approval
 
 Artifact approval is metadata-only review. `artifacts approve` and `artifacts

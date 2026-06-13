@@ -97,6 +97,9 @@ func InspectMaterializedArtifacts(ctx context.Context, runtimeRoot, sessionID st
 		if err != nil {
 			return agent.MaterializedArtifacts{}, fmt.Errorf("invalid materialized artifact target %q: %w", item.Name, err)
 		}
+		if item.Path != "" && filepath.Clean(item.Path) != filepath.Clean(target) {
+			return agent.MaterializedArtifacts{}, errors.New("materialized artifact manifest path does not match safe runtime path")
+		}
 		relative, err := filepath.Rel(layout.SessionRoot, target)
 		if err != nil || !pathWithin(layout.SessionRoot, target) {
 			return agent.MaterializedArtifacts{}, errors.New("materialized artifact path escapes session runtime")
@@ -130,6 +133,55 @@ func InspectMaterializedArtifact(ctx context.Context, runtimeRoot, sessionID, st
 		}
 	}
 	return agent.MaterializedArtifact{}, fmt.Errorf("%w: staging plan %q in session %q", agent.ErrMaterializedArtifactNotFound, stagingPlanID, sessionID)
+}
+
+func VerifyMaterializedArtifact(ctx context.Context, runtimeRoot, sessionID, stagingPlanID string, at time.Time) (agent.MaterializedArtifactVerification, error) {
+	item, err := InspectMaterializedArtifact(ctx, runtimeRoot, sessionID, stagingPlanID)
+	if err != nil {
+		return agent.MaterializedArtifactVerification{}, err
+	}
+	if item.PayloadAlgorithm != "sha256" || !validMaterializationHash(item.PayloadHash) {
+		return agent.MaterializedArtifactVerification{}, errors.New("materialized artifact manifest requires a valid SHA-256 payload hash")
+	}
+	layout, err := NewSessionRuntimeLayout(runtimeRoot, sessionID)
+	if err != nil {
+		return agent.MaterializedArtifactVerification{}, err
+	}
+	staging := layout.Staging()
+	target, err := staging.ArtifactPath(item.TargetName)
+	if err != nil {
+		return agent.MaterializedArtifactVerification{}, err
+	}
+	if err := rejectSymlinkPath(staging.ArtifactsDir, target); err != nil {
+		return agent.MaterializedArtifactVerification{}, err
+	}
+	result := agent.MaterializedArtifactVerification{
+		SessionID: sessionID, StagingPlanID: stagingPlanID, ArtifactID: item.ArtifactID,
+		TargetName: item.TargetName, RuntimeRelativePath: item.RuntimeRelativePath,
+		PayloadAlgorithm: item.PayloadAlgorithm, ExpectedHash: item.PayloadHash,
+		PayloadSize: item.PayloadSize, Status: "missing", VerifiedAt: normalizeManifestTime(at),
+	}
+	info, err := os.Lstat(target)
+	if os.IsNotExist(err) {
+		return result, nil
+	}
+	if err != nil {
+		return agent.MaterializedArtifactVerification{}, fmt.Errorf("inspect materialized artifact file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return agent.MaterializedArtifactVerification{}, errors.New("materialized artifact path is not a regular file")
+	}
+	actualHash, actualSize, err := hashMaterializedFileMetadata(ctx, target)
+	if err != nil {
+		return agent.MaterializedArtifactVerification{}, err
+	}
+	result.ActualHash = actualHash
+	result.ActualSize = actualSize
+	result.Status = "corrupted"
+	if actualHash == item.PayloadHash && actualSize == item.PayloadSize {
+		result.Status = "valid"
+	}
+	return result, nil
 }
 
 func validateMaterializationIdentifier(kind, value string) error {
@@ -289,16 +341,34 @@ func updateArtifactManifest(staging SessionRuntimeStaging, request agent.Artifac
 }
 
 func hashMaterializedFile(path string) (string, error) {
+	hash, _, err := hashMaterializedFileMetadata(context.Background(), path)
+	return hash, err
+}
+
+func hashMaterializedFileMetadata(ctx context.Context, path string) (string, int64, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return "", fmt.Errorf("open materialized file: %w", err)
+		return "", 0, fmt.Errorf("open materialized file: %w", err)
 	}
 	defer file.Close()
 	digest := sha256.New()
-	if _, err := io.Copy(digest, file); err != nil {
-		return "", fmt.Errorf("hash materialized file: %w", err)
+	size, err := io.Copy(digest, &contextReader{ctx: ctx, reader: file})
+	if err != nil {
+		return "", 0, fmt.Errorf("hash materialized file: %w", err)
 	}
-	return hex.EncodeToString(digest.Sum(nil)), nil
+	return hex.EncodeToString(digest.Sum(nil)), size, nil
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r *contextReader) Read(buffer []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(buffer)
 }
 
 func sha256Hex(payload []byte) string {

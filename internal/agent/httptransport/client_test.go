@@ -139,6 +139,10 @@ func TestClientMaterializesArtifactThroughHTTP(t *testing.T) {
 	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusNotFound || !strings.Contains(httpErr.Message, "materialized artifact not found") {
 		t.Fatalf("missing item err=%#v", err)
 	}
+	verified, err := client.VerifyMaterializedArtifact(context.Background(), "session-1", "plan-1")
+	if err != nil || verified.Status != "valid" || verified.ExpectedHash != verified.ActualHash || verified.ActualSize != int64(len(payload)) {
+		t.Fatalf("verified=%+v err=%v", verified, err)
+	}
 }
 
 func TestClientMaterializedArtifactsMissingManifestIsEmpty(t *testing.T) {

@@ -36,6 +36,7 @@ Minecraft server.
 - Agent-side verified Artifact materialization with a staging manifest.
 - Read-only Agent inspection of materialized Artifact manifests.
 - Read-only lookup of one materialized Artifact by staging plan ID.
+- Read-only integrity verification of materialized Artifact files.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active

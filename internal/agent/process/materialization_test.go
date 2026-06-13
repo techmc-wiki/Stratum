@@ -168,6 +168,72 @@ func TestInspectMaterializedArtifactNotFoundAndUnsafePlan(t *testing.T) {
 	}
 }
 
+func TestVerifyMaterializedArtifactStatuses(t *testing.T) {
+	root := t.TempDir()
+	request := materializationRequest([]byte("artifact"))
+	now := time.Date(2026, 6, 13, 14, 0, 0, 0, time.UTC)
+	if _, err := MaterializeArtifact(context.Background(), root, request, now); err != nil {
+		t.Fatal(err)
+	}
+	valid, err := VerifyMaterializedArtifact(context.Background(), root, request.SessionID, request.StagingPlanID, now)
+	if err != nil || valid.Status != "valid" || valid.ExpectedHash != request.PayloadHash || valid.ActualHash != request.PayloadHash || valid.PayloadSize != request.PayloadSize || valid.ActualSize != request.PayloadSize || valid.VerifiedAt != now {
+		t.Fatalf("valid=%+v err=%v", valid, err)
+	}
+	layout, _ := NewSessionRuntimeLayout(root, request.SessionID)
+	target, _ := layout.Staging().ArtifactPath(request.TargetName)
+	if err := os.Remove(target); err != nil {
+		t.Fatal(err)
+	}
+	missing, err := VerifyMaterializedArtifact(context.Background(), root, request.SessionID, request.StagingPlanID, now)
+	if err != nil || missing.Status != "missing" || missing.ActualHash != "" || missing.ActualSize != 0 {
+		t.Fatalf("missing=%+v err=%v", missing, err)
+	}
+	if err := os.WriteFile(target, []byte("modified"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	corrupted, err := VerifyMaterializedArtifact(context.Background(), root, request.SessionID, request.StagingPlanID, now)
+	if err != nil || corrupted.Status != "corrupted" || corrupted.ActualHash == request.PayloadHash || corrupted.ActualSize != 8 {
+		t.Fatalf("corrupted=%+v err=%v", corrupted, err)
+	}
+}
+
+func TestVerifyMaterializedArtifactRejectsMissingUnsafeAndEscapingManifestPath(t *testing.T) {
+	root := t.TempDir()
+	if _, err := VerifyMaterializedArtifact(context.Background(), root, "session-1", "plan-1", time.Now()); !errors.Is(err, agent.ErrMaterializedArtifactNotFound) {
+		t.Fatalf("missing manifest err=%v", err)
+	}
+	request := materializationRequest([]byte("artifact"))
+	if _, err := MaterializeArtifact(context.Background(), root, request, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyMaterializedArtifact(context.Background(), root, request.SessionID, "missing-plan", time.Now()); !errors.Is(err, agent.ErrMaterializedArtifactNotFound) {
+		t.Fatalf("missing entry err=%v", err)
+	}
+	if _, err := VerifyMaterializedArtifact(context.Background(), root, "../escape", request.StagingPlanID, time.Now()); err == nil || !strings.Contains(err.Error(), "unsupported characters") {
+		t.Fatalf("unsafe session err=%v", err)
+	}
+	if _, err := VerifyMaterializedArtifact(context.Background(), root, request.SessionID, "../escape", time.Now()); err == nil || !strings.Contains(err.Error(), "unsupported characters") {
+		t.Fatalf("unsafe plan err=%v", err)
+	}
+	layout, _ := NewSessionRuntimeLayout(root, request.SessionID)
+	manifest := readManifest(t, layout.Staging().StagedArtifactsManifest)
+	manifest.Items[0].Path = filepath.Join(t.TempDir(), "outside.jar")
+	file, err := os.Create(layout.Staging().StagedArtifactsManifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.NewEncoder(file).Encode(manifest); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyMaterializedArtifact(context.Background(), root, request.SessionID, request.StagingPlanID, time.Now()); err == nil || !strings.Contains(err.Error(), "does not match safe runtime path") {
+		t.Fatalf("escaping manifest path err=%v", err)
+	}
+}
+
 func materializationRequest(payload []byte) agent.ArtifactMaterializationRequest {
 	return agent.ArtifactMaterializationRequest{SessionID: "session-1", ArtifactID: "artifact-1", StagingPlanID: "plan-1", ArtifactName: "Test", ArtifactType: "jar", TargetName: "mods/test.jar", PayloadAlgorithm: "sha256", PayloadHash: sha256Hex(payload), PayloadSize: int64(len(payload)), ActorID: "actor-1", Payload: append([]byte(nil), payload...)}
 }

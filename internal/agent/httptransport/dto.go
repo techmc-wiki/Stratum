@@ -139,6 +139,23 @@ type MaterializedArtifactsResponse struct {
 	RequestID string                         `json:"requestId"`
 }
 
+type MaterializedArtifactVerificationResponse struct {
+	AgentID             string    `json:"agentId"`
+	SessionID           string    `json:"sessionId"`
+	StagingPlanID       string    `json:"stagingPlanId"`
+	ArtifactID          string    `json:"artifactId"`
+	TargetName          string    `json:"targetName"`
+	RuntimeRelativePath string    `json:"runtimeRelativePath"`
+	PayloadAlgorithm    string    `json:"payloadAlgorithm"`
+	ExpectedHash        string    `json:"expectedHash"`
+	ActualHash          string    `json:"actualHash,omitempty"`
+	PayloadSize         int64     `json:"payloadSize"`
+	ActualSize          int64     `json:"actualSize"`
+	Status              string    `json:"status"`
+	VerifiedAt          time.Time `json:"verifiedAt"`
+	RequestID           string    `json:"requestId"`
+}
+
 type ErrorResponse struct {
 	Error     string `json:"error"`
 	Operation string `json:"operation,omitempty"`

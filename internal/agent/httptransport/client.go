@@ -156,6 +156,15 @@ func (c *Client) InspectMaterializedArtifact(ctx context.Context, sessionID, sta
 	return agent.MaterializedArtifact{AgentID: response.AgentID, SessionID: response.SessionID, ArtifactID: response.ArtifactID, StagingPlanID: response.StagingPlanID, ArtifactName: response.ArtifactName, ArtifactType: response.ArtifactType, TargetName: response.TargetName, PayloadAlgorithm: response.PayloadAlgorithm, PayloadHash: response.PayloadHash, PayloadSize: response.PayloadSize, RuntimeRelativePath: response.RuntimeRelativePath, MaterializedAt: response.MaterializedAt, ActorID: response.ActorID, Status: response.Status, Metadata: response.Metadata}, nil
 }
 
+func (c *Client) VerifyMaterializedArtifact(ctx context.Context, sessionID, stagingPlanID string) (agent.MaterializedArtifactVerification, error) {
+	var response MaterializedArtifactVerificationResponse
+	path := "/v1/sessions/" + url.PathEscape(sessionID) + "/artifacts/" + url.PathEscape(stagingPlanID) + "/verify"
+	if err := c.do(ctx, http.MethodGet, path, nil, &response); err != nil {
+		return agent.MaterializedArtifactVerification{}, err
+	}
+	return agent.MaterializedArtifactVerification{AgentID: response.AgentID, SessionID: response.SessionID, StagingPlanID: response.StagingPlanID, ArtifactID: response.ArtifactID, TargetName: response.TargetName, RuntimeRelativePath: response.RuntimeRelativePath, PayloadAlgorithm: response.PayloadAlgorithm, ExpectedHash: response.ExpectedHash, ActualHash: response.ActualHash, PayloadSize: response.PayloadSize, ActualSize: response.ActualSize, Status: response.Status, VerifiedAt: response.VerifiedAt}, nil
+}
+
 func (c *Client) sessionOperation(ctx context.Context, request agent.SessionRequest, operation string) (agent.OperationResult, error) {
 	var response SessionOperationResponse
 	body := SessionOperationRequest{ProjectID: request.ProjectID, EnvironmentID: request.EnvironmentID, RuntimeProfileID: request.RuntimeProfileID}
