@@ -723,8 +723,11 @@ func validateCheckpoint(op string, value checkpoint.Checkpoint) error {
 	if err := validateID(op, value.ID); err != nil {
 		return err
 	}
-	if value.ProjectID == "" || value.SourceSessionID == "" || value.CreatorID == "" || value.Kind == "" || value.WorldStateRef == "" || value.EnvironmentID == "" || value.CreatedAt.IsZero() {
-		return validationError(op, "checkpoint requires project, source session, creator, kind, world state, environment, and creation time")
+	if value.SourceSessionID == "" || value.CreatorID == "" || value.Kind == "" || value.Status == "" || value.CreatedAt.IsZero() {
+		return validationError(op, "checkpoint requires source session, creator, kind, status, and creation time")
+	}
+	if value.Status == checkpoint.StatusMetadataOnly && value.EnvironmentID == "" {
+		return validationError(op, "metadata-only checkpoint requires environment id")
 	}
 	return nil
 }

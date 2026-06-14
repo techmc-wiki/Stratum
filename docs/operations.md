@@ -61,6 +61,15 @@ Environment metadata only. It does not reinstall, rematerialize, restart, or
 automatically update Rooms or Sessions referencing the Environment. It does not
 create a lifecycle Operation.
 
+Checkpoint creation writes `checkpoint.created` with the Checkpoint identity,
+Project, Room, Session, Environment, RuntimeProfile, actor, kind, status, and
+notes. The current implementation is metadata-only: checkpoints record Session
+state references but do not copy world files, snapshot artifacts, or backup
+runtime directories. Checkpoint creation does not create a lifecycle Operation,
+stop or pause the Session, call the Agent, or mutate Session state. Future
+checkpoint phases may add world backup, artifact snapshot references, and
+rollback workflows.
+
 ## Pre-start Artifact Readiness Metadata
 
 Remote `session.start` Operations run a read-only artifact gate before Agent

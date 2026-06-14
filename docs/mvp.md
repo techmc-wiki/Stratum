@@ -94,6 +94,11 @@ Minecraft server.
   updated_at does not match. Update mutates Environment metadata only. It does
   not reinstall, rematerialize, restart, or automatically update Rooms or
   Sessions referencing the Environment.
+- Checkpoint metadata-only creation with CLI create/list/inspect commands.
+  Checkpoints record Session/Environment/RuntimeProfile identity, creator, kind,
+  status, and notes. They do not copy world files, snapshot artifacts, backup
+  runtime directories, stop sessions, call the Agent, or support restore/rollback.
+  Checkpoint creation writes checkpoint.created audit event.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active
@@ -128,6 +133,7 @@ Controller's lifecycle manager.
 - Explicit session state transitions and resource-policy decisions.
 - SHA-256 artifact hashing and pending-by-default metadata.
 - Checkpoint metadata construction plus list/rollback service stubs.
+- Checkpoint metadata-only create/list/inspect CLI commands and audit events.
 - Environment domain stub with validation, repository, and CLI support.
 - In-memory and durable file-backed metadata repositories.
 - Atomic JSON persistence and append-only JSONL audit persistence.

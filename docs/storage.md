@@ -32,15 +32,18 @@ directory.
 ## JSON records
 
 Projects, rooms, sessions, checkpoints, artifacts, environments, and resource
-policies use one JSON document per object. Artifact staging plans are metadata
-records for approved-or-rejected staging intent; they do not store payloads.
-Artifact apply plans are metadata records describing future placement of
-materialized artifacts into runtime-specific target locations. They validate
-readiness and target path safety, but do not copy files, mount artifacts, or
-execute anything. Runtime observations are append-only diagnostic records with
-create/get/list behavior and optional list-by-session filtering. Create
-operations reject an existing ID. Updates require an existing object, and
-deletes/get operations return typed not-found errors.
+policies use one JSON document per object. Checkpoints are currently
+metadata-only: they record Session/Environment/RuntimeProfile identity, creator,
+kind, status, and optional notes. They do not snapshot world files, artifact
+payloads, or runtime directories. Artifact staging plans are metadata records
+for approved-or-rejected staging intent; they do not store payloads. Artifact
+apply plans are metadata records describing future placement of materialized
+artifacts into runtime-specific target locations. They validate readiness and
+target path safety, but do not copy files, mount artifacts, or execute anything.
+Runtime observations are append-only diagnostic records with create/get/list
+behavior and optional list-by-session filtering. Create operations reject an
+existing ID. Updates require an existing object, and deletes/get operations
+return typed not-found errors.
 
 Artifact records may include `reviewedBy`, `reviewedAt`, and `reviewReason` when
 an explicit metadata-only approval or rejection has been recorded. These fields

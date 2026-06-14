@@ -109,9 +109,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "checkpoints create":
 		return createCheckpoint(ctx, store, command[2:], stdout, stderr)
 	case "checkpoints list":
-		return listCheckpoints(ctx, store, stdout, stderr)
-	case "checkpoints get":
-		return getCheckpoint(ctx, store, command[2:], stdout, stderr)
+		return listCheckpoints(ctx, store, command[2:], stdout, stderr)
+	case "checkpoints inspect":
+		return inspectCheckpoint(ctx, store, command[2:], stdout, stderr)
 	case "artifacts list":
 		return listArtifacts(ctx, store, stdout, stderr)
 	case "artifacts inspect":
@@ -968,55 +968,67 @@ func agentResources(ctx context.Context, agentClient agent.AgentClient, args []s
 
 func createCheckpoint(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
 	flags := newFlagSet("checkpoints create", stderr)
-	id := flags.String("id", "", "checkpoint ID")
-	sessionID := flags.String("session", "", "source session ID")
-	note := flags.String("note", "", "semantic checkpoint note")
-	notes := flags.String("notes", "", "alias for --note")
-	creatorID := flags.String("creator", "cli", "creator user ID")
+	id := flags.String("id", "", "")
+	sessionID := flags.String("session", "", "")
+	actor := flags.String("actor", "", "")
+	notes := flags.String("notes", "", "")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
-	if *id == "" || *sessionID == "" {
-		fmt.Fprintln(stderr, "--id and --session are required")
+	if *id == "" || *sessionID == "" || *actor == "" {
+		fmt.Fprintln(stderr, "--id, --session, and --actor are required")
 		return 2
 	}
-	if *note == "" {
-		*note = *notes
-	}
-	sessionValue, err := store.GetSession(ctx, *sessionID)
+	sess, err := store.GetSession(ctx, *sessionID)
 	if err != nil {
-		return reportError(stderr, "find session", err)
+		fmt.Fprintf(stderr, "get session error: %v\n", err)
+		return 1
 	}
-	value, err := checkpoint.New(checkpoint.CreateParams{
-		ID: *id, ProjectID: sessionValue.ProjectID, RoomID: sessionValue.RoomID,
-		SourceSessionID: sessionValue.ID, CreatorID: *creatorID, Kind: checkpoint.KindManual,
-		WorldStateRef: "metadata-only://session/" + sessionValue.ID, EnvironmentID: sessionValue.EnvironmentID,
-		Notes: *note,
+	cp, err := checkpoint.New(checkpoint.CreateParams{
+		ID: *id, ProjectID: sess.ProjectID, RoomID: sess.RoomID,
+		SourceSessionID: sess.ID, CreatorID: *actor, Kind: checkpoint.KindManual,
+		Status: checkpoint.StatusMetadataOnly, EnvironmentID: sess.EnvironmentID,
+		Notes: *notes,
 	})
 	if err != nil {
-		return reportError(stderr, "build checkpoint metadata", err)
+		fmt.Fprintf(stderr, "checkpoint creation error: %v\n", err)
+		return 1
 	}
-	if err := store.CreateCheckpoint(ctx, value); err != nil {
-		return reportError(stderr, "create checkpoint", err)
+	if err := store.CreateCheckpoint(ctx, cp); err != nil {
+		fmt.Fprintf(stderr, "create checkpoint error: %v\n", err)
+		return 1
 	}
-	fmt.Fprintf(stdout, "Created checkpoint metadata %s for session %s. World snapshot backup is TODO.\n", value.ID, value.SourceSessionID)
+	eventID, _ := util.NewID("audit")
+	event, _ := audit.NewEvent(eventID, *actor, "checkpoint.created", "checkpoint", cp.ID, time.Now().UTC())
+	event.Metadata = map[string]string{"checkpointId": cp.ID, "projectId": cp.ProjectID, "roomId": cp.RoomID, "sessionId": cp.SourceSessionID, "environmentId": cp.EnvironmentID, "status": string(cp.Status), "actor": *actor}
+	_ = store.AppendAuditEvent(ctx, event)
+	fmt.Fprintf(stdout, "Checkpoint created: %s\n", cp.ID)
 	return 0
 }
 
-func listCheckpoints(ctx context.Context, store *filesystem.Store, stdout, stderr io.Writer) int {
+func listCheckpoints(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("checkpoints list", stderr)
+	sessionID := flags.String("session", "", "")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
 	values, err := store.ListCheckpoints(ctx)
 	if err != nil {
-		return reportError(stderr, "list checkpoints", err)
+		fmt.Fprintf(stderr, "list checkpoints error: %v\n", err)
+		return 1
 	}
-	for _, value := range values {
-		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\n", value.ID, value.SourceSessionID, value.Kind, value.Notes)
+	for _, cp := range values {
+		if *sessionID != "" && cp.SourceSessionID != *sessionID {
+			continue
+		}
+		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\t%s\t%s\n", cp.ID, cp.ProjectID, cp.SourceSessionID, cp.Status, cp.Kind, cp.CreatedAt.Format(time.RFC3339))
 	}
 	return 0
 }
 
-func getCheckpoint(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
-	flags := newFlagSet("checkpoints get", stderr)
-	id := flags.String("id", "", "checkpoint ID")
+func inspectCheckpoint(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("checkpoints inspect", stderr)
+	id := flags.String("id", "", "")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -1024,11 +1036,26 @@ func getCheckpoint(ctx context.Context, store *filesystem.Store, args []string, 
 		fmt.Fprintln(stderr, "--id is required")
 		return 2
 	}
-	value, err := store.GetCheckpoint(ctx, *id)
+	cp, err := store.GetCheckpoint(ctx, *id)
 	if err != nil {
-		return reportError(stderr, "get checkpoint", err)
+		fmt.Fprintf(stderr, "get checkpoint error: %v\n", err)
+		return 1
 	}
-	fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\n", value.ID, value.SourceSessionID, value.Kind, value.Notes)
+	fmt.Fprintf(stdout, "ID:                 %s\n", cp.ID)
+	fmt.Fprintf(stdout, "Project ID:         %s\n", cp.ProjectID)
+	fmt.Fprintf(stdout, "Room ID:            %s\n", cp.RoomID)
+	fmt.Fprintf(stdout, "Source Session ID:  %s\n", cp.SourceSessionID)
+	fmt.Fprintf(stdout, "Creator:            %s\n", cp.CreatorID)
+	fmt.Fprintf(stdout, "Kind:               %s\n", cp.Kind)
+	fmt.Fprintf(stdout, "Status:             %s\n", cp.Status)
+	fmt.Fprintf(stdout, "Environment ID:     %s\n", cp.EnvironmentID)
+	if cp.RuntimeProfileID != "" {
+		fmt.Fprintf(stdout, "Runtime Profile ID: %s\n", cp.RuntimeProfileID)
+	}
+	if cp.Notes != "" {
+		fmt.Fprintf(stdout, "Notes:              %s\n", cp.Notes)
+	}
+	fmt.Fprintf(stdout, "Created At:         %s\n", cp.CreatedAt.Format(time.RFC3339))
 	return 0
 }
 

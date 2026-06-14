@@ -523,7 +523,7 @@ func TestCheckpointListAndGet(t *testing.T) {
 	setupTestProjectRoomEnvironment(t, dataDirectory)
 	commands := [][]string{
 		{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
-		{"--data-dir", dataDirectory, "checkpoints", "create", "--id", "checkpoint-1", "--session", "session-1", "--note", "before test"},
+		{"--data-dir", dataDirectory, "checkpoints", "create", "--id", "checkpoint-1", "--session", "session-1", "--actor", "test-actor", "--notes", "before test"},
 	}
 	for _, command := range commands {
 		stdout.Reset()
@@ -537,16 +537,16 @@ func TestCheckpointListAndGet(t *testing.T) {
 	if code := Run([]string{"--data-dir", dataDirectory, "checkpoints", "list"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("list: %s", stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "checkpoint-1\tsession-1\tmanual\tbefore test") {
+	if !strings.Contains(stdout.String(), "checkpoint-1") || !strings.Contains(stdout.String(), "session-1") || !strings.Contains(stdout.String(), "metadata_only") {
 		t.Fatalf("list stdout=%q", stdout.String())
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"--data-dir", dataDirectory, "checkpoints", "get", "--id", "checkpoint-1"}, &stdout, &stderr); code != 0 {
-		t.Fatalf("get: %s", stderr.String())
+	if code := Run([]string{"--data-dir", dataDirectory, "checkpoints", "inspect", "--id", "checkpoint-1"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("inspect: %s", stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "checkpoint-1\tsession-1") {
-		t.Fatalf("get stdout=%q", stdout.String())
+	if !strings.Contains(stdout.String(), "checkpoint-1") || !strings.Contains(stdout.String(), "session-1") || !strings.Contains(stdout.String(), "before test") {
+		t.Fatalf("inspect stdout=%q", stdout.String())
 	}
 }
 
