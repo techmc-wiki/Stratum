@@ -34,20 +34,21 @@ func LogMaxBytesFromContext(ctx context.Context) int {
 type Operation string
 
 const (
-	OperationPrepare                Operation = "prepare"
-	OperationStart                  Operation = "start"
-	OperationStop                   Operation = "stop"
-	OperationRestart                Operation = "restart"
-	OperationFreeze                 Operation = "freeze"
-	OperationUnfreeze               Operation = "unfreeze"
-	OperationInspect                Operation = "inspect"
-	OperationCollectLogs            Operation = "collect-logs"
-	OperationReportResources        Operation = "report-resources"
-	OperationCreateCheckpoint       Operation = "create-checkpoint"
-	OperationRestoreCheckpoint      Operation = "restore-checkpoint"
-	OperationMaterializeArtifact    Operation = "materialize-artifact"
-	OperationArtifactApply          Operation = "artifact-apply"
-	OperationMaterializeEnvironment Operation = "materialize-environment"
+	OperationPrepare                 Operation = "prepare"
+	OperationStart                   Operation = "start"
+	OperationStop                    Operation = "stop"
+	OperationRestart                 Operation = "restart"
+	OperationFreeze                  Operation = "freeze"
+	OperationUnfreeze                Operation = "unfreeze"
+	OperationInspect                 Operation = "inspect"
+	OperationCollectLogs             Operation = "collect-logs"
+	OperationReportResources         Operation = "report-resources"
+	OperationCreateCheckpoint        Operation = "create-checkpoint"
+	OperationRestoreCheckpoint       Operation = "restore-checkpoint"
+	OperationMaterializeArtifact     Operation = "materialize-artifact"
+	OperationArtifactApply           Operation = "artifact-apply"
+	OperationMaterializeEnvironment  Operation = "materialize-environment"
+	OperationGetSessionRuntimeStatus Operation = "get-session-runtime-status"
 )
 
 const MaxArtifactPayloadBytes = 64 << 20
@@ -312,6 +313,66 @@ type ResourceReport struct {
 	ReportedAt      time.Time
 }
 
+type SessionRuntimeStatus struct {
+	SessionID             string
+	CheckedAt             time.Time
+	RuntimeRootExists     bool
+	SessionRootExists     bool
+	WorkDirExists         bool
+	ConfigDirExists       bool
+	LogsDirExists         bool
+	ArtifactsDirExists    bool
+	CheckpointsDirExists  bool
+	TmpDirExists          bool
+	EnvironmentManifest   *EnvironmentManifestStatus
+	MCDRLayout            *MCDRLayoutStatus
+	MaterializedArtifacts *MaterializedArtifactsStatus
+	AppliedArtifacts      *AppliedArtifactsStatus
+	ProcessStatus         *ProcessStatusSummary
+}
+
+type EnvironmentManifestStatus struct {
+	Exists              bool
+	Path                string
+	RuntimeRelativePath string
+	Status              string
+	EnvironmentID       string
+	MinecraftVersion    string
+	LoaderType          string
+	ServerCore          string
+	RuntimeProfileID    string
+}
+
+type MCDRLayoutStatus struct {
+	MCDRRootExists      bool
+	ManifestExists      bool
+	ManifestPath        string
+	RuntimeRelativePath string
+}
+
+type MaterializedArtifactsStatus struct {
+	ManifestExists      bool
+	ManifestPath        string
+	RuntimeRelativePath string
+	Count               int
+}
+
+type AppliedArtifactsStatus struct {
+	ManifestExists      bool
+	ManifestPath        string
+	RuntimeRelativePath string
+	Count               int
+}
+
+type ProcessStatusSummary struct {
+	Status           string
+	RuntimeProfileID string
+	PID              int
+	Crashed          bool
+	StartedAt        *time.Time
+	StoppedAt        *time.Time
+}
+
 type AgentInfo struct {
 	ID              string
 	Status          string
@@ -348,6 +409,7 @@ type AgentClient interface {
 	VerifyAppliedArtifact(context.Context, string, string) (AppliedArtifactVerification, error)
 	VerifyAllAppliedArtifacts(context.Context, string) (BatchAppliedArtifactVerification, error)
 	MaterializeEnvironment(context.Context, EnvironmentMaterializationRequest) (EnvironmentMaterializationResult, error)
+	GetSessionRuntimeStatus(context.Context, string) (SessionRuntimeStatus, error)
 }
 
 type RuntimeAgent interface {

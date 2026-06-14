@@ -300,3 +300,7 @@ func (a *ProcessAgent) Inspect(ctx context.Context, sessionID string) (agent.Ses
 func (a *ProcessAgent) MaterializeEnvironment(ctx context.Context, request agent.EnvironmentMaterializationRequest) (agent.EnvironmentMaterializationResult, error) {
 	return a.supervisor.MaterializeEnvironment(ctx, request)
 }
+
+func (a *ProcessAgent) GetSessionRuntimeStatus(ctx context.Context, sessionID string) (agent.SessionRuntimeStatus, error) {
+	return a.supervisor.GetSessionRuntimeStatus(ctx, sessionID)
+}

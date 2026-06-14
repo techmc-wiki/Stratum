@@ -303,3 +303,15 @@ func (f *Fake) MaterializeEnvironment(_ context.Context, request agent.Environme
 		Metadata:               map[string]string{},
 	}, nil
 }
+
+func (f *Fake) GetSessionRuntimeStatus(_ context.Context, sessionID string) (agent.SessionRuntimeStatus, error) {
+	if err := f.record(agent.OperationGetSessionRuntimeStatus); err != nil {
+		return agent.SessionRuntimeStatus{}, err
+	}
+	return agent.SessionRuntimeStatus{
+		SessionID:         sessionID,
+		CheckedAt:         f.now(),
+		RuntimeRootExists: true,
+		SessionRootExists: false,
+	}, nil
+}

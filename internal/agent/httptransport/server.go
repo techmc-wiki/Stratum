@@ -61,6 +61,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/sessions/{id}/applied-artifacts/{plan}", s.inspectAppliedArtifact)
 	s.mux.HandleFunc("GET /v1/sessions/{id}/applied-artifacts/{plan}/verify", s.verifyAppliedArtifact)
 	s.mux.HandleFunc("POST /v1/environments/materialize", s.materializeEnvironment)
+	s.mux.HandleFunc("GET /v1/sessions/{id}/runtime-status", s.sessionRuntimeStatus)
 }
 
 func (s *Server) verifyMaterializedArtifacts(w http.ResponseWriter, r *http.Request) {
@@ -445,6 +446,15 @@ func (s *Server) materializeEnvironment(w http.ResponseWriter, r *http.Request) 
 		Metadata:               result.Metadata,
 		RequestID:              requestID(r),
 	})
+}
+
+func (s *Server) sessionRuntimeStatus(w http.ResponseWriter, r *http.Request) {
+	status, err := s.client.GetSessionRuntimeStatus(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "get-session-runtime-status", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sessionRuntimeStatusResponse(status, requestID(r)))
 }
 
 func newRequestID() string {

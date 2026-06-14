@@ -171,6 +171,42 @@ The manifest is written during manual `environments materialize` commands and
 during session start/restart materialization. Operation metadata includes the
 manifest path when available (`environmentMaterializationManifest`).
 
+## Session Runtime Status
+
+The Agent provides a read-only `GetSessionRuntimeStatus` method that summarizes
+runtime-side state for one Session. It inspects Agent-owned runtime files and
+process state without starting, stopping, restarting, materializing, applying, or
+mutating anything.
+
+The endpoint returns:
+
+- Session directory structure status (runtime root, session root, work, config,
+  logs, artifacts, checkpoints, tmp)
+- Environment manifest presence, path, status, and metadata (environment ID,
+  Minecraft version, loader type, server core, runtime profile)
+- MCDR layout presence and manifest path
+- Materialized artifacts manifest presence, path, and count
+- Applied artifacts manifest presence, path, and count
+- Process status summary (status, runtime profile ID, PID, crashed flag, start
+  and stop timestamps)
+
+Controller readiness checks and operators use this to verify runtime state before
+allowing start/restart operations or debugging materialization issues.
+
+CLI:
+
+```shell
+stratum --agent-url http://127.0.0.1:8787 sessions runtime-status --id demo-session
+```
+
+HTTP:
+
+```http
+GET /v1/sessions/{id}/runtime-status
+```
+
+The status is read-only. It does not repair, materialize, or modify anything.
+
 ## Runtime Artifact and Config Staging
 
 Runtime staging is Agent-owned preparation inside a Session runtime layout. The

@@ -93,6 +93,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return sessionLogs(ctx, agentClient, command[2:], stdout, stderr)
 	case "sessions artifacts":
 		return sessionArtifacts(ctx, agentClient, strings.TrimSpace(*agentURL) != "", command[2:], stdout, stderr)
+	case "sessions runtime-status":
+		return sessionRuntimeStatus(ctx, agentClient, command[2:], stdout, stderr)
 	case "sessions prepare", "sessions start", "sessions stop", "sessions restart",
 		"sessions freeze", "sessions unfreeze", "sessions mark-crashed",
 		"sessions archive", "sessions delete":
@@ -676,6 +678,98 @@ func sessionLogs(ctx context.Context, agentClient agent.AgentClient, args []stri
 			if remaining == 0 {
 				break
 			}
+		}
+	}
+	return 0
+}
+
+func sessionRuntimeStatus(ctx context.Context, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("sessions runtime-status", stderr)
+	id := flags.String("id", "", "session ID")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" {
+		fmt.Fprintln(stderr, "--id is required")
+		return 2
+	}
+	status, err := agentClient.GetSessionRuntimeStatus(ctx, *id)
+	if err != nil {
+		return reportError(stderr, "get session runtime status", err)
+	}
+	fmt.Fprintf(stdout, "Session: %s\n", status.SessionID)
+	fmt.Fprintf(stdout, "Checked at: %s\n", status.CheckedAt.Format(time.RFC3339))
+	fmt.Fprintf(stdout, "Runtime root exists: %t\n", status.RuntimeRootExists)
+	fmt.Fprintf(stdout, "Session root exists: %t\n", status.SessionRootExists)
+	fmt.Fprintf(stdout, "Directories:\n")
+	fmt.Fprintf(stdout, "  work: %t\n", status.WorkDirExists)
+	fmt.Fprintf(stdout, "  config: %t\n", status.ConfigDirExists)
+	fmt.Fprintf(stdout, "  logs: %t\n", status.LogsDirExists)
+	fmt.Fprintf(stdout, "  artifacts: %t\n", status.ArtifactsDirExists)
+	fmt.Fprintf(stdout, "  checkpoints: %t\n", status.CheckpointsDirExists)
+	fmt.Fprintf(stdout, "  tmp: %t\n", status.TmpDirExists)
+	if status.EnvironmentManifest != nil {
+		fmt.Fprintf(stdout, "Environment manifest:\n")
+		fmt.Fprintf(stdout, "  exists: %t\n", status.EnvironmentManifest.Exists)
+		if status.EnvironmentManifest.Exists {
+			fmt.Fprintf(stdout, "  path: %s\n", status.EnvironmentManifest.Path)
+			fmt.Fprintf(stdout, "  status: %s\n", status.EnvironmentManifest.Status)
+			if status.EnvironmentManifest.EnvironmentID != "" {
+				fmt.Fprintf(stdout, "  environment: %s\n", status.EnvironmentManifest.EnvironmentID)
+			}
+			if status.EnvironmentManifest.MinecraftVersion != "" {
+				fmt.Fprintf(stdout, "  minecraft: %s\n", status.EnvironmentManifest.MinecraftVersion)
+			}
+			if status.EnvironmentManifest.LoaderType != "" {
+				fmt.Fprintf(stdout, "  loader: %s\n", status.EnvironmentManifest.LoaderType)
+			}
+			if status.EnvironmentManifest.ServerCore != "" {
+				fmt.Fprintf(stdout, "  server-core: %s\n", status.EnvironmentManifest.ServerCore)
+			}
+			if status.EnvironmentManifest.RuntimeProfileID != "" {
+				fmt.Fprintf(stdout, "  runtime-profile: %s\n", status.EnvironmentManifest.RuntimeProfileID)
+			}
+		}
+	}
+	if status.MCDRLayout != nil {
+		fmt.Fprintf(stdout, "MCDR layout:\n")
+		fmt.Fprintf(stdout, "  root exists: %t\n", status.MCDRLayout.MCDRRootExists)
+		fmt.Fprintf(stdout, "  manifest exists: %t\n", status.MCDRLayout.ManifestExists)
+		if status.MCDRLayout.ManifestExists {
+			fmt.Fprintf(stdout, "  manifest path: %s\n", status.MCDRLayout.ManifestPath)
+		}
+	}
+	if status.MaterializedArtifacts != nil {
+		fmt.Fprintf(stdout, "Materialized artifacts:\n")
+		fmt.Fprintf(stdout, "  manifest exists: %t\n", status.MaterializedArtifacts.ManifestExists)
+		if status.MaterializedArtifacts.ManifestExists {
+			fmt.Fprintf(stdout, "  manifest path: %s\n", status.MaterializedArtifacts.ManifestPath)
+			fmt.Fprintf(stdout, "  count: %d\n", status.MaterializedArtifacts.Count)
+		}
+	}
+	if status.AppliedArtifacts != nil {
+		fmt.Fprintf(stdout, "Applied artifacts:\n")
+		fmt.Fprintf(stdout, "  manifest exists: %t\n", status.AppliedArtifacts.ManifestExists)
+		if status.AppliedArtifacts.ManifestExists {
+			fmt.Fprintf(stdout, "  manifest path: %s\n", status.AppliedArtifacts.ManifestPath)
+			fmt.Fprintf(stdout, "  count: %d\n", status.AppliedArtifacts.Count)
+		}
+	}
+	if status.ProcessStatus != nil {
+		fmt.Fprintf(stdout, "Process:\n")
+		fmt.Fprintf(stdout, "  status: %s\n", status.ProcessStatus.Status)
+		if status.ProcessStatus.RuntimeProfileID != "" {
+			fmt.Fprintf(stdout, "  runtime-profile: %s\n", status.ProcessStatus.RuntimeProfileID)
+		}
+		if status.ProcessStatus.PID > 0 {
+			fmt.Fprintf(stdout, "  pid: %d\n", status.ProcessStatus.PID)
+		}
+		fmt.Fprintf(stdout, "  crashed: %t\n", status.ProcessStatus.Crashed)
+		if status.ProcessStatus.StartedAt != nil {
+			fmt.Fprintf(stdout, "  started-at: %s\n", status.ProcessStatus.StartedAt.Format(time.RFC3339))
+		}
+		if status.ProcessStatus.StoppedAt != nil {
+			fmt.Fprintf(stdout, "  stopped-at: %s\n", status.ProcessStatus.StoppedAt.Format(time.RFC3339))
 		}
 	}
 	return 0

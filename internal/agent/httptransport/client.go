@@ -364,3 +364,70 @@ func (c *Client) MaterializeEnvironment(ctx context.Context, request agent.Envir
 		Metadata:               response.Metadata,
 	}, nil
 }
+
+func (c *Client) GetSessionRuntimeStatus(ctx context.Context, sessionID string) (agent.SessionRuntimeStatus, error) {
+	var response SessionRuntimeStatusResponse
+	if err := c.do(ctx, http.MethodGet, "/v1/sessions/"+sessionID+"/runtime-status", nil, &response); err != nil {
+		return agent.SessionRuntimeStatus{}, err
+	}
+	status := agent.SessionRuntimeStatus{
+		SessionID:            response.SessionID,
+		CheckedAt:            response.CheckedAt,
+		RuntimeRootExists:    response.RuntimeRootExists,
+		SessionRootExists:    response.SessionRootExists,
+		WorkDirExists:        response.WorkDirExists,
+		ConfigDirExists:      response.ConfigDirExists,
+		LogsDirExists:        response.LogsDirExists,
+		ArtifactsDirExists:   response.ArtifactsDirExists,
+		CheckpointsDirExists: response.CheckpointsDirExists,
+		TmpDirExists:         response.TmpDirExists,
+	}
+	if response.EnvironmentManifest != nil {
+		status.EnvironmentManifest = &agent.EnvironmentManifestStatus{
+			Exists:              response.EnvironmentManifest.Exists,
+			Path:                response.EnvironmentManifest.Path,
+			RuntimeRelativePath: response.EnvironmentManifest.RuntimeRelativePath,
+			Status:              response.EnvironmentManifest.Status,
+			EnvironmentID:       response.EnvironmentManifest.EnvironmentID,
+			MinecraftVersion:    response.EnvironmentManifest.MinecraftVersion,
+			LoaderType:          response.EnvironmentManifest.LoaderType,
+			ServerCore:          response.EnvironmentManifest.ServerCore,
+			RuntimeProfileID:    response.EnvironmentManifest.RuntimeProfileID,
+		}
+	}
+	if response.MCDRLayout != nil {
+		status.MCDRLayout = &agent.MCDRLayoutStatus{
+			MCDRRootExists:      response.MCDRLayout.MCDRRootExists,
+			ManifestExists:      response.MCDRLayout.ManifestExists,
+			ManifestPath:        response.MCDRLayout.ManifestPath,
+			RuntimeRelativePath: response.MCDRLayout.RuntimeRelativePath,
+		}
+	}
+	if response.MaterializedArtifacts != nil {
+		status.MaterializedArtifacts = &agent.MaterializedArtifactsStatus{
+			ManifestExists:      response.MaterializedArtifacts.ManifestExists,
+			ManifestPath:        response.MaterializedArtifacts.ManifestPath,
+			RuntimeRelativePath: response.MaterializedArtifacts.RuntimeRelativePath,
+			Count:               response.MaterializedArtifacts.Count,
+		}
+	}
+	if response.AppliedArtifacts != nil {
+		status.AppliedArtifacts = &agent.AppliedArtifactsStatus{
+			ManifestExists:      response.AppliedArtifacts.ManifestExists,
+			ManifestPath:        response.AppliedArtifacts.ManifestPath,
+			RuntimeRelativePath: response.AppliedArtifacts.RuntimeRelativePath,
+			Count:               response.AppliedArtifacts.Count,
+		}
+	}
+	if response.ProcessStatus != nil {
+		status.ProcessStatus = &agent.ProcessStatusSummary{
+			Status:           response.ProcessStatus.Status,
+			RuntimeProfileID: response.ProcessStatus.RuntimeProfileID,
+			PID:              response.ProcessStatus.PID,
+			Crashed:          response.ProcessStatus.Crashed,
+			StartedAt:        response.ProcessStatus.StartedAt,
+			StoppedAt:        response.ProcessStatus.StoppedAt,
+		}
+	}
+	return status, nil
+}

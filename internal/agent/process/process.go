@@ -567,3 +567,122 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 	}
 	return result, nil
 }
+
+func (s *Supervisor) GetSessionRuntimeStatus(ctx context.Context, sessionID string) (agent.SessionRuntimeStatus, error) {
+	sessionRoot := filepath.Join(s.runtimeRoot, "sessions", safeName(sessionID))
+	status := agent.SessionRuntimeStatus{
+		SessionID: sessionID,
+		CheckedAt: s.now(),
+	}
+	if info, err := os.Stat(s.runtimeRoot); err == nil && info.IsDir() {
+		status.RuntimeRootExists = true
+	}
+	if info, err := os.Stat(sessionRoot); err == nil && info.IsDir() {
+		status.SessionRootExists = true
+	}
+	checkDir := func(name string) bool {
+		path := filepath.Join(sessionRoot, name)
+		info, err := os.Stat(path)
+		return err == nil && info.IsDir()
+	}
+	status.WorkDirExists = checkDir("work")
+	status.ConfigDirExists = checkDir("config")
+	status.LogsDirExists = checkDir("logs")
+	status.ArtifactsDirExists = checkDir("artifacts")
+	status.CheckpointsDirExists = checkDir("checkpoints")
+	status.TmpDirExists = checkDir("tmp")
+	envManifestPath := filepath.Join(sessionRoot, "config", "environment-materialization.json")
+	if _, err := os.Stat(envManifestPath); err == nil {
+		relPath, _ := filepath.Rel(s.runtimeRoot, envManifestPath)
+		envStatus := &agent.EnvironmentManifestStatus{
+			Exists:              true,
+			Path:                envManifestPath,
+			RuntimeRelativePath: relPath,
+		}
+		if data, err := os.ReadFile(envManifestPath); err == nil {
+			var manifest map[string]interface{}
+			if json.Unmarshal(data, &manifest) == nil {
+				if v, ok := manifest["status"].(string); ok {
+					envStatus.Status = v
+				}
+				if v, ok := manifest["environment_id"].(string); ok {
+					envStatus.EnvironmentID = v
+				}
+				if v, ok := manifest["minecraft_version"].(string); ok {
+					envStatus.MinecraftVersion = v
+				}
+				if v, ok := manifest["loader_type"].(string); ok {
+					envStatus.LoaderType = v
+				}
+				if v, ok := manifest["server_core"].(string); ok {
+					envStatus.ServerCore = v
+				}
+				if v, ok := manifest["runtime_profile_id"].(string); ok {
+					envStatus.RuntimeProfileID = v
+				}
+			}
+		}
+		status.EnvironmentManifest = envStatus
+	}
+	mcdrRoot := filepath.Join(sessionRoot, "mcdr")
+	mcdrManifestPath := filepath.Join(mcdrRoot, "mcdr-layout.json")
+	if info, err := os.Stat(mcdrRoot); err == nil && info.IsDir() {
+		mcdrStatus := &agent.MCDRLayoutStatus{
+			MCDRRootExists: true,
+		}
+		if _, err := os.Stat(mcdrManifestPath); err == nil {
+			mcdrStatus.ManifestExists = true
+			mcdrStatus.ManifestPath = mcdrManifestPath
+			if relPath, err := filepath.Rel(s.runtimeRoot, mcdrManifestPath); err == nil {
+				mcdrStatus.RuntimeRelativePath = relPath
+			}
+		}
+		status.MCDRLayout = mcdrStatus
+	}
+	materializedManifestPath := filepath.Join(sessionRoot, "artifacts", "staged-artifacts.json")
+	if _, err := os.Stat(materializedManifestPath); err == nil {
+		relPath, _ := filepath.Rel(s.runtimeRoot, materializedManifestPath)
+		matStatus := &agent.MaterializedArtifactsStatus{
+			ManifestExists:      true,
+			ManifestPath:        materializedManifestPath,
+			RuntimeRelativePath: relPath,
+		}
+		if data, err := os.ReadFile(materializedManifestPath); err == nil {
+			var list []interface{}
+			if json.Unmarshal(data, &list) == nil {
+				matStatus.Count = len(list)
+			}
+		}
+		status.MaterializedArtifacts = matStatus
+	}
+	appliedManifestPath := filepath.Join(sessionRoot, "artifacts", "applied-artifacts.json")
+	if _, err := os.Stat(appliedManifestPath); err == nil {
+		relPath, _ := filepath.Rel(s.runtimeRoot, appliedManifestPath)
+		appStatus := &agent.AppliedArtifactsStatus{
+			ManifestExists:      true,
+			ManifestPath:        appliedManifestPath,
+			RuntimeRelativePath: relPath,
+		}
+		if data, err := os.ReadFile(appliedManifestPath); err == nil {
+			var records map[string]interface{}
+			if json.Unmarshal(data, &records) == nil {
+				if items, ok := records["records"].([]interface{}); ok {
+					appStatus.Count = len(items)
+				}
+			}
+		}
+		status.AppliedArtifacts = appStatus
+	}
+	processModel := s.InspectProcess(sessionID)
+	if processModel.Status != StatusNotStarted {
+		status.ProcessStatus = &agent.ProcessStatusSummary{
+			Status:           processModel.Status,
+			RuntimeProfileID: processModel.RuntimeProfileID,
+			PID:              processModel.PID,
+			Crashed:          processModel.Crashed,
+			StartedAt:        processModel.StartedAt,
+			StoppedAt:        processModel.StoppedAt,
+		}
+	}
+	return status, nil
+}

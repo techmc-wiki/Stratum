@@ -3,6 +3,7 @@ package httptransport
 import (
 	"time"
 
+	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
 )
 
@@ -325,4 +326,129 @@ type EnvironmentMaterializationResponse struct {
 	Directories            []string          `json:"directories"`
 	Metadata               map[string]string `json:"metadata"`
 	RequestID              string            `json:"requestId"`
+}
+
+type SessionRuntimeStatusResponse struct {
+	SessionID             string                          `json:"sessionId"`
+	CheckedAt             time.Time                       `json:"checkedAt"`
+	RuntimeRootExists     bool                            `json:"runtimeRootExists"`
+	SessionRootExists     bool                            `json:"sessionRootExists"`
+	WorkDirExists         bool                            `json:"workDirExists"`
+	ConfigDirExists       bool                            `json:"configDirExists"`
+	LogsDirExists         bool                            `json:"logsDirExists"`
+	ArtifactsDirExists    bool                            `json:"artifactsDirExists"`
+	CheckpointsDirExists  bool                            `json:"checkpointsDirExists"`
+	TmpDirExists          bool                            `json:"tmpDirExists"`
+	EnvironmentManifest   *EnvironmentManifestStatusDTO   `json:"environmentManifest,omitempty"`
+	MCDRLayout            *MCDRLayoutStatusDTO            `json:"mcdrLayout,omitempty"`
+	MaterializedArtifacts *MaterializedArtifactsStatusDTO `json:"materializedArtifacts,omitempty"`
+	AppliedArtifacts      *AppliedArtifactsStatusDTO      `json:"appliedArtifacts,omitempty"`
+	ProcessStatus         *ProcessStatusSummaryDTO        `json:"processStatus,omitempty"`
+	RequestID             string                          `json:"requestId"`
+}
+
+type EnvironmentManifestStatusDTO struct {
+	Exists              bool   `json:"exists"`
+	Path                string `json:"path,omitempty"`
+	RuntimeRelativePath string `json:"runtimeRelativePath,omitempty"`
+	Status              string `json:"status,omitempty"`
+	EnvironmentID       string `json:"environmentId,omitempty"`
+	MinecraftVersion    string `json:"minecraftVersion,omitempty"`
+	LoaderType          string `json:"loaderType,omitempty"`
+	ServerCore          string `json:"serverCore,omitempty"`
+	RuntimeProfileID    string `json:"runtimeProfileId,omitempty"`
+}
+
+type MCDRLayoutStatusDTO struct {
+	MCDRRootExists      bool   `json:"mcdrRootExists"`
+	ManifestExists      bool   `json:"manifestExists"`
+	ManifestPath        string `json:"manifestPath,omitempty"`
+	RuntimeRelativePath string `json:"runtimeRelativePath,omitempty"`
+}
+
+type MaterializedArtifactsStatusDTO struct {
+	ManifestExists      bool   `json:"manifestExists"`
+	ManifestPath        string `json:"manifestPath,omitempty"`
+	RuntimeRelativePath string `json:"runtimeRelativePath,omitempty"`
+	Count               int    `json:"count"`
+}
+
+type AppliedArtifactsStatusDTO struct {
+	ManifestExists      bool   `json:"manifestExists"`
+	ManifestPath        string `json:"manifestPath,omitempty"`
+	RuntimeRelativePath string `json:"runtimeRelativePath,omitempty"`
+	Count               int    `json:"count"`
+}
+
+type ProcessStatusSummaryDTO struct {
+	Status           string     `json:"status"`
+	RuntimeProfileID string     `json:"runtimeProfileId,omitempty"`
+	PID              int        `json:"pid,omitempty"`
+	Crashed          bool       `json:"crashed"`
+	StartedAt        *time.Time `json:"startedAt,omitempty"`
+	StoppedAt        *time.Time `json:"stoppedAt,omitempty"`
+}
+
+func sessionRuntimeStatusResponse(status agent.SessionRuntimeStatus, requestID string) SessionRuntimeStatusResponse {
+	response := SessionRuntimeStatusResponse{
+		SessionID:            status.SessionID,
+		CheckedAt:            status.CheckedAt,
+		RuntimeRootExists:    status.RuntimeRootExists,
+		SessionRootExists:    status.SessionRootExists,
+		WorkDirExists:        status.WorkDirExists,
+		ConfigDirExists:      status.ConfigDirExists,
+		LogsDirExists:        status.LogsDirExists,
+		ArtifactsDirExists:   status.ArtifactsDirExists,
+		CheckpointsDirExists: status.CheckpointsDirExists,
+		TmpDirExists:         status.TmpDirExists,
+		RequestID:            requestID,
+	}
+	if status.EnvironmentManifest != nil {
+		response.EnvironmentManifest = &EnvironmentManifestStatusDTO{
+			Exists:              status.EnvironmentManifest.Exists,
+			Path:                status.EnvironmentManifest.Path,
+			RuntimeRelativePath: status.EnvironmentManifest.RuntimeRelativePath,
+			Status:              status.EnvironmentManifest.Status,
+			EnvironmentID:       status.EnvironmentManifest.EnvironmentID,
+			MinecraftVersion:    status.EnvironmentManifest.MinecraftVersion,
+			LoaderType:          status.EnvironmentManifest.LoaderType,
+			ServerCore:          status.EnvironmentManifest.ServerCore,
+			RuntimeProfileID:    status.EnvironmentManifest.RuntimeProfileID,
+		}
+	}
+	if status.MCDRLayout != nil {
+		response.MCDRLayout = &MCDRLayoutStatusDTO{
+			MCDRRootExists:      status.MCDRLayout.MCDRRootExists,
+			ManifestExists:      status.MCDRLayout.ManifestExists,
+			ManifestPath:        status.MCDRLayout.ManifestPath,
+			RuntimeRelativePath: status.MCDRLayout.RuntimeRelativePath,
+		}
+	}
+	if status.MaterializedArtifacts != nil {
+		response.MaterializedArtifacts = &MaterializedArtifactsStatusDTO{
+			ManifestExists:      status.MaterializedArtifacts.ManifestExists,
+			ManifestPath:        status.MaterializedArtifacts.ManifestPath,
+			RuntimeRelativePath: status.MaterializedArtifacts.RuntimeRelativePath,
+			Count:               status.MaterializedArtifacts.Count,
+		}
+	}
+	if status.AppliedArtifacts != nil {
+		response.AppliedArtifacts = &AppliedArtifactsStatusDTO{
+			ManifestExists:      status.AppliedArtifacts.ManifestExists,
+			ManifestPath:        status.AppliedArtifacts.ManifestPath,
+			RuntimeRelativePath: status.AppliedArtifacts.RuntimeRelativePath,
+			Count:               status.AppliedArtifacts.Count,
+		}
+	}
+	if status.ProcessStatus != nil {
+		response.ProcessStatus = &ProcessStatusSummaryDTO{
+			Status:           status.ProcessStatus.Status,
+			RuntimeProfileID: status.ProcessStatus.RuntimeProfileID,
+			PID:              status.ProcessStatus.PID,
+			Crashed:          status.ProcessStatus.Crashed,
+			StartedAt:        status.ProcessStatus.StartedAt,
+			StoppedAt:        status.ProcessStatus.StoppedAt,
+		}
+	}
+	return response
 }
