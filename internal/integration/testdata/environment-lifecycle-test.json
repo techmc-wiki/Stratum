@@ -1,0 +1,23 @@
+{
+  "id": "test-env-lifecycle",
+  "name": "Test Environment for Lifecycle",
+  "description": "Minimal test fixture with dummy-process profile for integration testing",
+  "minecraftVersion": "1.17.1",
+  "javaVersion": "17",
+  "loaderType": "fabric",
+  "loaderVersion": "0.14.0",
+  "serverCore": "vanilla",
+  "mcdrRequired": false,
+  "carpetRequired": false,
+  "lucyManifestRef": "",
+  "lucyLockRef": "",
+  "runtimeProfileId": "dummy-process",
+  "runtimeProfileRequired": true,
+  "artifactPolicyId": "",
+  "notes": "Test fixture for integration testing",
+  "createdAt": "2026-06-14T00:00:00Z",
+  "updatedAt": "2026-06-14T00:00:00Z",
+  "metadata": {
+    "testFixture": "true"
+  }
+}
