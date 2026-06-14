@@ -455,6 +455,13 @@ on changed Go files.
 
 ---
 
+## Secrets / Commit Passphrase Rule:
+
+If git commit requires an SSH/GPG passphrase, load it from local .env when available.
+Never print, echo, log, commit, or expose the passphrase.
+Never modify or stage .env.
+If the variable name is unclear, inspect .env keys only and ask for clarification.
+
 ## Security Rules
 
 Always preserve these rules:
