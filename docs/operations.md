@@ -47,6 +47,12 @@ Artifact payload import writes `artifact.payload.imported` with the artifact,
 actor, recomputed SHA-256 algorithm/hash, and payload size. It does not create
 an Operation, approve the Artifact, or copy payload content into a runtime.
 
+Environment template import writes `environment.imported` with the Environment
+identity, actor, source filename, Minecraft version, loader, server core, and
+optional RuntimeProfile ID. It creates metadata and audit only: no lifecycle
+Operation, dependency resolution, installation, materialization, or runtime
+launch occurs.
+
 ## Pre-start Artifact Readiness Metadata
 
 Remote `session.start` Operations run a read-only artifact gate before Agent

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -128,6 +129,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return artifactApply(ctx, store, agentClient, command[2:], stdout, stderr)
 	case "environments create":
 		return createEnvironment(ctx, store, command[2:], stdout, stderr)
+	case "environments import-file":
+		return importEnvironmentFile(ctx, store, command[2:], stdout, stderr)
 	case "environments list":
 		return listEnvironments(ctx, store, stdout, stderr)
 	case "environments inspect":
@@ -1846,29 +1849,9 @@ func validateEnvironmentFile(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	data, err := os.ReadFile(*path)
+	value, err := readEnvironmentFile(*path)
 	if err != nil {
-		fmt.Fprintf(stderr, "read environment file %q: %v\n", *path, err)
-		return 1
-	}
-
-	var value environment.Environment
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&value); err != nil {
-		fmt.Fprintf(stderr, "decode environment file %q: %v\n", *path, err)
-		return 1
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err == nil {
-			err = errors.New("multiple JSON values are not allowed")
-		}
-		fmt.Fprintf(stderr, "decode environment file %q: %v\n", *path, err)
-		return 1
-	}
-	if err := value.Validate(); err != nil {
-		fmt.Fprintf(stderr, "validate environment file %q: %v\n", *path, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 
@@ -1884,6 +1867,116 @@ func validateEnvironmentFile(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "runtime_profile_required: %t\n", value.RuntimeProfileRequired)
 	return 0
+}
+
+func importEnvironmentFile(
+	ctx context.Context,
+	store *filesystem.Store,
+	args []string,
+	stdout io.Writer,
+	stderr io.Writer,
+) int {
+	flags := newFlagSet("environments import-file", stderr)
+	path := flags.String("file", "", "")
+	actor := flags.String("actor", "", "")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if strings.TrimSpace(*path) == "" {
+		fmt.Fprintln(stderr, "--file is required")
+		return 2
+	}
+	actorID := strings.TrimSpace(*actor)
+	if actorID == "" {
+		fmt.Fprintln(stderr, "--actor is required")
+		return 2
+	}
+
+	value, err := readEnvironmentFile(*path)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	auditID, err := util.NewID("audit")
+	if err != nil {
+		return reportError(stderr, "create environment import audit id", err)
+	}
+	event, err := audit.NewEvent(
+		auditID,
+		actorID,
+		"environment.imported",
+		"environment",
+		value.ID,
+		time.Now().UTC(),
+	)
+	if err != nil {
+		return reportError(stderr, "create environment import audit", err)
+	}
+	event.Metadata = map[string]string{
+		"environmentId":    value.ID,
+		"name":             value.Name,
+		"minecraftVersion": value.MinecraftVersion,
+		"loaderType":       string(value.LoaderType),
+		"serverCore":       string(value.ServerCore),
+		"actor":            actorID,
+		"sourceFile":       filepath.Base(filepath.Clean(*path)),
+	}
+	if value.RuntimeProfileID != "" {
+		event.Metadata["runtimeProfileId"] = value.RuntimeProfileID
+	}
+	if err := store.CreateEnvironment(ctx, value); err != nil {
+		return reportError(stderr, "import environment", err)
+	}
+	if err := store.AppendAuditEvent(ctx, event); err != nil {
+		return reportError(stderr, "write environment import audit", err)
+	}
+
+	fmt.Fprintf(stdout, "Imported Environment: %s\n", value.ID)
+	fmt.Fprintf(stdout, "name: %s\n", value.Name)
+	fmt.Fprintf(stdout, "minecraft_version: %s\n", value.MinecraftVersion)
+	fmt.Fprintf(stdout, "loader_type: %s\n", value.LoaderType)
+	fmt.Fprintf(stdout, "server_core: %s\n", value.ServerCore)
+	if value.RuntimeProfileID != "" {
+		fmt.Fprintf(stdout, "runtime_profile_id: %s\n", value.RuntimeProfileID)
+	}
+	return 0
+}
+
+func readEnvironmentFile(path string) (environment.Environment, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return environment.Environment{}, fmt.Errorf("read environment file %q: %w", path, err)
+	}
+
+	var value environment.Environment
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return environment.Environment{}, fmt.Errorf(
+			"decode environment file %q: %w",
+			path,
+			err,
+		)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = errors.New("multiple JSON values are not allowed")
+		}
+		return environment.Environment{}, fmt.Errorf(
+			"decode environment file %q: %w",
+			path,
+			err,
+		)
+	}
+	if err := value.Validate(); err != nil {
+		return environment.Environment{}, fmt.Errorf(
+			"validate environment file %q: %w",
+			path,
+			err,
+		)
+	}
+	return value, nil
 }
 
 func listEnvironments(ctx context.Context, store *filesystem.Store, stdout, _ io.Writer) int {

@@ -1589,6 +1589,160 @@ func TestEnvironmentValidateFileFailures(t *testing.T) {
 	}
 }
 
+func TestEnvironmentImportFile(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	path := filepath.Join("..", "..", "docs", "environments", "gtmc-1.17.example.json")
+	base := []string{"--data-dir", dataDirectory}
+
+	code := Run(
+		append(append([]string{}, base...), "environments", "import-file", "--file", path, "--actor", "operator-1"),
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("import code=%d stderr=%q", code, stderr.String())
+	}
+	for _, want := range []string{
+		"Imported Environment: gtmc-1-17",
+		"name: GTMC 1.17 Fabric Carpet Testing",
+		"minecraft_version: 1.17.1",
+		"loader_type: fabric",
+		"server_core: carpet",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("import stdout=%q, want %q", stdout.String(), want)
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, base...), "environments", "list"), &stdout, &stderr); code != 0 {
+		t.Fatalf("list code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "gtmc-1-17\tGTMC 1.17 Fabric Carpet Testing") {
+		t.Fatalf("list stdout=%q", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, base...), "environments", "inspect", "--id", "gtmc-1-17"), &stdout, &stderr); code != 0 {
+		t.Fatalf("inspect code=%d stderr=%q", code, stderr.String())
+	}
+	hasMinecraftVersion := strings.Contains(stdout.String(), "Minecraft Version:   1.17.1")
+	hasLoaderType := strings.Contains(stdout.String(), "Loader Type:         fabric")
+	if !hasMinecraftVersion || !hasLoaderType {
+		t.Fatalf("inspect stdout=%q", stdout.String())
+	}
+
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := store.ListAuditEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Action != "environment.imported" {
+		t.Fatalf("events=%+v", events)
+	}
+	event := events[0]
+	hasActor := event.ActorID == "operator-1" && event.Metadata["actor"] == "operator-1"
+	hasEnvironment := event.Metadata["environmentId"] == "gtmc-1-17"
+	hasSafeSource := event.Metadata["sourceFile"] == "gtmc-1.17.example.json"
+	if !hasActor || !hasEnvironment || !hasSafeSource {
+		t.Fatalf("event=%+v", event)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run(
+		append(append([]string{}, base...), "environments", "import-file", "--file", path, "--actor", "operator-1"),
+		&stdout,
+		&stderr,
+	)
+	if code == 0 || !strings.Contains(stderr.String(), "conflict") {
+		t.Fatalf("duplicate code=%d stderr=%q", code, stderr.String())
+	}
+	events, err = store.ListAuditEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("duplicate import audit events=%+v", events)
+	}
+}
+
+func TestEnvironmentImportFileFailuresDoNotCreateRecords(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		path    string
+		actor   string
+		want    string
+	}{
+		{name: "invalid JSON", content: `{"id":`, actor: "operator-1", want: "decode environment file"},
+		{
+			name:    "invalid Environment",
+			content: `{"id":"invalid","name":"Invalid","minecraftVersion":"1.17.1","loaderType":"unsupported","serverCore":"carpet"}`,
+			actor:   "operator-1",
+			want:    "invalid loader type",
+		},
+		{
+			name:  "missing file",
+			path:  filepath.Join(t.TempDir(), "missing.json"),
+			actor: "operator-1",
+			want:  "read environment file",
+		},
+		{
+			name:    "missing actor",
+			content: `{"id":"valid","name":"Valid","minecraftVersion":"1.17.1","loaderType":"fabric","serverCore":"carpet"}`,
+			want:    "--actor is required",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			dataDirectory := filepath.Join(t.TempDir(), "data")
+			path := test.path
+			if path == "" {
+				path = filepath.Join(t.TempDir(), "environment.json")
+				if err := os.WriteFile(path, []byte(test.content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			args := []string{"--data-dir", dataDirectory, "environments", "import-file", "--file", path}
+			if test.actor != "" {
+				args = append(args, "--actor", test.actor)
+			}
+			code := Run(args, &stdout, &stderr)
+			if code == 0 || !strings.Contains(stderr.String(), test.want) {
+				t.Fatalf("code=%d stderr=%q, want %q", code, stderr.String(), test.want)
+			}
+
+			store, err := filesystem.New(dataDirectory)
+			if err != nil {
+				t.Fatal(err)
+			}
+			values, err := store.ListEnvironments(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(values) != 0 {
+				t.Fatalf("environments=%+v", values)
+			}
+			events, err := store.ListAuditEvents(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(events) != 0 {
+				t.Fatalf("events=%+v", events)
+			}
+		})
+	}
+}
+
 func TestEnvironmentWithRuntimeProfile(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")

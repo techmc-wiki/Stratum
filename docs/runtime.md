@@ -761,6 +761,13 @@ run current Environment metadata validation. This read-only command does not
 import the template, create metadata or audit records, resolve dependencies,
 install software, or launch a runtime. Explicit template import is future work.
 
+Use `stratum environments import-file --file <path> --actor <actor>` for an
+explicit, operator-driven import. Import validates the template, creates one
+Environment metadata record, and writes an `environment.imported` audit event.
+It does not overwrite existing records, resolve or install dependencies,
+materialize an Environment, or launch MCDR or Minecraft. Importing the GTMC
+examples is optional.
+
 Lucy remains a non-intrusive dependency, manifest, and lock-management
 integration. It is not a process supervisor or session lifecycle controller.
 
