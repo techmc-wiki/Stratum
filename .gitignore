@@ -20,6 +20,8 @@ profile.cov
 # Local build artifacts
 dist/
 
+.agents
+
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
