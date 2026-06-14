@@ -118,8 +118,12 @@ Minecraft console/plugin behavior internally. MCDR is not the top-level Stratum
 lifecycle controller, and the Controller must not use it directly for primary
 start, stop, or restart behavior.
 
-**Lucy Integration** resolves manifests, verifies environments, and reports lock
-hashes. Its interface intentionally contains no JVM or session control methods.
+**Lucy Integration** is defined by Stratum-owned capability, plan, lock, and
+status interfaces in `internal/integration/lucy`. The boundary uses stable DTOs
+and must not expose Lucy internal Provider, package, or manifest types. It
+intentionally contains no JVM or Session control methods; the Agent remains the
+outer runtime lifecycle owner. The current `NoopAdapter` performs no I/O,
+resolution, downloads, or manifest processing. See `docs/lucy.md`.
 
 **Storage Backend** owns object I/O and world snapshots. Base-world references
 must resolve to immutable/read-only data. Checkpoint restore must operate only on

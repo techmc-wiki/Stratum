@@ -153,7 +153,11 @@ Controller's lifecycle manager.
 - Example-only GTMC 1.12, 1.17, and latest Environment metadata templates in
   `docs/environments/`; they are not automatically seeded or resolved.
 - MCDR runtime directory layout helpers in `internal/agent/process`.
-- MCDR, Lucy, storage, and runtime-agent interface stubs.
+- MCDR, storage, and runtime-agent interface stubs.
+- Stratum-owned Lucy adapter boundary for capability discovery, planning,
+  locking, and status checks, plus a deterministic no-I/O adapter. Real Lucy
+  resolution, CLI/package integration, manifests, locks, and downloads remain
+  deferred.
 - Standard-library tests for core behavior.
 
 ## Deferred
