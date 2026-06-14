@@ -357,6 +357,40 @@ type EnvironmentManifestStatusDTO struct {
 	LoaderType          string `json:"loaderType,omitempty"`
 	ServerCore          string `json:"serverCore,omitempty"`
 	RuntimeProfileID    string `json:"runtimeProfileId,omitempty"`
+	MCDRRequired        bool   `json:"mcdrRequired"`
+	ErrorMessage        string `json:"errorMessage,omitempty"`
+}
+
+type SessionStartReadinessResponse struct {
+	SessionID            string                       `json:"sessionId"`
+	CheckedAt            time.Time                    `json:"checkedAt"`
+	Ready                bool                         `json:"ready"`
+	Status               string                       `json:"status"`
+	Issues               []SessionStartReadinessIssue `json:"issues"`
+	RuntimeStatusSummary SessionStartReadinessSummary `json:"runtimeStatusSummary"`
+	RequestID            string                       `json:"requestId"`
+}
+
+type SessionStartReadinessIssue struct {
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+	Severity string `json:"severity"`
+}
+
+type SessionStartReadinessSummary struct {
+	RuntimeRootExists         bool   `json:"runtimeRootExists"`
+	SessionRootExists         bool   `json:"sessionRootExists"`
+	EnvironmentManifestExists bool   `json:"environmentManifestExists"`
+	EnvironmentManifestStatus string `json:"environmentManifestStatus,omitempty"`
+	WorkDirExists             bool   `json:"workDirExists"`
+	ConfigDirExists           bool   `json:"configDirExists"`
+	LogsDirExists             bool   `json:"logsDirExists"`
+	ProcessState              string `json:"processState"`
+	AppliedArtifactsTotal     int    `json:"appliedArtifactsTotal"`
+	AppliedArtifactsValid     int    `json:"appliedArtifactsValid"`
+	AppliedArtifactsMissing   int    `json:"appliedArtifactsMissing"`
+	AppliedArtifactsCorrupted int    `json:"appliedArtifactsCorrupted"`
+	AppliedArtifactsError     int    `json:"appliedArtifactsError"`
 }
 
 type MCDRLayoutStatusDTO struct {
@@ -414,6 +448,8 @@ func sessionRuntimeStatusResponse(status agent.SessionRuntimeStatus, requestID s
 			LoaderType:          status.EnvironmentManifest.LoaderType,
 			ServerCore:          status.EnvironmentManifest.ServerCore,
 			RuntimeProfileID:    status.EnvironmentManifest.RuntimeProfileID,
+			MCDRRequired:        status.EnvironmentManifest.MCDRRequired,
+			ErrorMessage:        status.EnvironmentManifest.ErrorMessage,
 		}
 	}
 	if status.MCDRLayout != nil {

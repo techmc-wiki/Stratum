@@ -315,3 +315,10 @@ func (f *Fake) GetSessionRuntimeStatus(_ context.Context, sessionID string) (age
 		SessionRootExists: false,
 	}, nil
 }
+
+func (f *Fake) SessionReadyForStart(_ context.Context, sessionID string) (agent.SessionStartReadiness, error) {
+	if err := f.record(agent.OperationSessionReadyForStart); err != nil {
+		return agent.SessionStartReadiness{}, err
+	}
+	return agent.SessionStartReadiness{SessionID: sessionID, CheckedAt: f.now(), Status: "not_ready", Issues: []agent.SessionStartReadinessIssue{{Code: "session_root_missing", Message: "session runtime root does not exist", Severity: "error"}}, RuntimeStatusSummary: agent.SessionStartReadinessSummary{RuntimeRootExists: true, ProcessState: "not_started"}}, nil
+}

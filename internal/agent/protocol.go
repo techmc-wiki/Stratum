@@ -49,6 +49,7 @@ const (
 	OperationArtifactApply           Operation = "artifact-apply"
 	OperationMaterializeEnvironment  Operation = "materialize-environment"
 	OperationGetSessionRuntimeStatus Operation = "get-session-runtime-status"
+	OperationSessionReadyForStart    Operation = "session-ready-for-start"
 )
 
 const MaxArtifactPayloadBytes = 64 << 20
@@ -341,6 +342,39 @@ type EnvironmentManifestStatus struct {
 	LoaderType          string
 	ServerCore          string
 	RuntimeProfileID    string
+	MCDRRequired        bool
+	ErrorMessage        string
+}
+
+type SessionStartReadiness struct {
+	SessionID            string
+	CheckedAt            time.Time
+	Ready                bool
+	Status               string
+	Issues               []SessionStartReadinessIssue
+	RuntimeStatusSummary SessionStartReadinessSummary
+}
+
+type SessionStartReadinessIssue struct {
+	Code     string
+	Message  string
+	Severity string
+}
+
+type SessionStartReadinessSummary struct {
+	RuntimeRootExists         bool
+	SessionRootExists         bool
+	EnvironmentManifestExists bool
+	EnvironmentManifestStatus string
+	WorkDirExists             bool
+	ConfigDirExists           bool
+	LogsDirExists             bool
+	ProcessState              string
+	AppliedArtifactsTotal     int
+	AppliedArtifactsValid     int
+	AppliedArtifactsMissing   int
+	AppliedArtifactsCorrupted int
+	AppliedArtifactsError     int
 }
 
 type MCDRLayoutStatus struct {
@@ -410,6 +444,7 @@ type AgentClient interface {
 	VerifyAllAppliedArtifacts(context.Context, string) (BatchAppliedArtifactVerification, error)
 	MaterializeEnvironment(context.Context, EnvironmentMaterializationRequest) (EnvironmentMaterializationResult, error)
 	GetSessionRuntimeStatus(context.Context, string) (SessionRuntimeStatus, error)
+	SessionReadyForStart(context.Context, string) (SessionStartReadiness, error)
 }
 
 type RuntimeAgent interface {

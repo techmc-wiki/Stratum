@@ -75,12 +75,16 @@ Minecraft server.
   loader type, server core, MCDR/Carpet requirements, RuntimeProfile). Session
   start and restart call Environment materialization after
   Environment/RuntimeProfile compatibility validation and before Agent runtime
-  launch. Materialization creates session directories (config/, world/, logs/,
-  mods/), writes an informational manifest at
+  launch. Materialization creates the standard Session runtime layout plus
+  world/ and mods/, writes an informational manifest at
   `config/environment-materialization.json`, and records metadata. It does not
   install Java, Minecraft, Fabric, or Carpet, does not download files, does not
   call Lucy, and does not start MCDR or Minecraft. Materialization failure blocks
   session start before Agent runtime launch.
+- Agent-side read-only Session start readiness predicate. It summarizes runtime
+  directories, Environment manifest status, process state, required MCDR layout,
+  and applied artifact verification without repairing, installing, or starting
+  anything. Controller start/restart integration remains future work.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active

@@ -304,3 +304,11 @@ func (a *ProcessAgent) MaterializeEnvironment(ctx context.Context, request agent
 func (a *ProcessAgent) GetSessionRuntimeStatus(ctx context.Context, sessionID string) (agent.SessionRuntimeStatus, error) {
 	return a.supervisor.GetSessionRuntimeStatus(ctx, sessionID)
 }
+
+func (a *ProcessAgent) SessionReadyForStart(ctx context.Context, sessionID string) (agent.SessionStartReadiness, error) {
+	result, err := a.supervisor.SessionReadyForStart(ctx, sessionID)
+	if err != nil {
+		return agent.SessionStartReadiness{}, agent.Error{AgentID: a.id, Operation: agent.OperationSessionReadyForStart, Message: err.Error()}
+	}
+	return result, nil
+}

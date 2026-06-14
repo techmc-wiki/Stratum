@@ -13,7 +13,10 @@ import (
 
 func TestGetSessionRuntimeStatusBeforeMaterialization(t *testing.T) {
 	tmp := t.TempDir()
-	supervisor := NewSupervisor(tmp, runtimeprofile.DefaultRegistry())
+	supervisor, err := NewSupervisorWithRoot("test-agent", tmp, 64*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
 	status, err := supervisor.GetSessionRuntimeStatus(context.Background(), "test-session")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -34,7 +37,10 @@ func TestGetSessionRuntimeStatusBeforeMaterialization(t *testing.T) {
 
 func TestGetSessionRuntimeStatusAfterMaterialization(t *testing.T) {
 	tmp := t.TempDir()
-	supervisor := NewSupervisor(tmp, runtimeprofile.DefaultRegistry())
+	supervisor, err := NewSupervisorWithRoot("test-agent", tmp, 64*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
 	request := agent.EnvironmentMaterializationRequest{
 		SessionID:              "test-session",
 		EnvironmentID:          "env-1-17",
@@ -47,7 +53,7 @@ func TestGetSessionRuntimeStatusAfterMaterialization(t *testing.T) {
 		RuntimeProfileRequired: true,
 		ActorID:                "alice",
 	}
-	_, err := supervisor.MaterializeEnvironment(context.Background(), request)
+	_, err = supervisor.MaterializeEnvironment(context.Background(), request)
 	if err != nil {
 		t.Fatalf("materialize failed: %v", err)
 	}
@@ -86,16 +92,16 @@ func TestGetSessionRuntimeStatusAfterMaterialization(t *testing.T) {
 
 func TestGetSessionRuntimeStatusWithMaterializedArtifacts(t *testing.T) {
 	tmp := t.TempDir()
-	supervisor := NewSupervisor(tmp, runtimeprofile.DefaultRegistry())
+	supervisor, err := NewSupervisorWithRoot("test-agent", tmp, 64*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
 	sessionRoot := filepath.Join(tmp, "sessions", "test-session")
 	artifactsDir := filepath.Join(sessionRoot, "artifacts")
 	if err := os.MkdirAll(artifactsDir, 0o755); err != nil {
 		t.Fatalf("create artifacts dir: %v", err)
 	}
-	manifest := []map[string]interface{}{
-		{"artifact_id": "art-1", "target_name": "mod.jar"},
-		{"artifact_id": "art-2", "target_name": "config.toml"},
-	}
+	manifest := StagingManifest{SessionID: "test-session", Kind: "artifacts", Items: []StagedRuntimeItem{{ID: "art-1", Name: "mod.jar"}, {ID: "art-2", Name: "config.toml"}}}
 	data, _ := json.Marshal(manifest)
 	manifestPath := filepath.Join(artifactsDir, "staged-artifacts.json")
 	if err := os.WriteFile(manifestPath, data, 0o644); err != nil {
@@ -118,8 +124,14 @@ func TestGetSessionRuntimeStatusWithMaterializedArtifacts(t *testing.T) {
 
 func TestGetSessionRuntimeStatusWithProcessRunning(t *testing.T) {
 	tmp := t.TempDir()
-	supervisor := NewSupervisor(tmp, runtimeprofile.DefaultRegistry())
-	supervisor.StartProcess("test-session", runtimeprofile.DefaultProfileID)
+	supervisor, err := NewSupervisorWithRoot("test-agent", tmp, 64*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := supervisor.StartProcess(context.Background(), "test-session", runtimeprofile.DummyProcess()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = supervisor.StopProcess(context.Background(), "test-session") })
 	status, err := supervisor.GetSessionRuntimeStatus(context.Background(), "test-session")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -127,7 +139,7 @@ func TestGetSessionRuntimeStatusWithProcessRunning(t *testing.T) {
 	if status.ProcessStatus == nil {
 		t.Fatalf("process status should exist")
 	}
-	if status.ProcessStatus.Status != StatusRunning {
+	if status.ProcessStatus.Status != string(StatusRunning) {
 		t.Errorf("wrong status: got %q", status.ProcessStatus.Status)
 	}
 	if status.ProcessStatus.RuntimeProfileID != runtimeprofile.DefaultProfileID {

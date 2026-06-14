@@ -62,6 +62,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/sessions/{id}/applied-artifacts/{plan}/verify", s.verifyAppliedArtifact)
 	s.mux.HandleFunc("POST /v1/environments/materialize", s.materializeEnvironment)
 	s.mux.HandleFunc("GET /v1/sessions/{id}/runtime-status", s.sessionRuntimeStatus)
+	s.mux.HandleFunc("GET /v1/sessions/{id}/ready-for-start", s.sessionReadyForStart)
 }
 
 func (s *Server) verifyMaterializedArtifacts(w http.ResponseWriter, r *http.Request) {
@@ -455,6 +456,29 @@ func (s *Server) sessionRuntimeStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, sessionRuntimeStatusResponse(status, requestID(r)))
+}
+
+func (s *Server) sessionReadyForStart(w http.ResponseWriter, r *http.Request) {
+	result, err := s.client.SessionReadyForStart(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "session-ready-for-start", err)
+		return
+	}
+	issues := make([]SessionStartReadinessIssue, len(result.Issues))
+	for index, issue := range result.Issues {
+		issues[index] = SessionStartReadinessIssue{Code: issue.Code, Message: issue.Message, Severity: issue.Severity}
+	}
+	summary := result.RuntimeStatusSummary
+	writeJSON(w, http.StatusOK, SessionStartReadinessResponse{
+		SessionID: result.SessionID, CheckedAt: result.CheckedAt, Ready: result.Ready, Status: result.Status, Issues: issues,
+		RuntimeStatusSummary: SessionStartReadinessSummary{
+			RuntimeRootExists: summary.RuntimeRootExists, SessionRootExists: summary.SessionRootExists,
+			EnvironmentManifestExists: summary.EnvironmentManifestExists, EnvironmentManifestStatus: summary.EnvironmentManifestStatus,
+			WorkDirExists: summary.WorkDirExists, ConfigDirExists: summary.ConfigDirExists, LogsDirExists: summary.LogsDirExists,
+			ProcessState: summary.ProcessState, AppliedArtifactsTotal: summary.AppliedArtifactsTotal, AppliedArtifactsValid: summary.AppliedArtifactsValid,
+			AppliedArtifactsMissing: summary.AppliedArtifactsMissing, AppliedArtifactsCorrupted: summary.AppliedArtifactsCorrupted, AppliedArtifactsError: summary.AppliedArtifactsError,
+		}, RequestID: requestID(r),
+	})
 }
 
 func newRequestID() string {

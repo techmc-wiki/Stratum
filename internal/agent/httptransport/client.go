@@ -393,6 +393,8 @@ func (c *Client) GetSessionRuntimeStatus(ctx context.Context, sessionID string) 
 			LoaderType:          response.EnvironmentManifest.LoaderType,
 			ServerCore:          response.EnvironmentManifest.ServerCore,
 			RuntimeProfileID:    response.EnvironmentManifest.RuntimeProfileID,
+			MCDRRequired:        response.EnvironmentManifest.MCDRRequired,
+			ErrorMessage:        response.EnvironmentManifest.ErrorMessage,
 		}
 	}
 	if response.MCDRLayout != nil {
@@ -430,4 +432,26 @@ func (c *Client) GetSessionRuntimeStatus(ctx context.Context, sessionID string) 
 		}
 	}
 	return status, nil
+}
+
+func (c *Client) SessionReadyForStart(ctx context.Context, sessionID string) (agent.SessionStartReadiness, error) {
+	var response SessionStartReadinessResponse
+	if err := c.do(ctx, http.MethodGet, "/v1/sessions/"+sessionID+"/ready-for-start", nil, &response); err != nil {
+		return agent.SessionStartReadiness{}, err
+	}
+	issues := make([]agent.SessionStartReadinessIssue, len(response.Issues))
+	for index, issue := range response.Issues {
+		issues[index] = agent.SessionStartReadinessIssue{Code: issue.Code, Message: issue.Message, Severity: issue.Severity}
+	}
+	summary := response.RuntimeStatusSummary
+	return agent.SessionStartReadiness{
+		SessionID: response.SessionID, CheckedAt: response.CheckedAt, Ready: response.Ready, Status: response.Status, Issues: issues,
+		RuntimeStatusSummary: agent.SessionStartReadinessSummary{
+			RuntimeRootExists: summary.RuntimeRootExists, SessionRootExists: summary.SessionRootExists,
+			EnvironmentManifestExists: summary.EnvironmentManifestExists, EnvironmentManifestStatus: summary.EnvironmentManifestStatus,
+			WorkDirExists: summary.WorkDirExists, ConfigDirExists: summary.ConfigDirExists, LogsDirExists: summary.LogsDirExists,
+			ProcessState: summary.ProcessState, AppliedArtifactsTotal: summary.AppliedArtifactsTotal, AppliedArtifactsValid: summary.AppliedArtifactsValid,
+			AppliedArtifactsMissing: summary.AppliedArtifactsMissing, AppliedArtifactsCorrupted: summary.AppliedArtifactsCorrupted, AppliedArtifactsError: summary.AppliedArtifactsError,
+		},
+	}, nil
 }

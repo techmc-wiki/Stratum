@@ -189,6 +189,17 @@ remains a read-only source of runtime file observations for this check; it does
 not mutate manifests, repair files, mount artifacts, or invoke Lucy, MCDR, or
 Minecraft.
 
+## Session Start Readiness Predicate
+
+`GET /v1/sessions/{id}/ready-for-start` exposes the Agent's read-only
+`SessionReadyForStart` predicate. It summarizes whether required runtime
+directories, the prepared Environment manifest, process state, optional MCDR
+layout, and applied artifact integrity are suitable for a future start attempt.
+
+The predicate does not materialize, repair, install, apply, clean up, start,
+stop, or execute anything. Controller lifecycle integration remains future
+work.
+
 ## Why Agent controls MCDR, not the other way around
 
 MCDR is itself a process that requires supervision. An example disabled MCDR

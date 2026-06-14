@@ -207,6 +207,19 @@ GET /v1/sessions/{id}/runtime-status
 
 The status is read-only. It does not repair, materialize, or modify anything.
 
+## Session Start Readiness Predicate
+
+The Agent exposes `GET /v1/sessions/{id}/ready-for-start` as a structured,
+read-only answer to whether Agent-side runtime state is suitable for a start
+attempt. Readiness requires the standard Session directories, a prepared
+Environment materialization manifest, no active or crashed process, and no
+missing, corrupted, or unverifiable applied artifacts. An Environment that
+requires MCDR also requires the prepared MCDR layout root.
+
+This predicate does not validate Java or Minecraft installation and does not
+materialize, repair, install, start, stop, or execute anything. The Controller
+does not consume it during start/restart yet.
+
 ## Runtime Artifact and Config Staging
 
 Runtime staging is Agent-owned preparation inside a Session runtime layout. The

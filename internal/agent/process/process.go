@@ -505,12 +505,16 @@ func safeName(value string) string {
 }
 
 func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.EnvironmentMaterializationRequest) (agent.EnvironmentMaterializationResult, error) {
-	sessionRoot := filepath.Join(s.runtimeRoot, "sessions", safeName(request.SessionID))
-	configDir := filepath.Join(sessionRoot, "config")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
-		return agent.EnvironmentMaterializationResult{}, fmt.Errorf("create config directory: %w", err)
+	layout, err := NewSessionRuntimeLayout(s.runtimeRoot, request.SessionID)
+	if err != nil {
+		return agent.EnvironmentMaterializationResult{}, err
 	}
-	directories := []string{"config", "world", "logs", "mods"}
+	if err := layout.Create(); err != nil {
+		return agent.EnvironmentMaterializationResult{}, err
+	}
+	sessionRoot := layout.SessionRoot
+	configDir := layout.ConfigDir
+	directories := []string{"config", "work", "world", "logs", "mods"}
 	for _, dir := range directories {
 		dirPath := filepath.Join(sessionRoot, dir)
 		if err := os.MkdirAll(dirPath, 0o755); err != nil {
@@ -601,7 +605,7 @@ func (s *Supervisor) GetSessionRuntimeStatus(ctx context.Context, sessionID stri
 		}
 		if data, err := os.ReadFile(envManifestPath); err == nil {
 			var manifest map[string]interface{}
-			if json.Unmarshal(data, &manifest) == nil {
+			if decodeErr := json.Unmarshal(data, &manifest); decodeErr == nil {
 				if v, ok := manifest["status"].(string); ok {
 					envStatus.Status = v
 				}
@@ -620,11 +624,18 @@ func (s *Supervisor) GetSessionRuntimeStatus(ctx context.Context, sessionID stri
 				if v, ok := manifest["runtime_profile_id"].(string); ok {
 					envStatus.RuntimeProfileID = v
 				}
+				if v, ok := manifest["mcdr_required"].(bool); ok {
+					envStatus.MCDRRequired = v
+				}
+			} else {
+				envStatus.ErrorMessage = decodeErr.Error()
 			}
+		} else {
+			envStatus.ErrorMessage = err.Error()
 		}
 		status.EnvironmentManifest = envStatus
 	}
-	mcdrRoot := filepath.Join(sessionRoot, "mcdr")
+	mcdrRoot := filepath.Join(sessionRoot, "work", "mcdr")
 	mcdrManifestPath := filepath.Join(mcdrRoot, "mcdr-layout.json")
 	if info, err := os.Stat(mcdrRoot); err == nil && info.IsDir() {
 		mcdrStatus := &agent.MCDRLayoutStatus{
@@ -648,9 +659,9 @@ func (s *Supervisor) GetSessionRuntimeStatus(ctx context.Context, sessionID stri
 			RuntimeRelativePath: relPath,
 		}
 		if data, err := os.ReadFile(materializedManifestPath); err == nil {
-			var list []interface{}
-			if json.Unmarshal(data, &list) == nil {
-				matStatus.Count = len(list)
+			var manifest StagingManifest
+			if json.Unmarshal(data, &manifest) == nil {
+				matStatus.Count = len(manifest.Items)
 			}
 		}
 		status.MaterializedArtifacts = matStatus
@@ -676,7 +687,7 @@ func (s *Supervisor) GetSessionRuntimeStatus(ctx context.Context, sessionID stri
 	processModel := s.InspectProcess(sessionID)
 	if processModel.Status != StatusNotStarted {
 		status.ProcessStatus = &agent.ProcessStatusSummary{
-			Status:           processModel.Status,
+			Status:           string(processModel.Status),
 			RuntimeProfileID: processModel.RuntimeProfileID,
 			PID:              processModel.PID,
 			Crashed:          processModel.Crashed,

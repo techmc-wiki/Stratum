@@ -43,7 +43,7 @@ func TestMaterializeEnvironment(t *testing.T) {
 	if result.Status != "prepared" {
 		t.Errorf("status: got %q, want %q", result.Status, "prepared")
 	}
-	expectedDirs := []string{"config", "world", "logs", "mods"}
+	expectedDirs := []string{"config", "work", "world", "logs", "mods"}
 	if len(result.Directories) != len(expectedDirs) {
 		t.Errorf("directories count: got %d, want %d", len(result.Directories), len(expectedDirs))
 	}
