@@ -705,6 +705,22 @@ This manifest is informational only:
 
 Manifest generation is idempotent and safe to repeat.
 
+### MCDR Config Stub Contract
+
+`internal/agent/mcdr.ConfigStub` is a Stratum planning contract for a future
+MCDR configuration. It records Environment identity and canonical,
+Session-relative locations for the MCDR root, plugin directory, future
+`config.yml`, `server.properties`, and `eula.txt`. Validation rejects unsafe
+identifiers, absolute paths, traversal, and paths outside the planned MCDR
+root.
+
+Building the stub returns metadata only. It does not write MCDR `config.yml`,
+Minecraft `server.properties`, or `eula.txt`; install dependencies; invoke
+Python or Lucy; or start MCDR or Minecraft. Future work may render real MCDR
+configuration from this contract after Lucy/Environment resolution and server
+layout preparation are implemented. Stratum Agent remains the outer process
+lifecycle owner.
+
 ## Environment Metadata
 
 Environment is a Controller-owned metadata concept that describes the intended

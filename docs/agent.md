@@ -236,6 +236,15 @@ preparation does not start MCDR, invoke Python, generate config, or call Lucy.
 All paths remain under the session runtime root and follow existing path safety
 validation.
 
+The Agent-side MCDR package also defines a non-executing config stub contract.
+It derives canonical Session-relative paths from the prepared MCDR layout and
+Environment materialization metadata, then validates that those paths remain
+inside the MCDR root. The stub is not MCDR `config.yml`: constructing it writes
+no `config.yml`, `server.properties`, or `eula.txt`, invokes neither Python nor
+Lucy, installs nothing, and starts no MCDR or Minecraft process. A future Agent
+step may render real configuration only after dependency resolution and server
+layout preparation are ready; Agent process supervision remains authoritative.
+
 ## Local fake agent
 
 `internal/agent/local.Fake` remains deterministic and in-process for focused

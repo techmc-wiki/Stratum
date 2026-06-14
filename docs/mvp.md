@@ -158,6 +158,10 @@ Controller's lifecycle manager.
   locking, and status checks, plus a deterministic no-I/O adapter. Real Lucy
   resolution, CLI/package integration, manifests, locks, and downloads remain
   deferred.
+- Non-executing MCDR config stub contract with canonical Session-relative paths
+  and validation. It produces planning metadata only and does not write MCDR or
+  Minecraft configuration, install dependencies, invoke Python/Lucy, or start
+  processes.
 - Standard-library tests for core behavior.
 
 ## Deferred
