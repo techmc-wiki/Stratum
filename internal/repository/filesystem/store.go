@@ -409,6 +409,23 @@ func (s *Store) GetCheckpoint(_ context.Context, id string) (checkpoint.Checkpoi
 func (s *Store) ListCheckpoints(_ context.Context) ([]checkpoint.Checkpoint, error) {
 	return listJSON[checkpoint.Checkpoint](filepath.Join(s.Root, "checkpoints"), "filesystem.ListCheckpoints")
 }
+func (s *Store) ListCheckpointsBySession(_ context.Context, sessionID string) ([]checkpoint.Checkpoint, error) {
+	const op = "filesystem.ListCheckpointsBySession"
+	if err := validateID(op, sessionID); err != nil {
+		return nil, err
+	}
+	all, err := listJSON[checkpoint.Checkpoint](filepath.Join(s.Root, "checkpoints"), op)
+	if err != nil {
+		return nil, err
+	}
+	var result []checkpoint.Checkpoint
+	for _, cp := range all {
+		if cp.SourceSessionID == sessionID {
+			result = append(result, cp)
+		}
+	}
+	return result, nil
+}
 func (s *Store) UpdateCheckpoint(_ context.Context, value checkpoint.Checkpoint) error {
 	const op = "filesystem.UpdateCheckpoint"
 	if err := validateCheckpoint(op, value); err != nil {

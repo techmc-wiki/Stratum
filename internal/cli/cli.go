@@ -1012,15 +1012,18 @@ func listCheckpoints(ctx context.Context, store *filesystem.Store, args []string
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
-	values, err := store.ListCheckpoints(ctx)
+	var values []checkpoint.Checkpoint
+	var err error
+	if *sessionID != "" {
+		values, err = store.ListCheckpointsBySession(ctx, *sessionID)
+	} else {
+		values, err = store.ListCheckpoints(ctx)
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "list checkpoints error: %v\n", err)
 		return 1
 	}
 	for _, cp := range values {
-		if *sessionID != "" && cp.SourceSessionID != *sessionID {
-			continue
-		}
 		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\t%s\t%s\n", cp.ID, cp.ProjectID, cp.SourceSessionID, cp.Status, cp.Kind, cp.CreatedAt.Format(time.RFC3339))
 	}
 	return 0

@@ -172,6 +172,18 @@ func (s *Store) ListCheckpoints(_ context.Context) ([]checkpoint.Checkpoint, err
 	return result, nil
 }
 
+func (s *Store) ListCheckpointsBySession(_ context.Context, sessionID string) ([]checkpoint.Checkpoint, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var result []checkpoint.Checkpoint
+	for _, cp := range s.Checkpoints {
+		if cp.SourceSessionID == sessionID {
+			result = append(result, cp)
+		}
+	}
+	return result, nil
+}
+
 func (s *Store) SaveArtifact(_ context.Context, value artifact.Artifact) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
