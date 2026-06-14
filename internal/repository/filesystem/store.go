@@ -773,8 +773,8 @@ func validateEnvironment(op string, value environment.Environment) error {
 	if err := validateID(op, value.ID); err != nil {
 		return err
 	}
-	if value.Name == "" || value.MinecraftVersion == "" || value.JavaVersion == "" || value.Loader == "" || value.ServerCore == "" {
-		return validationError(op, "environment requires name, Minecraft version, Java version, loader, and server core")
+	if value.Name == "" || value.MinecraftVersion == "" || value.LoaderType == "" || value.ServerCore == "" {
+		return validationError(op, "environment requires name, Minecraft version, loader type, and server core")
 	}
 	return nil
 }

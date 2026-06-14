@@ -10,6 +10,7 @@ import (
 	"github.com/stratummc/stratum/internal/domain/artifactstaging"
 	"github.com/stratummc/stratum/internal/domain/audit"
 	"github.com/stratummc/stratum/internal/domain/checkpoint"
+	"github.com/stratummc/stratum/internal/domain/environment"
 	"github.com/stratummc/stratum/internal/domain/operation"
 	"github.com/stratummc/stratum/internal/domain/project"
 	"github.com/stratummc/stratum/internal/domain/room"
@@ -17,20 +18,21 @@ import (
 )
 
 type Store struct {
-	mu          sync.RWMutex
-	Projects    map[string]project.Project
-	Rooms       map[string]room.Room
-	Sessions    map[string]session.Session
-	Checkpoints map[string]checkpoint.Checkpoint
-	Artifacts   map[string]artifact.Artifact
-	Plans       map[string]artifactstaging.Plan
-	ApplyPlans  map[string]artifactapply.Plan
-	Operations  map[string]operation.Operation
-	AuditEvents []audit.Event
+	mu           sync.RWMutex
+	Projects     map[string]project.Project
+	Rooms        map[string]room.Room
+	Sessions     map[string]session.Session
+	Checkpoints  map[string]checkpoint.Checkpoint
+	Artifacts    map[string]artifact.Artifact
+	Environments map[string]environment.Environment
+	Plans        map[string]artifactstaging.Plan
+	ApplyPlans   map[string]artifactapply.Plan
+	Operations   map[string]operation.Operation
+	AuditEvents  []audit.Event
 }
 
 func New() *Store {
-	return &Store{Projects: map[string]project.Project{}, Rooms: map[string]room.Room{}, Sessions: map[string]session.Session{}, Checkpoints: map[string]checkpoint.Checkpoint{}, Artifacts: map[string]artifact.Artifact{}, Plans: map[string]artifactstaging.Plan{}, ApplyPlans: map[string]artifactapply.Plan{}, Operations: map[string]operation.Operation{}}
+	return &Store{Projects: map[string]project.Project{}, Rooms: map[string]room.Room{}, Sessions: map[string]session.Session{}, Checkpoints: map[string]checkpoint.Checkpoint{}, Artifacts: map[string]artifact.Artifact{}, Environments: map[string]environment.Environment{}, Plans: map[string]artifactstaging.Plan{}, ApplyPlans: map[string]artifactapply.Plan{}, Operations: map[string]operation.Operation{}}
 }
 
 func (s *Store) ListProjects(_ context.Context) ([]project.Project, error) {
@@ -305,6 +307,36 @@ func (s *Store) ListArtifactApplyPlansBySession(ctx context.Context, sessionID s
 		if value.SessionID == sessionID {
 			result = append(result, value)
 		}
+	}
+	return result, nil
+}
+
+func (s *Store) CreateEnvironment(_ context.Context, value environment.Environment) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.Environments[value.ID]; ok {
+		return fmt.Errorf("environment %q already exists", value.ID)
+	}
+	s.Environments[value.ID] = value
+	return nil
+}
+
+func (s *Store) GetEnvironment(_ context.Context, id string) (environment.Environment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	value, ok := s.Environments[id]
+	if !ok {
+		return environment.Environment{}, fmt.Errorf("environment %q not found", id)
+	}
+	return value, nil
+}
+
+func (s *Store) ListEnvironments(_ context.Context) ([]environment.Environment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make([]environment.Environment, 0, len(s.Environments))
+	for _, value := range s.Environments {
+		result = append(result, value)
 	}
 	return result, nil
 }
