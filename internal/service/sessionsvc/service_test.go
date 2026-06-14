@@ -186,6 +186,80 @@ func TestAgentStartFailureLeavesStateUnchanged(t *testing.T) {
 	}
 }
 
+type artifactGateStub struct {
+	metadata map[string]string
+	err      error
+}
+
+func (g artifactGateStub) Check(context.Context, string) (map[string]string, error) {
+	return g.metadata, g.err
+}
+
+func TestArtifactReadinessGateBlocksStartAndRecordsMetadata(t *testing.T) {
+	ctx, store, _, _ := newLifecycleTest(t, resourcepolicy.MVPDefault())
+	fake := local.NewFake()
+	service := New(store, resourcepolicy.MVPDefault(), fake).WithArtifactReadinessGate(artifactGateStub{
+		metadata: map[string]string{
+			"artifactCheckEnabled":    "true",
+			"stagingReadinessStatus":  "not_ready",
+			"appliedVerifyStatus":     "not_ready",
+			"totalApplied":            "1",
+			"validApplied":            "0",
+			"missingApplied":          "1",
+			"corruptedApplied":        "0",
+			"artifactReadinessIssues": "applied_artifact_missing",
+		},
+		err: errors.New("artifact readiness gate blocked session start"),
+	})
+	createTestSession(t, store, testSession("session-gated", session.TypeShared, session.StateCreated))
+	value, _, err := service.StartWithOptions(ctx, "session-gated", "actor-1", OperationOptions{RequestID: "request-gated"})
+	if err == nil || value.Status != operation.StatusFailed || value.Metadata["missingApplied"] != "1" || value.Metadata["artifactReadinessIssues"] != "applied_artifact_missing" {
+		t.Fatalf("operation=%+v err=%v", value, err)
+	}
+	got, loadErr := store.GetSession(ctx, "session-gated")
+	if loadErr != nil || got.State != session.StateCreated {
+		t.Fatalf("session=%+v err=%v", got, loadErr)
+	}
+	if containsOperation(fake.Calls(), agent.OperationPrepare) || containsOperation(fake.Calls(), agent.OperationStart) {
+		t.Fatalf("agent runtime was called: %+v", fake.Calls())
+	}
+	events, auditErr := store.ListAuditEvents(ctx)
+	if auditErr != nil {
+		t.Fatal(auditErr)
+	}
+	var sessionEvent, operationEvent audit.Event
+	for _, event := range events {
+		if event.Action == "session.start" {
+			sessionEvent = event
+		}
+		if event.Action == "operation.completed" {
+			operationEvent = event
+		}
+	}
+	for _, event := range []audit.Event{sessionEvent, operationEvent} {
+		if event.Metadata["artifactCheckEnabled"] != "true" || event.Metadata["stagingReadinessStatus"] != "not_ready" || event.Metadata["missingApplied"] != "1" || event.Metadata["artifactReadinessIssues"] != "applied_artifact_missing" {
+			t.Fatalf("event=%+v", event)
+		}
+	}
+}
+
+func TestArtifactReadinessGateAllowsStart(t *testing.T) {
+	ctx, store, _, _ := newLifecycleTest(t, resourcepolicy.MVPDefault())
+	fake := local.NewFake()
+	service := New(store, resourcepolicy.MVPDefault(), fake).WithArtifactReadinessGate(artifactGateStub{metadata: map[string]string{
+		"artifactCheckEnabled": "true", "stagingReadinessStatus": "ready", "appliedVerifyStatus": "valid", "totalApplied": "1", "validApplied": "1", "missingApplied": "0", "corruptedApplied": "0",
+	}})
+	createTestSession(t, store, testSession("session-ready", session.TypeShared, session.StateCreated))
+	value, _, err := service.StartWithOptions(ctx, "session-ready", "actor-1", OperationOptions{})
+	if err != nil || value.Status != operation.StatusSucceeded || value.Metadata["stagingReadinessStatus"] != "ready" || value.Metadata["validApplied"] != "1" {
+		t.Fatalf("operation=%+v err=%v", value, err)
+	}
+	got, _ := store.GetSession(ctx, "session-ready")
+	if got.State != session.StateRunning {
+		t.Fatalf("session=%+v", got)
+	}
+}
+
 func TestAgentStopFailureLeavesStateAndRecordsFailedOperation(t *testing.T) {
 	ctx, store, _, _ := newLifecycleTest(t, resourcepolicy.MVPDefault())
 	createTestSession(t, store, testSession("session-stop-failure", session.TypeShared, session.StateRunning))

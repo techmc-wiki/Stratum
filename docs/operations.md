@@ -47,6 +47,18 @@ Artifact payload import writes `artifact.payload.imported` with the artifact,
 actor, recomputed SHA-256 algorithm/hash, and payload size. It does not create
 an Operation, approve the Artifact, or copy payload content into a runtime.
 
+## Pre-start Artifact Readiness Metadata
+
+Remote `session.start` Operations run a read-only artifact gate before Agent
+prepare/start. Operation and lifecycle audit metadata include
+`artifactCheckEnabled`, `stagingReadinessStatus`, `appliedVerifyStatus`,
+`totalApplied`, `validApplied`, `missingApplied`, `corruptedApplied`, and
+`artifactReadinessIssues`. A blocked gate completes the Operation as failed and
+leaves Session state unchanged.
+
+The gate does not materialize, apply, repair, delete, or execute artifacts and
+does not create checkpoint backups.
+
 ## Manual Reconciliation Operations
 
 Reconciliation is an explicit human-confirmed metadata repair. Supported

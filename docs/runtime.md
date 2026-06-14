@@ -401,6 +401,18 @@ go run ./cmd/stratum --data-dir .stratum/data --agent-url http://127.0.0.1:8787 
 
 Checkpoint creation and rollback remain future work.
 
+### Pre-start Artifact Readiness Gate
+
+When `sessions start` uses `--agent-url`, StratumMC performs a read-only artifact
+gate before Agent prepare/start calls or Session state transitions. Sessions
+with no staging plans and no applied artifact manifest are allowed. Otherwise,
+staging readiness must be `ready` and every applied artifact must verify as
+valid; missing, corrupted, or unverifiable files block startup.
+
+The gate does not materialize, apply, install, load, repair, remove, or execute
+artifacts. It does not create checkpoints or call Lucy, MCDR, or Minecraft. It
+prepares the lifecycle path for future real runtime startup.
+
 ## MCDR RuntimeProfile future shape
 
 The following profile is conceptual and not implemented:

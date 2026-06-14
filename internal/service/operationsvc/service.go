@@ -123,5 +123,10 @@ func (s *Service) audit(ctx context.Context, value operation.Operation, action s
 	if profileID := value.Metadata["runtimeProfileId"]; profileID != "" {
 		metadata["runtimeProfileId"] = profileID
 	}
+	for _, key := range []string{"artifactCheckEnabled", "stagingReadinessStatus", "appliedVerifyStatus", "totalApplied", "validApplied", "missingApplied", "corruptedApplied", "artifactReadinessIssues"} {
+		if item, ok := value.Metadata[key]; ok {
+			metadata[key] = item
+		}
+	}
 	return s.repository.AppendAuditEvent(ctx, audit.Event{ID: id, ProjectID: value.ProjectID, ActorID: value.ActorID, Action: action, TargetType: "operation", TargetID: value.ID, Metadata: metadata, CreatedAt: s.now()})
 }

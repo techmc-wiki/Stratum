@@ -50,6 +50,10 @@ Minecraft server.
   artifacts to computed runtime target paths (mods, config, datapacks, plugins,
   schematics, worlds, custom) without installing, loading, or executing
   artifacts in a running Minecraft server.
+- Read-only pre-start artifact readiness gate for remote Session start. It
+  combines staging readiness and applied artifact verification, records the
+  result in Operation/audit metadata, and blocks unsafe startup before Agent
+  prepare/start or Session state mutation.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active

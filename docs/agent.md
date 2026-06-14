@@ -302,3 +302,11 @@ layout. The result includes status (applied or failed), action (currently copy),
 source and target absolute paths, copied bytes, verified target hash, and issues
 list. Checkpoint creation and rollback remain future work.
 
+
+## Pre-start Artifact Readiness Gate
+
+The Controller uses the Agent's existing materialized and applied artifact
+read-only APIs before remote Session start. If artifact checks are required and
+the Agent cannot provide them, start is blocked before runtime prepare/start.
+The Agent does not mutate manifests or target files during this gate and does
+not install, load, repair, remove, or execute artifacts.

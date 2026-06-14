@@ -96,7 +96,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "sessions prepare", "sessions start", "sessions stop", "sessions restart",
 		"sessions freeze", "sessions unfreeze", "sessions mark-crashed",
 		"sessions archive", "sessions delete":
-		return runSessionLifecycle(ctx, store, agentClient, agentMode, action, command[2:], stdout, stderr)
+		return runSessionLifecycle(ctx, store, *artifactBlobRoot, agentClient, agentMode, strings.TrimSpace(*agentURL) != "", action, command[2:], stdout, stderr)
 	case "checkpoints create":
 		return createCheckpoint(ctx, store, command[2:], stdout, stderr)
 	case "checkpoints list":
@@ -273,7 +273,7 @@ func listSessions(ctx context.Context, store *filesystem.Store, stdout, stderr i
 	return 0
 }
 
-func runSessionLifecycle(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, agentMode, action string, args []string, stdout, stderr io.Writer) int {
+func runSessionLifecycle(ctx context.Context, store *filesystem.Store, blobRoot string, agentClient agent.AgentClient, agentMode string, hasAgentURL bool, action string, args []string, stdout, stderr io.Writer) int {
 	flags := newFlagSet("sessions "+action, stderr)
 	id := flags.String("id", "", "session ID")
 	actor := flags.String("actor", "", "actor user ID")
@@ -294,6 +294,13 @@ func runSessionLifecycle(ctx context.Context, store *filesystem.Store, agentClie
 		return reportError(stderr, "prepare resource policy", err)
 	}
 	service := sessionsvc.New(store, policy, agentClient)
+	if action == "start" && hasAgentURL {
+		blobs, openErr := artifactblob.Open(blobRoot)
+		if openErr != nil {
+			return reportError(stderr, "open artifact blob store", openErr)
+		}
+		service.WithArtifactReadinessGate(sessionArtifactReadinessGate{service: artifactstagingsvc.NewPreStartService(store, blobs, agentClient)})
+	}
 	options := sessionsvc.OperationOptions{IdempotencyKey: *idempotencyKey, RequestID: *requestID, Timeout: *operationTimeout, RuntimeProfileID: *runtimeProfileID}
 	var operationValue operation.Operation
 	var replay bool
@@ -322,6 +329,15 @@ func runSessionLifecycle(ctx context.Context, store *filesystem.Store, agentClie
 	}
 	fmt.Fprintf(stdout, "Session %s operation %s status=%s operation=%s request=%s replay=%t via=%s.\n", *id, action, operationValue.Status, operationValue.ID, operationValue.RequestID, replay, agentMode)
 	return 0
+}
+
+type sessionArtifactReadinessGate struct {
+	service *artifactstagingsvc.PreStartService
+}
+
+func (g sessionArtifactReadinessGate) Check(ctx context.Context, sessionID string) (map[string]string, error) {
+	result, err := g.service.Check(ctx, sessionID)
+	return result.Metadata(), err
 }
 
 func listOperations(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {

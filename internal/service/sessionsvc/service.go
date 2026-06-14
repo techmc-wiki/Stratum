@@ -34,12 +34,17 @@ type Clock func() time.Time
 type IDGenerator func(string) (string, error)
 
 type Service struct {
-	repository Repository
-	scheduler  schedulersvc.Service
-	now        Clock
-	newID      IDGenerator
-	agent      agent.AgentClient
-	operations *operationsvc.Service
+	repository   Repository
+	scheduler    schedulersvc.Service
+	now          Clock
+	newID        IDGenerator
+	agent        agent.AgentClient
+	operations   *operationsvc.Service
+	artifactGate ArtifactReadinessGate
+}
+
+type ArtifactReadinessGate interface {
+	Check(context.Context, string) (map[string]string, error)
 }
 
 type OperationOptions struct {
@@ -49,7 +54,10 @@ type OperationOptions struct {
 	RuntimeProfileID string
 }
 
-type operationContext struct{ ID, RequestID, RuntimeProfileID string }
+type operationContext struct {
+	ID, RequestID, RuntimeProfileID string
+	Metadata                        map[string]string
+}
 type operationContextKey struct{}
 
 type DeniedError struct {
@@ -73,6 +81,11 @@ func New(repository Repository, policy resourcepolicy.Policy, clients ...agent.A
 		service.agent = clients[0]
 	}
 	return service
+}
+
+func (s *Service) WithArtifactReadinessGate(gate ArtifactReadinessGate) *Service {
+	s.artifactGate = gate
+	return s
 }
 
 func (s *Service) Create(ctx context.Context, value session.Session) error {
@@ -169,6 +182,9 @@ func (s *Service) coordinate(ctx context.Context, action, id, actor string, inte
 	if (action == "start" || action == "restart") && options.RuntimeProfileID != "" {
 		metadata["runtimeProfileId"] = options.RuntimeProfileID
 	}
+	if action == "start" {
+		metadata["artifactCheckEnabled"] = fmt.Sprintf("%t", s.artifactGate != nil)
+	}
 	value, replay, err := s.operations.Begin(ctx, operationsvc.BeginParams{RequestID: options.RequestID, IdempotencyKey: options.IdempotencyKey, ActorID: actor, Action: action, TargetType: "session", TargetID: id, ProjectID: current.ProjectID, SessionID: id, PreviousState: string(current.State), IntendedState: string(intended), Metadata: metadata})
 	if err != nil {
 		return operation.Operation{}, false, err
@@ -176,7 +192,8 @@ func (s *Service) coordinate(ctx context.Context, action, id, actor string, inte
 	if replay {
 		return value, true, nil
 	}
-	callCtx := context.WithValue(agent.WithRequestID(ctx, value.RequestID), operationContextKey{}, operationContext{ID: value.ID, RequestID: value.RequestID, RuntimeProfileID: options.RuntimeProfileID})
+	runtimeMetadata := map[string]string{}
+	callCtx := context.WithValue(agent.WithRequestID(ctx, value.RequestID), operationContextKey{}, operationContext{ID: value.ID, RequestID: value.RequestID, RuntimeProfileID: options.RuntimeProfileID, Metadata: runtimeMetadata})
 	cancel := func() {}
 	if options.Timeout > 0 {
 		callCtx, cancel = context.WithTimeout(callCtx, options.Timeout)
@@ -197,6 +214,9 @@ func (s *Service) coordinate(ctx context.Context, action, id, actor string, inte
 	}
 	if options.RuntimeProfileID != "" {
 		completionMetadata["runtimeProfileId"] = options.RuntimeProfileID
+	}
+	for key, item := range runtimeMetadata {
+		completionMetadata[key] = item
 	}
 	if err == nil {
 		value, completeErr := s.operations.Complete(ctx, value, operation.StatusSucceeded, string(final), "success", "", "", completionMetadata)
@@ -243,6 +263,13 @@ func (s *Service) start(ctx context.Context, id, actor string) error {
 	if !decision.Allowed {
 		denied := DeniedError{Reason: decision.Reason, Message: decision.Message}
 		return s.fail(ctx, "start", value, actor, session.StateRunning, denied)
+	}
+	if s.artifactGate != nil {
+		metadata, gateErr := s.artifactGate.Check(ctx, id)
+		setOperationMetadata(ctx, metadata)
+		if gateErr != nil {
+			return s.fail(ctx, "start", value, actor, session.StateRunning, gateErr)
+		}
 	}
 	var agentResult *agent.OperationResult
 	if s.agent != nil {
@@ -504,6 +531,9 @@ func (s *Service) audit(ctx context.Context, action, projectID, id, actor string
 		if operationValue.RuntimeProfileID != "" {
 			metadata["runtimeProfileId"] = operationValue.RuntimeProfileID
 		}
+		for key, item := range operationValue.Metadata {
+			metadata[key] = item
+		}
 	}
 	if reason != "" {
 		metadata["reason"] = reason
@@ -517,6 +547,16 @@ func (s *Service) audit(ctx context.Context, action, projectID, id, actor string
 		ID: eventID, ProjectID: projectID, ActorID: actor, Action: "session." + action,
 		TargetType: "session", TargetID: id, Metadata: metadata, CreatedAt: s.now(),
 	})
+}
+
+func setOperationMetadata(ctx context.Context, values map[string]string) {
+	operationValue, ok := ctx.Value(operationContextKey{}).(operationContext)
+	if !ok || operationValue.Metadata == nil {
+		return
+	}
+	for key, item := range values {
+		operationValue.Metadata[key] = item
+	}
 }
 
 func (s *Service) applyAgentMetadata(ctx context.Context, value *session.Session, result agent.OperationResult) {
