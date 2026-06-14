@@ -95,6 +95,9 @@ func (s *Service) Create(ctx context.Context, value session.Session) error {
 	if value.ID == "" || value.ProjectID == "" || value.OwnerUserID == "" || value.EnvironmentID == "" {
 		return fmt.Errorf("session requires id, project, owner, and environment")
 	}
+	if _, err := s.repository.GetEnvironment(ctx, value.EnvironmentID); err != nil {
+		return fmt.Errorf("environment %q not found: %w", value.EnvironmentID, err)
+	}
 	if value.State == "" {
 		value.State = session.StateCreated
 	}

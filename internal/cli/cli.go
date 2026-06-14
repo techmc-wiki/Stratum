@@ -36,6 +36,7 @@ import (
 	"github.com/stratummc/stratum/internal/service/artifactsvc"
 	"github.com/stratummc/stratum/internal/service/observationsvc"
 	"github.com/stratummc/stratum/internal/service/reconcilesvc"
+	"github.com/stratummc/stratum/internal/service/roomsvc"
 	"github.com/stratummc/stratum/internal/service/sessionsvc"
 	"github.com/stratummc/stratum/internal/util"
 )
@@ -210,11 +211,9 @@ func createRoom(ctx context.Context, store *filesystem.Store, args []string, std
 	if _, err := store.GetProject(ctx, *projectID); err != nil {
 		return reportError(stderr, "find project", err)
 	}
-	if err := ensureEnvironment(ctx, store, *environmentID); err != nil {
-		return reportError(stderr, "prepare environment metadata", err)
-	}
+	svc := roomsvc.New(store, store)
 	value := room.Room{ID: *id, ProjectID: *projectID, Name: *name, EnvironmentID: *environmentID, BaseWorldRef: *baseWorld, CreatedAt: time.Now().UTC()}
-	if err := store.CreateRoom(ctx, value); err != nil {
+	if err := svc.CreateRoom(ctx, value, "cli"); err != nil {
 		return reportError(stderr, "create room", err)
 	}
 	fmt.Fprintf(stdout, "Created room %s in project %s.\n", value.ID, value.ProjectID)
@@ -270,12 +269,10 @@ func createSession(ctx context.Context, store *filesystem.Store, args []string, 
 		}
 		environmentID = roomValue.EnvironmentID
 	}
-	if err := ensureEnvironment(ctx, store, environmentID); err != nil {
-		return reportError(stderr, "prepare environment metadata", err)
-	}
 	now := time.Now().UTC()
 	value := session.Session{ID: *id, ProjectID: *projectID, RoomID: *roomID, OwnerUserID: *ownerID, Type: requestedType, State: session.StateCreated, EnvironmentID: environmentID, CreatedAt: now, LastActiveAt: now}
-	if err := store.CreateSession(ctx, value); err != nil {
+	svc := sessionsvc.New(store, resourcepolicy.MVPDefault())
+	if err := svc.Create(ctx, value); err != nil {
 		return reportError(stderr, "create session", err)
 	}
 	fmt.Fprintf(stdout, "Created %s session %s in state %s. Runtime is not started.\n", value.Type, value.ID, value.State)

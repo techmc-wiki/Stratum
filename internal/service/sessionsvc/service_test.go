@@ -807,3 +807,61 @@ func TestMissingEnvironmentBlocksStart(t *testing.T) {
 		t.Fatalf("state should not be running: %s", got.State)
 	}
 }
+
+func TestCreateSessionWithExistingEnvironment(t *testing.T) {
+	ctx, store, _, _ := newLifecycleTest(t, resourcepolicy.MVPDefault())
+	env := environment.Environment{
+		ID:               "environment-1",
+		Name:             "Test",
+		MinecraftVersion: "1.17.1",
+		LoaderType:       environment.LoaderFabric,
+		ServerCore:       environment.ServerCarpet,
+		CreatedAt:        lifecycleTime,
+		UpdatedAt:        lifecycleTime,
+	}
+	if err := store.CreateEnvironment(ctx, env); err != nil {
+		t.Fatal(err)
+	}
+	service := New(store, resourcepolicy.MVPDefault())
+	sess := session.Session{
+		ID:            "session-1",
+		ProjectID:     "project-1",
+		OwnerUserID:   "user-1",
+		Type:          session.TypeShared,
+		EnvironmentID: "environment-1",
+		CreatedAt:     lifecycleTime,
+		LastActiveAt:  lifecycleTime,
+	}
+	if err := service.Create(ctx, sess); err != nil {
+		t.Fatalf("Create with existing environment should succeed: %v", err)
+	}
+	got, err := store.GetSession(ctx, "session-1")
+	if err != nil {
+		t.Fatalf("session not persisted: %v", err)
+	}
+	if got.EnvironmentID != "environment-1" {
+		t.Errorf("wrong environment: got %q", got.EnvironmentID)
+	}
+}
+
+func TestCreateSessionWithMissingEnvironment(t *testing.T) {
+	ctx, store, _, _ := newLifecycleTest(t, resourcepolicy.MVPDefault())
+	service := New(store, resourcepolicy.MVPDefault())
+	sess := session.Session{
+		ID:            "session-1",
+		ProjectID:     "project-1",
+		OwnerUserID:   "user-1",
+		Type:          session.TypeShared,
+		EnvironmentID: "nonexistent",
+		CreatedAt:     lifecycleTime,
+		LastActiveAt:  lifecycleTime,
+	}
+	err := service.Create(ctx, sess)
+	if err == nil {
+		t.Fatal("Create with missing environment should fail")
+	}
+	_, err = store.GetSession(ctx, "session-1")
+	if err == nil {
+		t.Error("session should not be persisted on validation failure")
+	}
+}

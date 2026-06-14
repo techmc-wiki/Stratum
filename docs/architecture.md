@@ -61,7 +61,12 @@ Operations and audit events.
 
 - **Project Manager** owns long-term membership and collaboration boundaries.
 - **Room Manager** owns shared workspaces and their default shared sessions.
+  Room creation validates that the referenced Environment exists before persisting
+  Room metadata.
 - **Session Manager** owns explicit state transitions and session lifecycle.
+  Session creation validates that the referenced Environment exists before
+  persisting Session metadata. Sessions inherit EnvironmentID from their Room
+  when applicable.
 - **Resource Scheduler** evaluates global, project, user, type, and review limits.
 - **World Manager** will create writable session worlds from immutable base
   worlds and prevent cross-session filesystem access.
@@ -72,6 +77,10 @@ Operations and audit events.
   and prevents unapproved artifacts from entering shared sessions.
 - **Permission Manager** enforces role and session-type rules. Shared rooms have
   stricter requirements than fork, private, or review sessions.
+
+Environment references are validated at Room and Session creation boundaries.
+Repositories remain storage-only; validation belongs at service/CLI/API
+boundaries. StratumMC does not auto-create or seed Environments.
 
 ## Session lifecycle service
 
