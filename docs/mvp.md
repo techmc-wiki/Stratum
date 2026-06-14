@@ -136,6 +136,8 @@ Controller's lifecycle manager.
 - Optional shared bearer token and request-ID propagation.
 - Example disabled MCDR-managed RuntimeProfile in
   `docs/runtime-profiles/mcdr-managed.example.json`.
+- Example-only GTMC 1.12, 1.17, and latest Environment metadata templates in
+  `docs/environments/`; they are not automatically seeded or resolved.
 - MCDR runtime directory layout helpers in `internal/agent/process`.
 - MCDR, Lucy, storage, and runtime-agent interface stubs.
 - Standard-library tests for core behavior.

@@ -1,0 +1,25 @@
+{
+  "id": "gtmc-latest",
+  "name": "GTMC Latest Fabric Carpet Testing",
+  "description": "Example Environment metadata for the unresolved GTMC latest technical testing family.",
+  "minecraftVersion": "latest",
+  "javaVersion": "21",
+  "loaderType": "fabric",
+  "loaderVersion": "",
+  "serverCore": "carpet",
+  "mcdrRequired": true,
+  "carpetRequired": true,
+  "lucyManifestRef": "",
+  "lucyLockRef": "",
+  "runtimeProfileId": "",
+  "runtimeProfileRequired": false,
+  "artifactPolicyId": "",
+  "notes": "Example only. The latest version and dependencies require future resolution; this metadata installs or launches nothing.",
+  "createdAt": "2026-06-14T00:00:00Z",
+  "updatedAt": "2026-06-14T00:00:00Z",
+  "metadata": {
+    "exampleOnly": "true",
+    "targetCommunity": "GTMC",
+    "versionResolution": "future"
+  }
+}

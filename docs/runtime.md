@@ -745,6 +745,17 @@ Sessions may reference Environment IDs to describe intended context, but
 Environment metadata does not currently drive automated installation or
 session startup behavior.
 
+## GTMC Environment Examples
+
+Example metadata templates for the GTMC 1.12, 1.17, and latest environment
+families are stored under `docs/environments/`. They are documentation inputs
+only and are not automatically loaded into Controller metadata storage.
+
+The examples do not install or launch Java, Minecraft, LiteLoader, Fabric,
+Carpet, or MCDR. The `latest` version remains unresolved. Future Lucy integration
+may resolve loader and server dependencies, and future MCDR integration may use
+the Environment fields during preparation while Agent retains process ownership.
+
 Lucy remains a non-intrusive dependency, manifest, and lock-management
 integration. It is not a process supervisor or session lifecycle controller.
 

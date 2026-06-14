@@ -1,0 +1,24 @@
+{
+  "id": "gtmc-1-17",
+  "name": "GTMC 1.17 Fabric Carpet Testing",
+  "description": "Example Environment metadata for the GTMC 1.17 technical testing family.",
+  "minecraftVersion": "1.17.1",
+  "javaVersion": "16",
+  "loaderType": "fabric",
+  "loaderVersion": "",
+  "serverCore": "carpet",
+  "mcdrRequired": true,
+  "carpetRequired": true,
+  "lucyManifestRef": "",
+  "lucyLockRef": "",
+  "runtimeProfileId": "",
+  "runtimeProfileRequired": false,
+  "artifactPolicyId": "",
+  "notes": "Example only. This metadata does not install Fabric, Carpet, Java, Minecraft, or MCDR.",
+  "createdAt": "2026-06-14T00:00:00Z",
+  "updatedAt": "2026-06-14T00:00:00Z",
+  "metadata": {
+    "exampleOnly": "true",
+    "targetCommunity": "GTMC"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "id": "gtmc-1-12",
+  "name": "GTMC 1.12 Technical Testing",
+  "description": "Example Environment metadata for the GTMC 1.12 technical testing family.",
+  "minecraftVersion": "1.12.2",
+  "javaVersion": "8",
+  "loaderType": "liteloader",
+  "loaderVersion": "",
+  "serverCore": "carpet",
+  "mcdrRequired": true,
+  "carpetRequired": true,
+  "lucyManifestRef": "",
+  "lucyLockRef": "",
+  "runtimeProfileId": "",
+  "runtimeProfileRequired": false,
+  "artifactPolicyId": "",
+  "notes": "Example only. This metadata does not install LiteLoader, Carpet, Java, Minecraft, or MCDR.",
+  "createdAt": "2026-06-14T00:00:00Z",
+  "updatedAt": "2026-06-14T00:00:00Z",
+  "metadata": {
+    "exampleOnly": "true",
+    "targetCommunity": "GTMC"
+  }
+}
