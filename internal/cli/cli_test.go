@@ -1514,6 +1514,81 @@ func TestEnvironmentCreateListInspect(t *testing.T) {
 	}
 }
 
+func TestEnvironmentValidateFile(t *testing.T) {
+	tests := []struct {
+		name string
+		file string
+		id   string
+	}{
+		{name: "GTMC 1.12", file: "gtmc-1.12.example.json", id: "gtmc-1-12"},
+		{name: "GTMC 1.17", file: "gtmc-1.17.example.json", id: "gtmc-1-17"},
+		{name: "GTMC latest", file: "gtmc-latest.example.json", id: "gtmc-latest"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			dataDirectory := filepath.Join(t.TempDir(), "data")
+			path := filepath.Join("..", "..", "docs", "environments", test.file)
+			code := Run(
+				[]string{"--data-dir", dataDirectory, "environments", "validate-file", "--file", path},
+				&stdout,
+				&stderr,
+			)
+			if code != 0 {
+				t.Fatalf("code=%d stderr=%q", code, stderr.String())
+			}
+			wantOutput := []string{
+				"Environment file is valid.",
+				"id: " + test.id,
+				"minecraft_version:",
+				"runtime_profile_required: false",
+			}
+			for _, want := range wantOutput {
+				if !strings.Contains(stdout.String(), want) {
+					t.Fatalf("stdout=%q, want %q", stdout.String(), want)
+				}
+			}
+			if _, err := os.Stat(dataDirectory); !os.IsNotExist(err) {
+				t.Fatalf("validation created metadata directory: err=%v", err)
+			}
+		})
+	}
+}
+
+func TestEnvironmentValidateFileFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		path    string
+		want    string
+	}{
+		{name: "invalid JSON", content: `{"id":`, want: "decode environment file"},
+		{name: "invalid Environment", content: `{"id":"invalid","name":"Invalid","minecraftVersion":"1.17.1","loaderType":"unsupported","serverCore":"carpet"}`, want: "invalid loader type"},
+		{name: "missing file", path: filepath.Join(t.TempDir(), "missing.json"), want: "read environment file"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			path := test.path
+			if path == "" {
+				path = filepath.Join(t.TempDir(), "environment.json")
+				if err := os.WriteFile(path, []byte(test.content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			code := Run([]string{"environments", "validate-file", "--file", path}, &stdout, &stderr)
+			if code == 0 || !strings.Contains(stderr.String(), test.want) {
+				t.Fatalf("code=%d stderr=%q, want %q", code, stderr.String(), test.want)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("stdout=%q", stdout.String())
+			}
+		})
+	}
+}
+
 func TestEnvironmentWithRuntimeProfile(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")

@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -56,6 +58,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		usage(stderr)
 		return 2
 	}
+	resource, action := command[0], command[1]
+	if resource == "environments" && action == "validate-file" {
+		return validateEnvironmentFile(command[2:], stdout, stderr)
+	}
 
 	store, err := filesystem.New(*dataDirectory)
 	if err != nil {
@@ -69,7 +75,6 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "configure agent client: %v\n", err)
 		return 2
 	}
-	resource, action := command[0], command[1]
 	switch resource + " " + action {
 	case "projects create":
 		return createProject(ctx, store, command[2:], stdout, stderr)
@@ -1827,6 +1832,57 @@ func createEnvironment(ctx context.Context, store *filesystem.Store, args []stri
 	event.Metadata = map[string]string{"environmentId": env.ID, "name": env.Name, "minecraftVersion": env.MinecraftVersion, "loaderType": string(env.LoaderType), "serverCore": string(env.ServerCore)}
 	_ = store.AppendAuditEvent(ctx, event)
 	fmt.Fprintf(stdout, "Environment created: %s\n", env.ID)
+	return 0
+}
+
+func validateEnvironmentFile(args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("environments validate-file", stderr)
+	path := flags.String("file", "", "")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if strings.TrimSpace(*path) == "" {
+		fmt.Fprintln(stderr, "--file is required")
+		return 2
+	}
+
+	data, err := os.ReadFile(*path)
+	if err != nil {
+		fmt.Fprintf(stderr, "read environment file %q: %v\n", *path, err)
+		return 1
+	}
+
+	var value environment.Environment
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		fmt.Fprintf(stderr, "decode environment file %q: %v\n", *path, err)
+		return 1
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = errors.New("multiple JSON values are not allowed")
+		}
+		fmt.Fprintf(stderr, "decode environment file %q: %v\n", *path, err)
+		return 1
+	}
+	if err := value.Validate(); err != nil {
+		fmt.Fprintf(stderr, "validate environment file %q: %v\n", *path, err)
+		return 1
+	}
+
+	fmt.Fprintln(stdout, "Environment file is valid.")
+	fmt.Fprintf(stdout, "id: %s\n", value.ID)
+	fmt.Fprintf(stdout, "name: %s\n", value.Name)
+	fmt.Fprintf(stdout, "minecraft_version: %s\n", value.MinecraftVersion)
+	fmt.Fprintf(stdout, "java_version: %s\n", value.JavaVersion)
+	fmt.Fprintf(stdout, "loader_type: %s\n", value.LoaderType)
+	fmt.Fprintf(stdout, "server_core: %s\n", value.ServerCore)
+	if value.RuntimeProfileID != "" {
+		fmt.Fprintf(stdout, "runtime_profile_id: %s\n", value.RuntimeProfileID)
+	}
+	fmt.Fprintf(stdout, "runtime_profile_required: %t\n", value.RuntimeProfileRequired)
 	return 0
 }
 

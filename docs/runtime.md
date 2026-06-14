@@ -756,6 +756,11 @@ Carpet, or MCDR. The `latest` version remains unresolved. Future Lucy integratio
 may resolve loader and server dependencies, and future MCDR integration may use
 the Environment fields during preparation while Agent retains process ownership.
 
+Use `stratum environments validate-file --file <path>` to parse a template and
+run current Environment metadata validation. This read-only command does not
+import the template, create metadata or audit records, resolve dependencies,
+install software, or launch a runtime. Explicit template import is future work.
+
 Lucy remains a non-intrusive dependency, manifest, and lock-management
 integration. It is not a process supervisor or session lifecycle controller.
 
