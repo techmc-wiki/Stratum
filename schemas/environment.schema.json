@@ -1,1 +1,28 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"environment.schema.json","title":"Environment","type":"object","required":["id","name","minecraftVersion","javaVersion","loader","serverCore","mcdrConfigRef","carpetType","baseMods","lucyManifestRef","lucyLockRef"],"properties":{"id":{"type":"string"},"name":{"type":"string"},"minecraftVersion":{"type":"string"},"javaVersion":{"type":"string"},"loader":{"enum":["fabric"]},"serverCore":{"type":"string"},"mcdrConfigRef":{"type":"string"},"carpetType":{"type":"string"},"baseMods":{"type":"array","items":{"type":"string"}},"lucyManifestRef":{"type":"string"},"lucyLockRef":{"type":"string"}},"additionalProperties":false}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "environment.schema.json",
+  "title": "Environment",
+  "type": "object",
+  "required": ["id", "name", "minecraftVersion", "loaderType", "serverCore", "createdAt", "updatedAt"],
+  "properties": {
+    "id": {"type": "string"},
+    "name": {"type": "string"},
+    "description": {"type": "string"},
+    "minecraftVersion": {"type": "string"},
+    "javaVersion": {"type": "string"},
+    "loaderType": {"enum": ["none", "fabric", "liteloader", "forge", "quilt", "custom"]},
+    "loaderVersion": {"type": "string"},
+    "serverCore": {"enum": ["vanilla", "fabric", "carpet", "paper", "custom"]},
+    "mcdrRequired": {"type": "boolean"},
+    "carpetRequired": {"type": "boolean"},
+    "lucyManifestRef": {"type": "string"},
+    "lucyLockRef": {"type": "string"},
+    "runtimeProfileId": {"type": "string"},
+    "artifactPolicyId": {"type": "string"},
+    "notes": {"type": "string"},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "updatedAt": {"type": "string", "format": "date-time"},
+    "metadata": {"type": "object", "additionalProperties": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

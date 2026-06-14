@@ -474,26 +474,157 @@ The gate does not materialize, apply, install, load, repair, remove, or execute
 artifacts. It does not create checkpoints or call Lucy, MCDR, or Minecraft. It
 prepares the lifecycle path for future real runtime startup.
 
-## MCDR RuntimeProfile future shape
+## MCDR RuntimeProfile example
 
-The following profile is conceptual and not implemented:
+An example disabled MCDR-managed profile exists in
+`docs/runtime-profiles/mcdr-managed.example.json`:
 
-```yaml
-id: mcdr-managed
-runtime_type: terminal
-command: ["python", "-m", "mcdreforged"]
-working_dir: "<session_runtime_dir>"
-stop_strategy: stdin
-stop_stdin_command: "!!MCDR stop"
-graceful_stop_timeout: "30s"
-force_kill_timeout: "10s"
-enabled_by_default: false
+```json
+{
+  "id": "mcdr-managed-example",
+  "name": "MCDR Managed Example",
+  "runtimeType": "terminal",
+  "commandArgv": ["python", "-m", "mcdreforged"],
+  "workingDir": "",
+  "stopStrategy": "stdin",
+  "stopStdinCommand": "!!MCDR stop",
+  "gracefulStopTimeout": "30s",
+  "forceKillTimeout": "10s",
+  "logMode": "combined",
+  "enabled": false,
+  "notes": "Example only. Agent would supervise MCDR as a child runtime; MCDR is not the lifecycle owner."
+}
 ```
 
-In this profile, Stratum Agent launches and supervises MCDR. MCDR may expose
-plugins, in-game commands, and Minecraft console behavior inside the runtime.
-If MCDR exits, hangs, or fails to stop Minecraft, the Agent still owns status
-reporting and force-stop behavior.
+This profile is disabled and example-only. It demonstrates how MCDR would fit as
+an Agent-supervised child runtime in the future:
+
+- Stratum Agent launches MCDR using `python -m mcdreforged` as a terminal child
+  process.
+- Agent owns stdout/stderr/stdin, PID, exit code, crash detection, and process
+  supervision.
+- MCDR may manage Minecraft internally and expose plugins/in-game commands.
+- MCDR does not own the Stratum Session lifecycle.
+- Controller does not call MCDR directly for start/stop operations.
+- Agent supervises graceful stop via stdin (`!!MCDR stop`) and enforces
+  timeouts.
+
+Real MCDR integration, Minecraft launch, Python environment setup, MCDR plugin
+development, and Lucy integration remain future work. Do not enable this profile
+without MCDR installation and proper environment configuration.
+
+## MCDR Runtime Directory Layout
+
+StratumMC Agent manages an MCDR-specific directory structure under the session
+work directory for future MCDR-managed RuntimeProfiles. Directory preparation
+does not start MCDR, invoke Python, or generate config files. The layout is
+Agent-owned and follows session runtime safety rules.
+
+Suggested layout:
+
+```text
+runtime-root/
+  sessions/
+    <session-id>/
+      work/
+        mcdr/
+          config/
+          plugins/
+          server/
+          logs/
+          tmp/
+```
+
+The Agent provides helpers to compute MCDR paths from `SessionRuntimeLayout` and
+create these directories idempotently. All paths remain under the session
+runtime root. Path traversal is rejected through existing session ID validation.
+
+MCDR directory preparation:
+- Does not start MCDR or Minecraft.
+- Does not invoke Python or install dependencies.
+- Does not generate server.properties, MCDR config, or plugin manifests.
+- Does not call Lucy for dependency resolution.
+- Is idempotent and safe to repeat.
+
+Future work may populate `config/`, install plugins to `plugins/`, place
+Minecraft server jar in `server/`, and launch MCDR through a trusted enabled
+RuntimeProfile. MCDR remains a future Agent-supervised child runtime under
+Stratum process lifecycle control.
+
+### MCDR Layout Manifest
+
+After directory creation, the Agent can optionally write
+`work/mcdr/mcdr-layout.json` to record prepared directory paths:
+
+```json
+{
+  "session_id": "session-1",
+  "created_at": "2026-06-14T12:00:00Z",
+  "mcdr_root": "/runtime/sessions/session-1/work/mcdr",
+  "config_dir": "/runtime/sessions/session-1/work/mcdr/config",
+  "plugins_dir": "/runtime/sessions/session-1/work/mcdr/plugins",
+  "server_dir": "/runtime/sessions/session-1/work/mcdr/server",
+  "logs_dir": "/runtime/sessions/session-1/work/mcdr/logs",
+  "tmp_dir": "/runtime/sessions/session-1/work/mcdr/tmp",
+  "status": "prepared",
+  "notes": "MCDR runtime directories are prepared only; MCDR and Minecraft are not started."
+}
+```
+
+This manifest is informational only:
+- It records prepared directories for diagnostics and runtime checks.
+- It is not MCDR config (`config.yml`).
+- It is not Minecraft config (`server.properties`).
+- It does not imply MCDR has been installed or started.
+- Future work may use it for preparation verification or recovery workflows.
+
+Manifest generation is idempotent and safe to repeat.
+
+## Environment Metadata
+
+Environment is a Controller-owned metadata concept that describes the intended
+Minecraft and runtime dependency context for a Session. An Environment record
+includes:
+
+- Minecraft version (e.g., `1.17.1`, `1.12.2`)
+- Java version (e.g., `16`, `8`)
+- Loader type (`none`, `fabric`, `liteloader`, `forge`, `quilt`, `custom`)
+- Server core (`vanilla`, `fabric`, `carpet`, `paper`, `custom`)
+- MCDR and Carpet requirement flags
+- Optional Lucy manifest/lock references
+- Optional RuntimeProfile ID association
+- Descriptive metadata
+
+Example:
+
+```json
+{
+  "id": "env-1-17-fabric",
+  "name": "1.17 Fabric Carpet",
+  "minecraftVersion": "1.17.1",
+  "javaVersion": "16",
+  "loaderType": "fabric",
+  "serverCore": "carpet",
+  "mcdrRequired": false,
+  "carpetRequired": true,
+  "createdAt": "2026-06-14T12:00:00Z",
+  "updatedAt": "2026-06-14T12:00:00Z"
+}
+```
+
+Environments are metadata-only in the current implementation:
+
+- Creating an Environment does not install Java, Minecraft, Fabric, or Carpet.
+- It does not call Lucy for dependency resolution.
+- It does not generate MCDR config or server.properties.
+- It does not launch MCDR or Minecraft.
+- It does not modify Artifact staging or apply behavior.
+
+RuntimeProfile still controls process startup. Lucy may later resolve and
+install Environment dependencies. MCDR/Minecraft launch remains future work.
+Sessions may reference Environment IDs to describe intended context, but
+Environment metadata does not currently drive automated installation or
+session startup behavior.
 
 Lucy remains a non-intrusive dependency, manifest, and lock-management
 integration. It is not a process supervisor or session lifecycle controller.

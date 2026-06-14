@@ -89,8 +89,13 @@ capability. It must not perform automatic repair or accept arbitrary
 user-supplied commands.
 
 A later phase may add **MCDR RuntimeProfile v0**, where the Agent launches MCDR
-as a trusted child process. MCDR may manage Minecraft internally, but it will not
-replace Agent process supervision or become the Controller's lifecycle manager.
+as a trusted child process. An example disabled MCDR-managed profile exists in
+`docs/runtime-profiles/mcdr-managed.example.json` to demonstrate the intended
+integration. Agent provides MCDR runtime directory layout helpers that compute
+and create MCDR-specific directories under session work directory; directory
+preparation does not start MCDR or invoke Python. MCDR may manage Minecraft
+internally, but it will not replace Agent process supervision or become the
+Controller's lifecycle manager.
 
 ## Included
 
@@ -99,7 +104,7 @@ replace Agent process supervision or become the Controller's lifecycle manager.
 - Explicit session state transitions and resource-policy decisions.
 - SHA-256 artifact hashing and pending-by-default metadata.
 - Checkpoint metadata construction plus list/rollback service stubs.
-- A Minecraft 1.17 Fabric + MCDR + Carpet environment template.
+- Environment domain stub with validation, repository, and CLI support.
 - In-memory and durable file-backed metadata repositories.
 - Atomic JSON persistence and append-only JSONL audit persistence.
 - Persistent CLI create/list and lifecycle flows.
@@ -110,6 +115,9 @@ replace Agent process supervision or become the Controller's lifecycle manager.
 - Standard-library Agent HTTP server and HTTP AgentClient.
 - Explicit transport DTOs, bounded JSON decoding, and client timeouts.
 - Optional shared bearer token and request-ID propagation.
+- Example disabled MCDR-managed RuntimeProfile in
+  `docs/runtime-profiles/mcdr-managed.example.json`.
+- MCDR runtime directory layout helpers in `internal/agent/process`.
 - MCDR, Lucy, storage, and runtime-agent interface stubs.
 - Standard-library tests for core behavior.
 
