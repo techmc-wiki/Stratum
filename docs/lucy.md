@@ -37,6 +37,17 @@ Provider or package types. The current boundary does not:
 Plan actions are descriptive data. A future implementation must keep execution
 behind explicit Agent-owned filesystem and runtime boundaries.
 
+## Adapter DTO Validation
+
+Stratum validates Lucy adapter request and response DTOs before future adapter
+wiring. Validation is structural and safety-focused: it checks required IDs and
+fields, paired payload metadata, non-negative sizes, supported action values,
+and cross-platform relative paths for runtime targets.
+
+Validation does not resolve packages, download files, inspect dependency
+sources, or read Lucy manifests. Real Lucy adapters must produce Stratum-owned
+DTOs that pass these rules before their results are consumed.
+
 ## Future Adapter Paths
 
 Possible implementations include:
