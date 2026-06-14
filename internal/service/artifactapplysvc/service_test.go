@@ -3,6 +3,7 @@ package artifactapplysvc
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +26,7 @@ func TestCreatePlanPersistsApplyPlanAndAudit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.ID != "artifact-apply-plan-fixed" || plan.Status != "planned" || plan.TargetRelativePath != "mods/test.jar" || plan.ValidationStatus != "validated" {
+	if plan.ID != "artifact-apply-plan-fixed" || plan.Status != "planned" || plan.TargetRelativePath != filepath.Clean("mods/test.jar") || plan.ValidationStatus != "validated" {
 		t.Fatalf("plan=%+v", plan)
 	}
 
