@@ -228,3 +228,34 @@ func TestListCheckpointsBySessionUnsafeIDFails(t *testing.T) {
 		t.Fatal("unsafe session id should fail")
 	}
 }
+
+func TestCheckpointRuntimeStatusSnapshotPersistsAfterReload(t *testing.T) {
+	root := t.TempDir()
+	store1, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp := checkpoint.Checkpoint{
+		ID: "cp-runtime-status", SourceSessionID: "s-1", CreatorID: "u-1",
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		EnvironmentID: "env-1", CreatedAt: testTime,
+		RuntimeStatusSnapshot: &checkpoint.RuntimeStatusSnapshot{
+			CapturedAt: testTime, SessionID: "s-1", EnvironmentManifestExists: true,
+			ProcessState: "running", OverallStatus: "ok",
+		},
+	}
+	if err := store1.CreateCheckpoint(context.Background(), cp); err != nil {
+		t.Fatal(err)
+	}
+	store2, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := store2.GetCheckpoint(context.Background(), cp.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RuntimeStatusSnapshot == nil || !got.RuntimeStatusSnapshot.EnvironmentManifestExists || got.RuntimeStatusSnapshot.ProcessState != "running" {
+		t.Fatalf("runtime status snapshot = %+v", got.RuntimeStatusSnapshot)
+	}
+}

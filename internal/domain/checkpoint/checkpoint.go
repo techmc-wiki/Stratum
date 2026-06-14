@@ -27,30 +27,52 @@ type Operation struct {
 	Details   string    `json:"details,omitempty"`
 }
 
+type RuntimeStatusSnapshot struct {
+	CapturedAt                 time.Time `json:"capturedAt"`
+	SessionID                  string    `json:"sessionId"`
+	RuntimeRootExists          bool      `json:"runtimeRootExists"`
+	SessionRootExists          bool      `json:"sessionRootExists"`
+	EnvironmentManifestExists  bool      `json:"environmentManifestExists"`
+	EnvironmentID              string    `json:"environmentId,omitempty"`
+	MinecraftVersion           string    `json:"minecraftVersion,omitempty"`
+	LoaderType                 string    `json:"loaderType,omitempty"`
+	ServerCore                 string    `json:"serverCore,omitempty"`
+	RuntimeProfileID           string    `json:"runtimeProfileId,omitempty"`
+	MCDRRootExists             bool      `json:"mcdrRootExists"`
+	MCDRLayoutManifestExists   bool      `json:"mcdrLayoutManifestExists"`
+	MaterializedArtifactsCount int       `json:"materializedArtifactsCount"`
+	AppliedArtifactsCount      int       `json:"appliedArtifactsCount"`
+	ProcessState               string    `json:"processState"`
+	PID                        int       `json:"pid,omitempty"`
+	OverallStatus              string    `json:"overallStatus"`
+	Issues                     []string  `json:"issues,omitempty"`
+}
+
 type Checkpoint struct {
-	ID                                    string            `json:"id"`
-	ProjectID                             string            `json:"projectId"`
-	RoomID                                string            `json:"roomId"`
-	SourceSessionID                       string            `json:"sourceSessionId"`
-	CreatorID                             string            `json:"creatorId"`
-	Kind                                  Kind              `json:"kind"`
-	Status                                Status            `json:"status"`
-	EnvironmentID                         string            `json:"environmentId"`
-	RuntimeProfileID                      string            `json:"runtimeProfileId,omitempty"`
-	WorldStateRef                         string            `json:"worldStateRef,omitempty"`
-	LucyLockHash                          string            `json:"lucyLockHash,omitempty"`
-	ArtifactIDs                           []string          `json:"artifactIds,omitempty"`
-	AppliedArtifactRefs                   []string          `json:"appliedArtifactRefs,omitempty"`
-	EnvironmentMaterializationManifestRef string            `json:"environmentMaterializationManifestRef,omitempty"`
-	RuntimeStatusSummary                  string            `json:"runtimeStatusSummary,omitempty"`
-	ServerConfig                          map[string]string `json:"serverConfig,omitempty"`
-	CarpetRules                           map[string]string `json:"carpetRules,omitempty"`
-	Seed                                  string            `json:"seed,omitempty"`
-	GeneratorSettings                     map[string]string `json:"generatorSettings,omitempty"`
-	Notes                                 string            `json:"notes,omitempty"`
-	OperationHistory                      []Operation       `json:"operationHistory,omitempty"`
-	Metadata                              map[string]string `json:"metadata,omitempty"`
-	CreatedAt                             time.Time         `json:"createdAt"`
+	ID                                    string                 `json:"id"`
+	ProjectID                             string                 `json:"projectId"`
+	RoomID                                string                 `json:"roomId"`
+	SourceSessionID                       string                 `json:"sourceSessionId"`
+	CreatorID                             string                 `json:"creatorId"`
+	Kind                                  Kind                   `json:"kind"`
+	Status                                Status                 `json:"status"`
+	EnvironmentID                         string                 `json:"environmentId"`
+	RuntimeProfileID                      string                 `json:"runtimeProfileId,omitempty"`
+	WorldStateRef                         string                 `json:"worldStateRef,omitempty"`
+	LucyLockHash                          string                 `json:"lucyLockHash,omitempty"`
+	ArtifactIDs                           []string               `json:"artifactIds,omitempty"`
+	AppliedArtifactRefs                   []string               `json:"appliedArtifactRefs,omitempty"`
+	EnvironmentMaterializationManifestRef string                 `json:"environmentMaterializationManifestRef,omitempty"`
+	RuntimeStatusSummary                  string                 `json:"runtimeStatusSummary,omitempty"`
+	RuntimeStatusSnapshot                 *RuntimeStatusSnapshot `json:"runtimeStatusSnapshot,omitempty"`
+	ServerConfig                          map[string]string      `json:"serverConfig,omitempty"`
+	CarpetRules                           map[string]string      `json:"carpetRules,omitempty"`
+	Seed                                  string                 `json:"seed,omitempty"`
+	GeneratorSettings                     map[string]string      `json:"generatorSettings,omitempty"`
+	Notes                                 string                 `json:"notes,omitempty"`
+	OperationHistory                      []Operation            `json:"operationHistory,omitempty"`
+	Metadata                              map[string]string      `json:"metadata,omitempty"`
+	CreatedAt                             time.Time              `json:"createdAt"`
 }
 
 type CreateParams struct {
@@ -69,6 +91,7 @@ type CreateParams struct {
 	AppliedArtifactRefs                   []string
 	EnvironmentMaterializationManifestRef string
 	RuntimeStatusSummary                  string
+	RuntimeStatusSnapshot                 *RuntimeStatusSnapshot
 	ServerConfig                          map[string]string
 	CarpetRules                           map[string]string
 	Seed                                  string
@@ -98,6 +121,7 @@ func New(params CreateParams) (Checkpoint, error) {
 		AppliedArtifactRefs:                   cloneSlice(params.AppliedArtifactRefs),
 		EnvironmentMaterializationManifestRef: params.EnvironmentMaterializationManifestRef,
 		RuntimeStatusSummary:                  params.RuntimeStatusSummary,
+		RuntimeStatusSnapshot:                 cloneRuntimeStatusSnapshot(params.RuntimeStatusSnapshot),
 		ServerConfig:                          cloneMap(params.ServerConfig), CarpetRules: cloneMap(params.CarpetRules),
 		Seed: params.Seed, GeneratorSettings: cloneMap(params.GeneratorSettings), Notes: params.Notes,
 		Metadata: cloneMap(params.Metadata), OperationHistory: []Operation{}, CreatedAt: createdAt,
@@ -113,3 +137,12 @@ func cloneMap(source map[string]string) map[string]string {
 }
 
 func cloneSlice(source []string) []string { return append([]string(nil), source...) }
+
+func cloneRuntimeStatusSnapshot(source *RuntimeStatusSnapshot) *RuntimeStatusSnapshot {
+	if source == nil {
+		return nil
+	}
+	result := *source
+	result.Issues = cloneSlice(source.Issues)
+	return &result
+}

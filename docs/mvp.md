@@ -98,9 +98,10 @@ Minecraft server.
   Sessions referencing the Environment.
 - Checkpoint metadata-only creation with CLI create/list/inspect commands.
   Checkpoints record Session/Environment/RuntimeProfile identity, creator, kind,
-  status, and notes. They do not copy world files, snapshot artifacts, backup
-  runtime directories, stop sessions, call the Agent, or support restore/rollback.
-  Checkpoint creation writes checkpoint.created audit event.
+  status, notes, and an optional compact read-only Agent runtime-status snapshot.
+  They do not copy world files, snapshot artifacts, backup runtime directories,
+  repair runtime state, stop sessions, or support restore/rollback. Checkpoint
+  creation writes a checkpoint.created audit event.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active

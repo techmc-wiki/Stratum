@@ -80,6 +80,63 @@ func TestCreateMetadataOnlyCheckpoint(t *testing.T) {
 	if len(repo.auditEvents) != 1 || repo.auditEvents[0].Action != "checkpoint.created" {
 		t.Fatalf("audit events: %+v", repo.auditEvents)
 	}
+	if cp.RuntimeStatusSnapshot != nil || repo.auditEvents[0].Metadata["runtimeStatusSnapshotCaptured"] != "false" {
+		t.Fatalf("unexpected runtime status snapshot: checkpoint=%+v audit=%+v", cp.RuntimeStatusSnapshot, repo.auditEvents[0])
+	}
+}
+
+func TestCreateStoresRuntimeStatusSnapshot(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-snapshot": {ID: "s-snapshot", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1", RuntimeProfileID: "dummy-process"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	snapshot := &checkpoint.RuntimeStatusSnapshot{
+		CapturedAt: time.Date(2026, 6, 14, 13, 0, 0, 0, time.UTC), SessionID: "s-snapshot",
+		RuntimeRootExists: true, SessionRootExists: true, EnvironmentManifestExists: true,
+		EnvironmentID: "env-1", ProcessState: "running", PID: 42, OverallStatus: "ok",
+		Issues: []string{},
+	}
+	cp, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-snapshot", SessionID: "s-snapshot", ActorID: "actor-1", RuntimeStatusSnapshot: snapshot,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.RuntimeStatusSnapshot == nil || !cp.RuntimeStatusSnapshot.EnvironmentManifestExists || cp.RuntimeStatusSnapshot.ProcessState != "running" {
+		t.Fatalf("runtime status snapshot = %+v", cp.RuntimeStatusSnapshot)
+	}
+	if cp.RuntimeStatusSnapshot.RuntimeProfileID != "dummy-process" {
+		t.Fatalf("runtime profile = %q", cp.RuntimeStatusSnapshot.RuntimeProfileID)
+	}
+	event := repo.auditEvents[0]
+	if event.Metadata["runtimeStatusSnapshotCaptured"] != "true" || event.Metadata["runtimeStatusOverallStatus"] != "ok" || event.Metadata["processState"] != "running" || event.Metadata["runtimeProfileId"] != "dummy-process" {
+		t.Fatalf("audit metadata = %+v", event.Metadata)
+	}
+	snapshot.Issues = append(snapshot.Issues, "mutated")
+	if len(cp.RuntimeStatusSnapshot.Issues) != 0 {
+		t.Fatalf("snapshot aliases request: %+v", cp.RuntimeStatusSnapshot)
+	}
+}
+
+func TestCreateRejectsRuntimeStatusSnapshotForAnotherSession(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-1": {ID: "s-1", ProjectID: "p-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	_, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-mismatch", SessionID: "s-1", ActorID: "actor-1",
+		RuntimeStatusSnapshot: &checkpoint.RuntimeStatusSnapshot{SessionID: "s-2"},
+	})
+	if err == nil {
+		t.Fatal("expected snapshot session mismatch")
+	}
+	if len(repo.checkpoints) != 0 || len(repo.auditEvents) != 0 {
+		t.Fatalf("writes after mismatch: checkpoints=%+v audits=%+v", repo.checkpoints, repo.auditEvents)
+	}
 }
 
 func TestCreateCapturesRuntimeProfileID(t *testing.T) {

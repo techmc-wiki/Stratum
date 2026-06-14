@@ -12,10 +12,11 @@ import (
 )
 
 type CreateRequest struct {
-	ID        string
-	SessionID string
-	ActorID   string
-	Notes     string
+	ID                    string
+	SessionID             string
+	ActorID               string
+	Notes                 string
+	RuntimeStatusSnapshot *checkpoint.RuntimeStatusSnapshot
 }
 
 type SessionReader interface {
@@ -39,17 +40,21 @@ func Create(ctx context.Context, repo Repository, req CreateRequest) (checkpoint
 	if err != nil {
 		return checkpoint.Checkpoint{}, err
 	}
+	if req.RuntimeStatusSnapshot != nil && req.RuntimeStatusSnapshot.SessionID != "" && req.RuntimeStatusSnapshot.SessionID != sess.ID {
+		return checkpoint.Checkpoint{}, fmt.Errorf("runtime status snapshot session %q does not match checkpoint session %q", req.RuntimeStatusSnapshot.SessionID, sess.ID)
+	}
 	cp, err := checkpoint.New(checkpoint.CreateParams{
-		ID:               req.ID,
-		ProjectID:        sess.ProjectID,
-		RoomID:           sess.RoomID,
-		SourceSessionID:  sess.ID,
-		CreatorID:        req.ActorID,
-		Kind:             checkpoint.KindManual,
-		Status:           checkpoint.StatusMetadataOnly,
-		EnvironmentID:    sess.EnvironmentID,
-		RuntimeProfileID: sess.RuntimeProfileID,
-		Notes:            req.Notes,
+		ID:                    req.ID,
+		ProjectID:             sess.ProjectID,
+		RoomID:                sess.RoomID,
+		SourceSessionID:       sess.ID,
+		CreatorID:             req.ActorID,
+		Kind:                  checkpoint.KindManual,
+		Status:                checkpoint.StatusMetadataOnly,
+		EnvironmentID:         sess.EnvironmentID,
+		RuntimeProfileID:      sess.RuntimeProfileID,
+		RuntimeStatusSnapshot: prepareRuntimeStatusSnapshot(req.RuntimeStatusSnapshot, sess),
+		Notes:                 req.Notes,
 	})
 	if err != nil {
 		return checkpoint.Checkpoint{}, err
@@ -60,16 +65,39 @@ func Create(ctx context.Context, repo Repository, req CreateRequest) (checkpoint
 	eventID, _ := util.NewID("audit")
 	event, _ := audit.NewEvent(eventID, req.ActorID, "checkpoint.created", "checkpoint", cp.ID, time.Now().UTC())
 	event.Metadata = map[string]string{
-		"checkpointId":  cp.ID,
-		"projectId":     cp.ProjectID,
-		"roomId":        cp.RoomID,
-		"sessionId":     cp.SourceSessionID,
-		"environmentId": cp.EnvironmentID,
-		"status":        string(cp.Status),
-		"actor":         req.ActorID,
+		"checkpointId":                  cp.ID,
+		"projectId":                     cp.ProjectID,
+		"roomId":                        cp.RoomID,
+		"sessionId":                     cp.SourceSessionID,
+		"environmentId":                 cp.EnvironmentID,
+		"status":                        string(cp.Status),
+		"actor":                         req.ActorID,
+		"runtimeStatusSnapshotCaptured": fmt.Sprintf("%t", cp.RuntimeStatusSnapshot != nil),
+	}
+	if cp.RuntimeProfileID != "" {
+		event.Metadata["runtimeProfileId"] = cp.RuntimeProfileID
+	}
+	if cp.RuntimeStatusSnapshot != nil {
+		event.Metadata["runtimeStatusOverallStatus"] = cp.RuntimeStatusSnapshot.OverallStatus
+		event.Metadata["processState"] = cp.RuntimeStatusSnapshot.ProcessState
 	}
 	_ = repo.AppendAuditEvent(ctx, event)
 	return cp, nil
+}
+
+func prepareRuntimeStatusSnapshot(snapshot *checkpoint.RuntimeStatusSnapshot, sess session.Session) *checkpoint.RuntimeStatusSnapshot {
+	if snapshot == nil {
+		return nil
+	}
+	result := *snapshot
+	result.Issues = append([]string(nil), snapshot.Issues...)
+	if result.SessionID == "" {
+		result.SessionID = sess.ID
+	}
+	if result.RuntimeProfileID == "" {
+		result.RuntimeProfileID = sess.RuntimeProfileID
+	}
+	return &result
 }
 
 func Get(ctx context.Context, repo Repository, id string) (checkpoint.Checkpoint, error) {

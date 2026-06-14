@@ -12,6 +12,7 @@ The current implementation is **metadata-only**. Checkpoints record:
 * Kind (manual, pre-operation, milestone)
 * Status (metadata_only, complete)
 * Optional notes
+* Optional compact Agent runtime-status snapshot
 
 Checkpoints do **not** currently:
 
@@ -39,6 +40,7 @@ Repository remains storage-only (create/get/list/list-by-session).
 
 ```bash
 stratum checkpoints create --id <checkpoint_id> --session <session_id> --actor <actor> --notes <notes>
+stratum --agent-url http://127.0.0.1:8787 checkpoints create --id <checkpoint_id> --session <session_id> --actor <actor> --notes <notes>
 ```
 
 Creation loads the Session and derives:
@@ -53,18 +55,26 @@ RuntimeProfile persisted on Session after a successful start or restart. It
 does not:
 
 * Snapshot runtime files or directories
-* Call the Agent to infer runtime state
+* Infer runtime state when no Agent URL is provided
 * Restore or launch runtimes
 * Validate profile compatibility beyond what Session already stored
 
 Creation writes a `checkpoint.created` audit event with checkpoint metadata.
 
+When `--agent-url` is provided, creation first calls the Agent's read-only
+runtime-status endpoint and stores a compact `runtimeStatusSnapshot`. The
+snapshot records directory and Environment manifest presence, Environment and
+RuntimeProfile identity, MCDR layout presence, artifact counts, process state,
+PID, overall diagnostic status, and issue codes. An Agent runtime-status error
+fails creation before checkpoint or audit data is written.
+
 Creation does not:
 
 * Create world backup payloads
 * Modify Session state
-* Call the Agent
+* Copy runtime-status manifests, paths, or logs
 * Stop or pause the runtime
+* Repair artifacts or runtime state
 
 ## Listing
 
@@ -81,7 +91,10 @@ Lists all checkpoints or filters by session.
 stratum checkpoints inspect --id <checkpoint_id>
 ```
 
-Shows checkpoint metadata including ID, Project, Room, Session, Environment, RuntimeProfile, creator, kind, status, notes, and creation time.
+Shows checkpoint metadata including ID, Project, Room, Session, Environment,
+RuntimeProfile, creator, kind, status, notes, creation time, and whether a
+runtime-status snapshot exists. Compact snapshot diagnostics are shown when
+present.
 
 ## Future Phases
 
@@ -95,4 +108,7 @@ Future checkpoint phases may add:
 * Checkpoint promotion to project milestones
 * Rollback workflows
 
-These features are explicitly deferred. The current metadata-only implementation is safe and does not affect Session lifecycle or runtime directories.
+These features are explicitly deferred. Future world checkpoint phases may use
+the optional runtime-status snapshot for validation and restore planning. The
+current metadata-only implementation does not affect Session lifecycle or
+runtime directories.

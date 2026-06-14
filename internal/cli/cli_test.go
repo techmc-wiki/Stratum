@@ -548,7 +548,7 @@ func TestCheckpointListAndGet(t *testing.T) {
 	if code := Run([]string{"--data-dir", dataDirectory, "checkpoints", "inspect", "--id", "checkpoint-1"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("inspect: %s", stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "checkpoint-1") || !strings.Contains(stdout.String(), "session-1") || !strings.Contains(stdout.String(), "before test") {
+	if !strings.Contains(stdout.String(), "checkpoint-1") || !strings.Contains(stdout.String(), "session-1") || !strings.Contains(stdout.String(), "before test") || !strings.Contains(stdout.String(), "Runtime Status Snapshot: no") {
 		t.Fatalf("inspect stdout=%q", stdout.String())
 	}
 }

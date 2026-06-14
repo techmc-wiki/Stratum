@@ -72,7 +72,10 @@ Project, Room, Session, Environment, RuntimeProfile, actor, kind, status, and
 notes. The current implementation is metadata-only: checkpoints record Session
 state references but do not copy world files, snapshot artifacts, or backup
 runtime directories. Checkpoint creation does not create a lifecycle Operation,
-stop or pause the Session, call the Agent, or mutate Session state. Future
+stop or pause the Session, or mutate Session state. When `--agent-url` is
+provided, creation performs one read-only runtime-status call and records compact
+diagnostic fields in the Checkpoint and `checkpoint.created` audit metadata. A
+runtime-status call failure prevents both checkpoint and audit creation. Future
 checkpoint phases may add world backup, artifact snapshot references, and
 rollback workflows.
 

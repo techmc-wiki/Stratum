@@ -207,6 +207,12 @@ GET /v1/sessions/{id}/runtime-status
 
 The status is read-only. It does not repair, materialize, or modify anything.
 
+Checkpoint creation may optionally capture a compact copy of this status when
+the CLI is given `--agent-url`. The checkpoint stores diagnostic metadata only,
+not paths, manifests, logs, world files, or runtime directories. Capture does
+not repair artifacts or stop, start, or restart the Session. Future world
+checkpoint phases may use the snapshot for validation and restore planning.
+
 ## Session Start Readiness Predicate
 
 The Agent exposes `GET /v1/sessions/{id}/ready-for-start` as a structured,
