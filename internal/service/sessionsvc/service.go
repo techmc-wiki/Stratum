@@ -341,10 +341,14 @@ func (s *Service) start(ctx context.Context, id, actor string) error {
 			setOperationMetadata(ctx, map[string]string{"environmentMaterializationStatus": "failed", "environmentMaterializationError": callErr.Error()})
 			return s.failWithAgent(ctx, "start", value, actor, session.StateRunning, callErr, agentResult)
 		}
-		setOperationMetadata(ctx, map[string]string{
+		metadataMap := map[string]string{
 			"environmentMaterializationStatus":      materializationResult.Status,
 			"environmentMaterializationDirectories": fmt.Sprintf("%d", len(materializationResult.Directories)),
-		})
+		}
+		if manifestPath, ok := materializationResult.Metadata["manifestPath"]; ok {
+			metadataMap["environmentMaterializationManifest"] = manifestPath
+		}
+		setOperationMetadata(ctx, metadataMap)
 		result, callErr := s.agent.StartSession(ctx, agentRequest(ctx, value))
 		if callErr != nil {
 			return s.failWithAgent(ctx, "start", value, actor, session.StateRunning, callErr, agentResult)
@@ -486,10 +490,14 @@ func (s *Service) restart(ctx context.Context, id, actor string) error {
 			setOperationMetadata(ctx, map[string]string{"environmentMaterializationStatus": "failed", "environmentMaterializationError": callErr.Error()})
 			return s.failWithAgent(ctx, "restart", value, actor, session.StateRunning, callErr, nil)
 		}
-		setOperationMetadata(ctx, map[string]string{
+		metadataMap := map[string]string{
 			"environmentMaterializationStatus":      materializationResult.Status,
 			"environmentMaterializationDirectories": fmt.Sprintf("%d", len(materializationResult.Directories)),
-		})
+		}
+		if manifestPath, ok := materializationResult.Metadata["manifestPath"]; ok {
+			metadataMap["environmentMaterializationManifest"] = manifestPath
+		}
+		setOperationMetadata(ctx, metadataMap)
 		result, callErr := s.agent.RestartSession(ctx, agentRequest(ctx, value))
 		if callErr != nil {
 			return s.failWithAgent(ctx, "restart", value, actor, session.StateRunning, callErr, nil)

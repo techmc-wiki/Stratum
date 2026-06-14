@@ -76,10 +76,11 @@ Minecraft server.
   start and restart call Environment materialization after
   Environment/RuntimeProfile compatibility validation and before Agent runtime
   launch. Materialization creates session directories (config/, world/, logs/,
-  mods/) and records informational metadata. It does not install Java,
-  Minecraft, Fabric, or Carpet, does not download files, does not call Lucy, and
-  does not start MCDR or Minecraft. Materialization failure blocks session start
-  before Agent runtime launch.
+  mods/), writes an informational manifest at
+  `config/environment-materialization.json`, and records metadata. It does not
+  install Java, Minecraft, Fabric, or Carpet, does not download files, does not
+  call Lucy, and does not start MCDR or Minecraft. Materialization failure blocks
+  session start before Agent runtime launch.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active

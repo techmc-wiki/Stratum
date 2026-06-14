@@ -68,6 +68,8 @@ launch. Operation metadata records:
 - `environmentMaterializationStatus`: preparation status returned by the Agent
   (e.g., `prepared`, `failed`).
 - `environmentMaterializationDirectories`: count of created directories.
+- `environmentMaterializationManifest`: absolute path to the materialization
+  manifest file (e.g., `runtime-root/sessions/<session-id>/config/environment-materialization.json`).
 - `environmentMaterializationError`: error message if materialization failed.
 
 If materialization fails, the Operation completes as failed, and Session state
@@ -76,7 +78,8 @@ includes Environment ID, RuntimeProfile ID, and compatibility validation results
 
 Environment materialization does not install Java, Minecraft, Fabric, or Carpet,
 does not download files, does not call Lucy, and does not start MCDR or
-Minecraft. It prepares runtime directory structure only.
+Minecraft. It prepares runtime directory structure and writes an informational
+manifest at `config/environment-materialization.json`.
 
 ## Manual Reconciliation Operations
 

@@ -1,6 +1,9 @@
 package sessionsvc
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -111,5 +114,39 @@ func TestMaterializationFailureBlocksRestart(t *testing.T) {
 	}
 	if got.State != session.StateStopped {
 		t.Errorf("state: got %q, want %q", got.State, session.StateStopped)
+	}
+}
+
+func TestStartWritesManifest(t *testing.T) {
+	ctx, store, _, root := newLifecycleTest(t, resourcepolicy.MVPDefault())
+	runtimeRoot := filepath.Join(root, "runtime")
+	processAgent, err := local.NewProcessAgentWithRegistryAndRoot(local.DefaultAgentID, nil, runtimeRoot)
+	if err != nil {
+		t.Fatalf("NewProcessAgentWithRegistryAndRoot: %v", err)
+	}
+	service := New(store, resourcepolicy.MVPDefault(), processAgent)
+	service.now = func() time.Time { return lifecycleTime }
+	service.newID = func(prefix string) (string, error) { return prefix + "-1", nil }
+	createTestSession(t, store, testSession("session-1", session.TypeShared, session.StateCreated))
+	if err := service.Start(ctx, "session-1", "actor-1"); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	manifestPath := filepath.Join(runtimeRoot, "sessions", "session-1", "config", "environment-materialization.json")
+	if _, err := os.Stat(manifestPath); err != nil {
+		t.Fatalf("manifest not found: %v", err)
+	}
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	var manifest map[string]interface{}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("unmarshal manifest: %v", err)
+	}
+	if manifest["session_id"] != "session-1" {
+		t.Errorf("session_id: got %v, want session-1", manifest["session_id"])
+	}
+	if manifest["status"] != "prepared" {
+		t.Errorf("status: got %v, want prepared", manifest["status"])
 	}
 }

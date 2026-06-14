@@ -2,6 +2,7 @@ package process
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -509,13 +510,38 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return agent.EnvironmentMaterializationResult{}, fmt.Errorf("create config directory: %w", err)
 	}
-	manifestPath := filepath.Join(configDir, "environment-materialization.json")
 	directories := []string{"config", "world", "logs", "mods"}
 	for _, dir := range directories {
 		dirPath := filepath.Join(sessionRoot, dir)
 		if err := os.MkdirAll(dirPath, 0o755); err != nil {
 			return agent.EnvironmentMaterializationResult{}, fmt.Errorf("create directory %s: %w", dir, err)
 		}
+	}
+	manifestPath := filepath.Join(configDir, "environment-materialization.json")
+	manifest := map[string]interface{}{
+		"session_id":               request.SessionID,
+		"environment_id":           request.EnvironmentID,
+		"environment_name":         request.EnvironmentName,
+		"minecraft_version":        request.MinecraftVersion,
+		"java_version":             request.JavaVersion,
+		"loader_type":              request.LoaderType,
+		"loader_version":           request.LoaderVersion,
+		"server_core":              request.ServerCore,
+		"mcdr_required":            request.MCDRRequired,
+		"carpet_required":          request.CarpetRequired,
+		"runtime_profile_id":       request.RuntimeProfileID,
+		"runtime_profile_required": request.RuntimeProfileRequired,
+		"materialized_at":          time.Now().UTC().Format(time.RFC3339),
+		"status":                   "prepared",
+		"prepared_directories":     directories,
+		"notes":                    "Environment materialization prepared directories only; it did not install Java, Minecraft, Fabric, Carpet, Lucy, MCDR, or start any runtime.",
+	}
+	manifestJSON, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return agent.EnvironmentMaterializationResult{}, fmt.Errorf("marshal manifest: %w", err)
+	}
+	if err := os.WriteFile(manifestPath, manifestJSON, 0o644); err != nil {
+		return agent.EnvironmentMaterializationResult{}, fmt.Errorf("write manifest: %w", err)
 	}
 	metadata := map[string]string{
 		"manifestPath": manifestPath,

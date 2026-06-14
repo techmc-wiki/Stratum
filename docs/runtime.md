@@ -155,6 +155,22 @@ Repeated start or restart operations tolerate already-prepared directories.
 Directory creation is idempotent. The manual `environments materialize` CLI
 command remains available for explicit preparation outside lifecycle workflows.
 
+## Environment Materialization Manifest
+
+Environment materialization writes an informational manifest at
+`runtime-root/sessions/<session-id>/config/environment-materialization.json`.
+The manifest records Environment metadata (Minecraft version, Java version,
+loader type, server core, MCDR/Carpet requirements, RuntimeProfile ID),
+materialization timestamp, prepared directories, and status.
+
+The manifest is informational only. It does not install Java, Minecraft, Fabric,
+or Carpet. It does not start MCDR or Minecraft. It does not call Lucy. It may be
+used by future Lucy/MCDR/Minecraft preparation checks.
+
+The manifest is written during manual `environments materialize` commands and
+during session start/restart materialization. Operation metadata includes the
+manifest path when available (`environmentMaterializationManifest`).
+
 ## Runtime Artifact and Config Staging
 
 Runtime staging is Agent-owned preparation inside a Session runtime layout. The
