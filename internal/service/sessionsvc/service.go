@@ -9,6 +9,7 @@ import (
 	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
 	"github.com/stratummc/stratum/internal/domain/audit"
+	"github.com/stratummc/stratum/internal/domain/environment"
 	"github.com/stratummc/stratum/internal/domain/operation"
 	"github.com/stratummc/stratum/internal/domain/resourcepolicy"
 	"github.com/stratummc/stratum/internal/domain/session"
@@ -23,6 +24,7 @@ type Repository interface {
 	GetSession(context.Context, string) (session.Session, error)
 	ListSessions(context.Context) ([]session.Session, error)
 	DeleteSession(context.Context, string) error
+	GetEnvironment(context.Context, string) (environment.Environment, error)
 	AppendAuditEvent(context.Context, audit.Event) error
 	CreateOperation(context.Context, operation.Operation) error
 	GetOperation(context.Context, string) (operation.Operation, error)
@@ -271,6 +273,45 @@ func (s *Service) start(ctx context.Context, id, actor string) error {
 			return s.fail(ctx, "start", value, actor, session.StateRunning, gateErr)
 		}
 	}
+	requestedProfileID := getOperationContext(ctx).RuntimeProfileID
+	env, envErr := s.repository.GetEnvironment(ctx, value.EnvironmentID)
+	if envErr != nil {
+		envMetadata := map[string]string{"environmentId": value.EnvironmentID, "environmentLoadError": envErr.Error()}
+		setOperationMetadata(ctx, envMetadata)
+		return s.fail(ctx, "start", value, actor, session.StateRunning, fmt.Errorf("environment %q: %w", value.EnvironmentID, envErr))
+	}
+	selectedProfileID := requestedProfileID
+	if selectedProfileID == "" && env.RuntimeProfileID != "" {
+		selectedProfileID = env.RuntimeProfileID
+	}
+	profileMetadata := map[string]string{
+		"environmentId":                     env.ID,
+		"environmentRuntimeProfileId":       env.RuntimeProfileID,
+		"environmentRuntimeProfileRequired": fmt.Sprintf("%t", env.RuntimeProfileRequired),
+		"requestedRuntimeProfileId":         requestedProfileID,
+		"selectedRuntimeProfileId":          selectedProfileID,
+	}
+	if env.RuntimeProfileRequired {
+		if env.RuntimeProfileID == "" {
+			profileMetadata["runtimeProfileCompatibilityStatus"] = "failed"
+			profileMetadata["runtimeProfileCompatibilityReason"] = "environment requires runtime profile but runtimeProfileId is empty"
+			setOperationMetadata(ctx, profileMetadata)
+			return s.fail(ctx, "start", value, actor, session.StateRunning, fmt.Errorf("environment %q requires runtime profile but has no runtimeProfileId", env.ID))
+		}
+		if selectedProfileID != env.RuntimeProfileID {
+			profileMetadata["runtimeProfileCompatibilityStatus"] = "failed"
+			profileMetadata["runtimeProfileCompatibilityReason"] = fmt.Sprintf("environment requires %q but selected %q", env.RuntimeProfileID, selectedProfileID)
+			setOperationMetadata(ctx, profileMetadata)
+			return s.fail(ctx, "start", value, actor, session.StateRunning, fmt.Errorf("environment %q requires runtime profile %q but selected %q", env.ID, env.RuntimeProfileID, selectedProfileID))
+		}
+	}
+	profileMetadata["runtimeProfileCompatibilityStatus"] = "ok"
+	setOperationMetadata(ctx, profileMetadata)
+	if selectedProfileID != requestedProfileID {
+		opCtx := getOperationContext(ctx)
+		opCtx.RuntimeProfileID = selectedProfileID
+		ctx = context.WithValue(ctx, operationContextKey{}, opCtx)
+	}
 	var agentResult *agent.OperationResult
 	if s.agent != nil {
 		if previous == session.StateCreated {
@@ -280,6 +321,30 @@ func (s *Service) start(ctx context.Context, id, actor string) error {
 			}
 			agentResult = &result
 		}
+		materializationRequest := agent.EnvironmentMaterializationRequest{
+			SessionID:              value.ID,
+			EnvironmentID:          env.ID,
+			EnvironmentName:        env.Name,
+			MinecraftVersion:       env.MinecraftVersion,
+			JavaVersion:            env.JavaVersion,
+			LoaderType:             string(env.LoaderType),
+			LoaderVersion:          env.LoaderVersion,
+			ServerCore:             string(env.ServerCore),
+			MCDRRequired:           env.MCDRRequired,
+			CarpetRequired:         env.CarpetRequired,
+			RuntimeProfileID:       selectedProfileID,
+			RuntimeProfileRequired: env.RuntimeProfileRequired,
+			ActorID:                actor,
+		}
+		materializationResult, callErr := s.agent.MaterializeEnvironment(ctx, materializationRequest)
+		if callErr != nil {
+			setOperationMetadata(ctx, map[string]string{"environmentMaterializationStatus": "failed", "environmentMaterializationError": callErr.Error()})
+			return s.failWithAgent(ctx, "start", value, actor, session.StateRunning, callErr, agentResult)
+		}
+		setOperationMetadata(ctx, map[string]string{
+			"environmentMaterializationStatus":      materializationResult.Status,
+			"environmentMaterializationDirectories": fmt.Sprintf("%d", len(materializationResult.Directories)),
+		})
 		result, callErr := s.agent.StartSession(ctx, agentRequest(ctx, value))
 		if callErr != nil {
 			return s.failWithAgent(ctx, "start", value, actor, session.StateRunning, callErr, agentResult)
@@ -360,8 +425,71 @@ func (s *Service) restart(ctx context.Context, id, actor string) error {
 	if !decision.Allowed {
 		return s.fail(ctx, "restart", value, actor, session.StateRunning, DeniedError{Reason: decision.Reason, Message: decision.Message})
 	}
+	requestedProfileID := getOperationContext(ctx).RuntimeProfileID
+	env, envErr := s.repository.GetEnvironment(ctx, value.EnvironmentID)
+	if envErr != nil {
+		envMetadata := map[string]string{"environmentId": value.EnvironmentID, "environmentLoadError": envErr.Error()}
+		setOperationMetadata(ctx, envMetadata)
+		return s.fail(ctx, "restart", value, actor, session.StateRunning, fmt.Errorf("environment %q: %w", value.EnvironmentID, envErr))
+	}
+	selectedProfileID := requestedProfileID
+	if selectedProfileID == "" && env.RuntimeProfileID != "" {
+		selectedProfileID = env.RuntimeProfileID
+	}
+	profileMetadata := map[string]string{
+		"environmentId":                     env.ID,
+		"environmentRuntimeProfileId":       env.RuntimeProfileID,
+		"environmentRuntimeProfileRequired": fmt.Sprintf("%t", env.RuntimeProfileRequired),
+		"requestedRuntimeProfileId":         requestedProfileID,
+		"selectedRuntimeProfileId":          selectedProfileID,
+	}
+	if env.RuntimeProfileRequired {
+		if env.RuntimeProfileID == "" {
+			profileMetadata["runtimeProfileCompatibilityStatus"] = "failed"
+			profileMetadata["runtimeProfileCompatibilityReason"] = "environment requires runtime profile but runtimeProfileId is empty"
+			setOperationMetadata(ctx, profileMetadata)
+			return s.fail(ctx, "restart", value, actor, session.StateRunning, fmt.Errorf("environment %q requires runtime profile but has no runtimeProfileId", env.ID))
+		}
+		if selectedProfileID != env.RuntimeProfileID {
+			profileMetadata["runtimeProfileCompatibilityStatus"] = "failed"
+			profileMetadata["runtimeProfileCompatibilityReason"] = fmt.Sprintf("environment requires %q but selected %q", env.RuntimeProfileID, selectedProfileID)
+			setOperationMetadata(ctx, profileMetadata)
+			return s.fail(ctx, "restart", value, actor, session.StateRunning, fmt.Errorf("environment %q requires runtime profile %q but selected %q", env.ID, env.RuntimeProfileID, selectedProfileID))
+		}
+	}
+	profileMetadata["runtimeProfileCompatibilityStatus"] = "ok"
+	setOperationMetadata(ctx, profileMetadata)
+	if selectedProfileID != requestedProfileID {
+		opCtx := getOperationContext(ctx)
+		opCtx.RuntimeProfileID = selectedProfileID
+		ctx = context.WithValue(ctx, operationContextKey{}, opCtx)
+	}
 	var agentResult *agent.OperationResult
 	if s.agent != nil {
+		materializationRequest := agent.EnvironmentMaterializationRequest{
+			SessionID:              value.ID,
+			EnvironmentID:          env.ID,
+			EnvironmentName:        env.Name,
+			MinecraftVersion:       env.MinecraftVersion,
+			JavaVersion:            env.JavaVersion,
+			LoaderType:             string(env.LoaderType),
+			LoaderVersion:          env.LoaderVersion,
+			ServerCore:             string(env.ServerCore),
+			MCDRRequired:           env.MCDRRequired,
+			CarpetRequired:         env.CarpetRequired,
+			RuntimeProfileID:       selectedProfileID,
+			RuntimeProfileRequired: env.RuntimeProfileRequired,
+			ActorID:                actor,
+		}
+		materializationResult, callErr := s.agent.MaterializeEnvironment(ctx, materializationRequest)
+		if callErr != nil {
+			setOperationMetadata(ctx, map[string]string{"environmentMaterializationStatus": "failed", "environmentMaterializationError": callErr.Error()})
+			return s.failWithAgent(ctx, "restart", value, actor, session.StateRunning, callErr, nil)
+		}
+		setOperationMetadata(ctx, map[string]string{
+			"environmentMaterializationStatus":      materializationResult.Status,
+			"environmentMaterializationDirectories": fmt.Sprintf("%d", len(materializationResult.Directories)),
+		})
 		result, callErr := s.agent.RestartSession(ctx, agentRequest(ctx, value))
 		if callErr != nil {
 			return s.failWithAgent(ctx, "restart", value, actor, session.StateRunning, callErr, nil)
@@ -547,6 +675,14 @@ func (s *Service) audit(ctx context.Context, action, projectID, id, actor string
 		ID: eventID, ProjectID: projectID, ActorID: actor, Action: "session." + action,
 		TargetType: "session", TargetID: id, Metadata: metadata, CreatedAt: s.now(),
 	})
+}
+
+func getOperationContext(ctx context.Context) operationContext {
+	operationValue, ok := ctx.Value(operationContextKey{}).(operationContext)
+	if !ok {
+		return operationContext{}
+	}
+	return operationValue
 }
 
 func setOperationMetadata(ctx context.Context, values map[string]string) {

@@ -13,6 +13,7 @@ import (
 	"github.com/stratummc/stratum/internal/agent/local"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
 	"github.com/stratummc/stratum/internal/domain/audit"
+	"github.com/stratummc/stratum/internal/domain/environment"
 	"github.com/stratummc/stratum/internal/domain/operation"
 	"github.com/stratummc/stratum/internal/domain/resourcepolicy"
 	"github.com/stratummc/stratum/internal/domain/session"
@@ -671,7 +672,138 @@ func testSession(id string, kind session.Type, state session.State) session.Sess
 
 func createTestSession(t *testing.T, store *filesystem.Store, value session.Session) {
 	t.Helper()
+	ensureTestEnvironment(t, store, value.EnvironmentID)
 	if err := store.CreateSession(context.Background(), value); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func ensureTestEnvironment(t *testing.T, store *filesystem.Store, id string) {
+	t.Helper()
+	if _, err := store.GetEnvironment(context.Background(), id); err == nil {
+		return
+	}
+	env := environment.Environment{
+		ID:               id,
+		Name:             "Test Environment",
+		MinecraftVersion: "1.17.1",
+		LoaderType:       environment.LoaderFabric,
+		ServerCore:       environment.ServerCarpet,
+		CreatedAt:        lifecycleTime,
+		UpdatedAt:        lifecycleTime,
+	}
+	if err := store.CreateEnvironment(context.Background(), env); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnvironmentRuntimeProfileRequired(t *testing.T) {
+	ctx, store, service, _ := newLifecycleTest(t, resourcepolicy.MVPDefault())
+	env := environment.Environment{
+		ID:                     "environment-1",
+		Name:                   "Test",
+		MinecraftVersion:       "1.17.1",
+		LoaderType:             environment.LoaderFabric,
+		ServerCore:             environment.ServerCarpet,
+		RuntimeProfileID:       "dummy-process",
+		RuntimeProfileRequired: true,
+		CreatedAt:              lifecycleTime,
+		UpdatedAt:              lifecycleTime,
+	}
+	if err := store.CreateEnvironment(ctx, env); err != nil {
+		t.Fatal(err)
+	}
+	createTestSession(t, store, testSession("session-1", session.TypeShared, session.StateCreated))
+	if err := service.Start(ctx, "session-1", "actor-1"); err != nil {
+		t.Fatalf("start with required profile: %v", err)
+	}
+	got, err := store.GetSession(ctx, "session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != session.StateRunning {
+		t.Fatalf("state = %s", got.State)
+	}
+}
+
+func TestEnvironmentRuntimeProfileMismatch(t *testing.T) {
+	ctx, store, _, _ := newLifecycleTest(t, resourcepolicy.MVPDefault())
+	env := environment.Environment{
+		ID:                     "environment-1",
+		Name:                   "Test",
+		MinecraftVersion:       "1.17.1",
+		LoaderType:             environment.LoaderFabric,
+		ServerCore:             environment.ServerCarpet,
+		RuntimeProfileID:       "dummy-process",
+		RuntimeProfileRequired: true,
+		CreatedAt:              lifecycleTime,
+		UpdatedAt:              lifecycleTime,
+	}
+	if err := store.CreateEnvironment(ctx, env); err != nil {
+		t.Fatal(err)
+	}
+	fake := local.NewFake()
+	service := New(store, resourcepolicy.MVPDefault(), fake)
+	service.now = func() time.Time { return lifecycleTime }
+	service.newID = func(prefix string) (string, error) { return prefix + "-1", nil }
+	createTestSession(t, store, testSession("session-1", session.TypeShared, session.StateCreated))
+	op, _, err := service.StartWithOptions(ctx, "session-1", "actor-1", OperationOptions{RuntimeProfileID: "other-profile"})
+	if err == nil {
+		t.Fatal("start with mismatched profile should fail")
+	}
+	if op.Metadata["runtimeProfileCompatibilityStatus"] != "failed" {
+		t.Fatalf("operation metadata = %+v", op.Metadata)
+	}
+	got, err := store.GetSession(ctx, "session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State == session.StateRunning {
+		t.Fatalf("state should not be running: %s", got.State)
+	}
+}
+
+func TestEnvironmentRuntimeProfileDefaultSelection(t *testing.T) {
+	ctx, store, _, _ := newLifecycleTest(t, resourcepolicy.MVPDefault())
+	env := environment.Environment{
+		ID:               "environment-1",
+		Name:             "Test",
+		MinecraftVersion: "1.17.1",
+		LoaderType:       environment.LoaderFabric,
+		ServerCore:       environment.ServerCarpet,
+		RuntimeProfileID: "dummy-process",
+		CreatedAt:        lifecycleTime,
+		UpdatedAt:        lifecycleTime,
+	}
+	if err := store.CreateEnvironment(ctx, env); err != nil {
+		t.Fatal(err)
+	}
+	fake := local.NewFake()
+	service := New(store, resourcepolicy.MVPDefault(), fake)
+	service.now = func() time.Time { return lifecycleTime }
+	service.newID = func(prefix string) (string, error) { return prefix + "-1", nil }
+	createTestSession(t, store, testSession("session-1", session.TypeShared, session.StateCreated))
+	op, _, err := service.StartWithOptions(ctx, "session-1", "actor-1", OperationOptions{})
+	if err != nil {
+		t.Fatalf("start should use environment profile: %v", err)
+	}
+	if op.Metadata["selectedRuntimeProfileId"] != "dummy-process" {
+		t.Fatalf("selected profile = %q", op.Metadata["selectedRuntimeProfileId"])
+	}
+}
+
+func TestMissingEnvironmentBlocksStart(t *testing.T) {
+	ctx, store, service, _ := newLifecycleTest(t, resourcepolicy.MVPDefault())
+	sess := testSession("session-1", session.TypeShared, session.StateCreated)
+	if err := store.CreateSession(ctx, sess); err != nil {
+		t.Fatal(err)
+	}
+	err := service.Start(ctx, "session-1", "actor-1")
+	if err == nil {
+		t.Fatal("start should fail with missing environment")
+	}
+	got, _ := store.GetSession(ctx, "session-1")
+	if got.State == session.StateRunning {
+		t.Fatalf("state should not be running: %s", got.State)
 	}
 }

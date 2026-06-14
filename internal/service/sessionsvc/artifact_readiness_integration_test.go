@@ -10,6 +10,7 @@ import (
 	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/agent/local"
 	"github.com/stratummc/stratum/internal/domain/artifact"
+	"github.com/stratummc/stratum/internal/domain/environment"
 	"github.com/stratummc/stratum/internal/domain/operation"
 	"github.com/stratummc/stratum/internal/domain/project"
 	"github.com/stratummc/stratum/internal/domain/resourcepolicy"
@@ -121,6 +122,9 @@ func newArtifactLifecycleFixture(t *testing.T) artifactLifecycleFixture {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
+	if err := store.CreateEnvironment(ctx, environment.Environment{ID: "environment-1", Name: "Test", MinecraftVersion: "1.17.1", LoaderType: environment.LoaderFabric, ServerCore: environment.ServerCarpet, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
 	if err := store.CreateProject(ctx, project.Project{ID: "project-1", Name: "Project", Members: []project.Member{}, CreatedAt: now}); err != nil {
 		t.Fatal(err)
 	}

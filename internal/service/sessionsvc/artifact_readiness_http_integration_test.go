@@ -12,6 +12,7 @@ import (
 	"github.com/stratummc/stratum/internal/agent/httptransport"
 	"github.com/stratummc/stratum/internal/agent/local"
 	"github.com/stratummc/stratum/internal/domain/artifact"
+	"github.com/stratummc/stratum/internal/domain/environment"
 	"github.com/stratummc/stratum/internal/domain/operation"
 	"github.com/stratummc/stratum/internal/domain/project"
 	"github.com/stratummc/stratum/internal/domain/resourcepolicy"
@@ -90,7 +91,7 @@ func TestHTTPArtifactApplyReadinessBlocksCorruptedTarget(t *testing.T) {
 	if stored.State == session.StateRunning {
 		t.Fatal("blocked session became running")
 	}
-	assertHTTPArtifactFailureAudit(t, fixture)
+	assertHTTPArtifactFailureAudit(t, fixture, "1", "0")
 }
 
 func newArtifactHTTPFixture(t *testing.T) artifactHTTPFixture {
@@ -102,6 +103,9 @@ func newArtifactHTTPFixture(t *testing.T) artifactHTTPFixture {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
+	if err := store.CreateEnvironment(ctx, environment.Environment{ID: "environment-1", Name: "Test", MinecraftVersion: "1.17.1", LoaderType: environment.LoaderFabric, ServerCore: environment.ServerCarpet, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
 	if err := store.CreateProject(ctx, project.Project{ID: "project-http", Name: "HTTP Project", Members: []project.Member{}, CreatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
@@ -173,15 +177,87 @@ func newArtifactHTTPFixture(t *testing.T) artifactHTTPFixture {
 	return artifactHTTPFixture{ctx: ctx, store: store, agent: httpAgent, sessions: sessionService, targetPath: executed.TargetPath}
 }
 
-func assertHTTPArtifactFailureAudit(t *testing.T, fixture artifactHTTPFixture) {
+func TestHTTPArtifactApplyReadinessBlocksMissingTarget(t *testing.T) {
+	fixture := newArtifactHTTPFixture(t)
+	if err := os.Remove(fixture.targetPath); err != nil {
+		t.Fatal(err)
+	}
+
+	verification, err := fixture.agent.VerifyAllAppliedArtifacts(fixture.ctx, artifactHTTPStorageSessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verification.Total != 1 || verification.MissingCount != 1 || verification.Entries[0].Status != "missing" {
+		t.Fatalf("verification = %+v", verification)
+	}
+
+	value, _, err := fixture.sessions.StartWithOptions(fixture.ctx, artifactHTTPStorageSessionID, "operator", sessionsvc.OperationOptions{})
+	if err == nil {
+		t.Fatal("start succeeded with a missing applied artifact")
+	}
+	if value.Status != operation.StatusFailed || value.Metadata["appliedVerifyStatus"] != "not_ready" || value.Metadata["missingApplied"] != "1" {
+		t.Fatalf("operation = %+v", value)
+	}
+	stored, loadErr := fixture.store.GetSession(fixture.ctx, artifactHTTPStorageSessionID)
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if stored.State == session.StateRunning {
+		t.Fatal("blocked session became running")
+	}
+	assertHTTPArtifactFailureAudit(t, fixture, "0", "1")
+}
+
+func TestHTTPArtifactReadinessAgentUnreachable(t *testing.T) {
+	tmpDir := t.TempDir()
+	runtimeRoot := filepath.Join(tmpDir, "runtime")
+	dataDir := filepath.Join(tmpDir, "data")
+	store, err := filesystem.New(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	proj := project.Project{ID: "proj", Name: "Test Project", Members: []project.Member{}, CreatedAt: now}
+	_ = store.CreateProject(ctx, proj)
+	r := room.Room{ID: "room", ProjectID: "proj", Name: "Test Room", EnvironmentID: "env-1", BaseWorldRef: "base:test", CreatedAt: now}
+	_ = store.CreateRoom(ctx, r)
+	sess := session.Session{ID: "unreachable-session", ProjectID: "proj", RoomID: "room", OwnerUserID: "user", Type: session.TypeShared, State: session.StateCreated, EnvironmentID: "env-1", CreatedAt: now, LastActiveAt: now}
+	_ = store.CreateSession(ctx, sess)
+
+	unreachableAgent, _ := httptransport.NewClient("http://127.0.0.1:1", "", 1*time.Second)
+	blobs, _ := artifactblob.New(filepath.Join(runtimeRoot, "blobs"))
+	gate := preStartGate{service: artifactstagingsvc.NewPreStartService(store, blobs, unreachableAgent)}
+	sessionService := sessionsvc.New(store, resourcepolicy.MVPDefault(), unreachableAgent).WithArtifactReadinessGate(gate)
+
+	value, _, err := sessionService.StartWithOptions(ctx, "unreachable-session", "operator", sessionsvc.OperationOptions{})
+	if err == nil {
+		t.Fatal("start succeeded with unreachable agent")
+	}
+	if value.Status != operation.StatusFailed {
+		t.Fatalf("operation status = %s, want failed", value.Status)
+	}
+	stored, err := store.GetSession(ctx, "unreachable-session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.State == session.StateRunning {
+		t.Fatal("blocked session became running")
+	}
+}
+
+func assertHTTPArtifactFailureAudit(t *testing.T, fixture artifactHTTPFixture, expectedCorrupted, expectedMissing string) {
 	t.Helper()
 	events, err := fixture.store.ListAuditEvents(fixture.ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, event := range events {
-		if event.TargetType == "session" && event.TargetID == artifactHTTPStorageSessionID && event.Metadata["result"] == "failure" && event.Metadata["corruptedApplied"] == "1" {
-			return
+		if event.TargetType == "session" && event.TargetID == artifactHTTPStorageSessionID && event.Metadata["result"] == "failure" {
+			if event.Metadata["corruptedApplied"] == expectedCorrupted || event.Metadata["missingApplied"] == expectedMissing {
+				return
+			}
 		}
 	}
 	t.Fatal("HTTP artifact readiness failure audit not found")
