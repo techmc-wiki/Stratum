@@ -287,6 +287,42 @@ type BatchAppliedArtifactVerificationDTO struct {
 type ErrorResponse struct {
 	Error     string `json:"error"`
 	Operation string `json:"operation,omitempty"`
+	RequestID string `json:"requestId,omitempty"`
 	AgentID   string `json:"agentId,omitempty"`
-	RequestID string `json:"requestId"`
+}
+
+type EnvironmentMaterializationRequest struct {
+	SessionID              string `json:"sessionId"`
+	EnvironmentID          string `json:"environmentId"`
+	EnvironmentName        string `json:"environmentName"`
+	MinecraftVersion       string `json:"minecraftVersion"`
+	JavaVersion            string `json:"javaVersion"`
+	LoaderType             string `json:"loaderType"`
+	LoaderVersion          string `json:"loaderVersion"`
+	ServerCore             string `json:"serverCore"`
+	MCDRRequired           bool   `json:"mcdrRequired"`
+	CarpetRequired         bool   `json:"carpetRequired"`
+	RuntimeProfileID       string `json:"runtimeProfileId"`
+	RuntimeProfileRequired bool   `json:"runtimeProfileRequired"`
+	ActorID                string `json:"actorId"`
+}
+
+type EnvironmentMaterializationResponse struct {
+	SessionID              string            `json:"sessionId"`
+	EnvironmentID          string            `json:"environmentId"`
+	EnvironmentName        string            `json:"environmentName"`
+	MinecraftVersion       string            `json:"minecraftVersion"`
+	JavaVersion            string            `json:"javaVersion"`
+	LoaderType             string            `json:"loaderType"`
+	LoaderVersion          string            `json:"loaderVersion"`
+	ServerCore             string            `json:"serverCore"`
+	MCDRRequired           bool              `json:"mcdrRequired"`
+	CarpetRequired         bool              `json:"carpetRequired"`
+	RuntimeProfileID       string            `json:"runtimeProfileId"`
+	RuntimeProfileRequired bool              `json:"runtimeProfileRequired"`
+	MaterializedAt         time.Time         `json:"materializedAt"`
+	Status                 string            `json:"status"`
+	Directories            []string          `json:"directories"`
+	Metadata               map[string]string `json:"metadata"`
+	RequestID              string            `json:"requestId"`
 }

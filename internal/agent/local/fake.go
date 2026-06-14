@@ -279,3 +279,27 @@ func (f *Fake) setStatus(sessionID, status string, running, frozen bool) {
 func (f *Fake) result(message string) agent.OperationResult {
 	return agent.OperationResult{AgentID: f.id, Status: "success", Message: message, Mode: "local"}
 }
+
+func (f *Fake) MaterializeEnvironment(_ context.Context, request agent.EnvironmentMaterializationRequest) (agent.EnvironmentMaterializationResult, error) {
+	if err := f.record(agent.OperationMaterializeEnvironment); err != nil {
+		return agent.EnvironmentMaterializationResult{}, err
+	}
+	return agent.EnvironmentMaterializationResult{
+		SessionID:              request.SessionID,
+		EnvironmentID:          request.EnvironmentID,
+		EnvironmentName:        request.EnvironmentName,
+		MinecraftVersion:       request.MinecraftVersion,
+		JavaVersion:            request.JavaVersion,
+		LoaderType:             request.LoaderType,
+		LoaderVersion:          request.LoaderVersion,
+		ServerCore:             request.ServerCore,
+		MCDRRequired:           request.MCDRRequired,
+		CarpetRequired:         request.CarpetRequired,
+		RuntimeProfileID:       request.RuntimeProfileID,
+		RuntimeProfileRequired: request.RuntimeProfileRequired,
+		MaterializedAt:         f.now(),
+		Status:                 "prepared",
+		Directories:            []string{"config", "world", "logs", "mods"},
+		Metadata:               map[string]string{},
+	}, nil
+}

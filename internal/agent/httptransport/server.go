@@ -60,6 +60,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/sessions/{id}/applied-artifacts/verify", s.verifyAllAppliedArtifacts)
 	s.mux.HandleFunc("GET /v1/sessions/{id}/applied-artifacts/{plan}", s.inspectAppliedArtifact)
 	s.mux.HandleFunc("GET /v1/sessions/{id}/applied-artifacts/{plan}/verify", s.verifyAppliedArtifact)
+	s.mux.HandleFunc("POST /v1/environments/materialize", s.materializeEnvironment)
 }
 
 func (s *Server) verifyMaterializedArtifacts(w http.ResponseWriter, r *http.Request) {
@@ -397,6 +398,53 @@ func (s *Server) verifyAllAppliedArtifacts(w http.ResponseWriter, r *http.Reques
 		entries[i] = AppliedArtifactVerificationDTO{SessionID: e.SessionID, ApplyPlanID: e.ApplyPlanID, ArtifactID: e.ArtifactID, StagingPlanID: e.StagingPlanID, TargetRoot: e.TargetRoot, TargetRelativePath: e.TargetRelativePath, TargetRuntimeRelativePath: e.TargetRuntimeRelativePath, PayloadAlgorithm: e.PayloadAlgorithm, ExpectedHash: e.ExpectedHash, ActualHash: e.ActualHash, PayloadSize: e.PayloadSize, ActualSize: e.ActualSize, Status: e.Status, VerifiedAt: e.VerifiedAt, ErrorMessage: e.ErrorMessage}
 	}
 	writeJSON(w, http.StatusOK, BatchAppliedArtifactVerificationDTO{SessionID: result.SessionID, VerifiedAt: result.VerifiedAt, Total: result.Total, ValidCount: result.ValidCount, MissingCount: result.MissingCount, CorruptedCount: result.CorruptedCount, ErrorCount: result.ErrorCount, Entries: entries, RequestID: requestID(r)})
+}
+
+func (s *Server) materializeEnvironment(w http.ResponseWriter, r *http.Request) {
+	var dto EnvironmentMaterializationRequest
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "materialize-environment", fmt.Errorf("decode request: %w", err))
+		return
+	}
+	request := agent.EnvironmentMaterializationRequest{
+		SessionID:              dto.SessionID,
+		EnvironmentID:          dto.EnvironmentID,
+		EnvironmentName:        dto.EnvironmentName,
+		MinecraftVersion:       dto.MinecraftVersion,
+		JavaVersion:            dto.JavaVersion,
+		LoaderType:             dto.LoaderType,
+		LoaderVersion:          dto.LoaderVersion,
+		ServerCore:             dto.ServerCore,
+		MCDRRequired:           dto.MCDRRequired,
+		CarpetRequired:         dto.CarpetRequired,
+		RuntimeProfileID:       dto.RuntimeProfileID,
+		RuntimeProfileRequired: dto.RuntimeProfileRequired,
+		ActorID:                dto.ActorID,
+	}
+	result, err := s.client.MaterializeEnvironment(r.Context(), request)
+	if err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "materialize-environment", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, EnvironmentMaterializationResponse{
+		SessionID:              result.SessionID,
+		EnvironmentID:          result.EnvironmentID,
+		EnvironmentName:        result.EnvironmentName,
+		MinecraftVersion:       result.MinecraftVersion,
+		JavaVersion:            result.JavaVersion,
+		LoaderType:             result.LoaderType,
+		LoaderVersion:          result.LoaderVersion,
+		ServerCore:             result.ServerCore,
+		MCDRRequired:           result.MCDRRequired,
+		CarpetRequired:         result.CarpetRequired,
+		RuntimeProfileID:       result.RuntimeProfileID,
+		RuntimeProfileRequired: result.RuntimeProfileRequired,
+		MaterializedAt:         result.MaterializedAt,
+		Status:                 result.Status,
+		Directories:            result.Directories,
+		Metadata:               result.Metadata,
+		RequestID:              requestID(r),
+	})
 }
 
 func newRequestID() string {

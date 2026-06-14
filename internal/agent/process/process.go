@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
 )
 
@@ -500,4 +501,43 @@ func safeName(value string) string {
 		return "agent"
 	}
 	return value
+}
+
+func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.EnvironmentMaterializationRequest) (agent.EnvironmentMaterializationResult, error) {
+	sessionRoot := filepath.Join(s.runtimeRoot, "sessions", safeName(request.SessionID))
+	configDir := filepath.Join(sessionRoot, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		return agent.EnvironmentMaterializationResult{}, fmt.Errorf("create config directory: %w", err)
+	}
+	manifestPath := filepath.Join(configDir, "environment-materialization.json")
+	directories := []string{"config", "world", "logs", "mods"}
+	for _, dir := range directories {
+		dirPath := filepath.Join(sessionRoot, dir)
+		if err := os.MkdirAll(dirPath, 0o755); err != nil {
+			return agent.EnvironmentMaterializationResult{}, fmt.Errorf("create directory %s: %w", dir, err)
+		}
+	}
+	metadata := map[string]string{
+		"manifestPath": manifestPath,
+		"sessionRoot":  sessionRoot,
+	}
+	result := agent.EnvironmentMaterializationResult{
+		SessionID:              request.SessionID,
+		EnvironmentID:          request.EnvironmentID,
+		EnvironmentName:        request.EnvironmentName,
+		MinecraftVersion:       request.MinecraftVersion,
+		JavaVersion:            request.JavaVersion,
+		LoaderType:             request.LoaderType,
+		LoaderVersion:          request.LoaderVersion,
+		ServerCore:             request.ServerCore,
+		MCDRRequired:           request.MCDRRequired,
+		CarpetRequired:         request.CarpetRequired,
+		RuntimeProfileID:       request.RuntimeProfileID,
+		RuntimeProfileRequired: request.RuntimeProfileRequired,
+		MaterializedAt:         time.Now().UTC(),
+		Status:                 "prepared",
+		Directories:            directories,
+		Metadata:               metadata,
+	}
+	return result, nil
 }

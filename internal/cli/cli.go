@@ -125,6 +125,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return listEnvironments(ctx, store, stdout, stderr)
 	case "environments inspect":
 		return inspectEnvironment(ctx, store, command[2:], stdout, stderr)
+	case "environments materialize":
+		return materializeEnvironment(ctx, store, agentClient, command[2:], stdout, stderr)
 	case "operations list":
 		return listOperations(ctx, store, command[2:], stdout, stderr)
 	case "operations inspect":
@@ -215,7 +217,7 @@ func listRooms(ctx context.Context, store *filesystem.Store, stdout, stderr io.W
 		return reportError(stderr, "list rooms", err)
 	}
 	for _, value := range values {
-		fmt.Fprintf(stdout, "%s\t%s\t%s\n", value.ID, value.ProjectID, value.Name)
+		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\n", value.ID, value.ProjectID, value.Name, value.EnvironmentID)
 	}
 	return 0
 }
@@ -276,7 +278,7 @@ func listSessions(ctx context.Context, store *filesystem.Store, stdout, stderr i
 		return reportError(stderr, "list sessions", err)
 	}
 	for _, value := range values {
-		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\n", value.ID, value.ProjectID, value.Type, value.State)
+		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\t%s\n", value.ID, value.ProjectID, value.Type, value.State, value.EnvironmentID)
 	}
 	return 0
 }
@@ -1702,17 +1704,21 @@ func createEnvironment(ctx context.Context, store *filesystem.Store, args []stri
 	minecraftVersion := flags.String("minecraft-version", "", "")
 	loaderType := flags.String("loader", string(environment.LoaderNone), "")
 	serverCore := flags.String("server-core", string(environment.ServerVanilla), "")
+	runtimeProfile := flags.String("runtime-profile", "", "")
+	runtimeProfileRequired := flags.Bool("runtime-profile-required", false, "")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
 	env := environment.Environment{
-		ID:               *id,
-		Name:             *name,
-		MinecraftVersion: *minecraftVersion,
-		LoaderType:       environment.LoaderType(*loaderType),
-		ServerCore:       environment.ServerCore(*serverCore),
-		CreatedAt:        time.Now().UTC(),
-		UpdatedAt:        time.Now().UTC(),
+		ID:                     *id,
+		Name:                   *name,
+		MinecraftVersion:       *minecraftVersion,
+		LoaderType:             environment.LoaderType(*loaderType),
+		ServerCore:             environment.ServerCore(*serverCore),
+		RuntimeProfileID:       *runtimeProfile,
+		RuntimeProfileRequired: *runtimeProfileRequired,
+		CreatedAt:              time.Now().UTC(),
+		UpdatedAt:              time.Now().UTC(),
 	}
 	if err := env.Validate(); err != nil {
 		fmt.Fprintf(stderr, "validation error: %v\n", err)
@@ -1737,7 +1743,11 @@ func listEnvironments(ctx context.Context, store *filesystem.Store, stdout, _ io
 		return 1
 	}
 	for _, env := range environments {
-		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\t%s\n", env.ID, env.Name, env.MinecraftVersion, env.LoaderType, env.ServerCore)
+		runtimeProfile := env.RuntimeProfileID
+		if runtimeProfile == "" {
+			runtimeProfile = "-"
+		}
+		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\t%s\t%s\n", env.ID, env.Name, env.MinecraftVersion, env.LoaderType, env.ServerCore, runtimeProfile)
 	}
 	return 0
 }
@@ -1762,7 +1772,59 @@ func inspectEnvironment(ctx context.Context, store *filesystem.Store, args []str
 	fmt.Fprintf(stdout, "MCDR Required:       %t\n", env.MCDRRequired)
 	fmt.Fprintf(stdout, "Carpet Required:     %t\n", env.CarpetRequired)
 	fmt.Fprintf(stdout, "Runtime Profile ID:  %s\n", env.RuntimeProfileID)
+	if env.RuntimeProfileRequired {
+		fmt.Fprintf(stdout, "Runtime Profile:     required\n")
+	}
 	fmt.Fprintf(stdout, "Created At:          %s\n", env.CreatedAt.Format(time.RFC3339))
+	return 0
+}
+
+func materializeEnvironment(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("environments materialize", stderr)
+	sessionID := flags.String("session", "", "")
+	actor := flags.String("actor", "", "")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	sess, err := store.GetSession(ctx, *sessionID)
+	if err != nil {
+		fmt.Fprintf(stderr, "get session error: %v\n", err)
+		return 1
+	}
+	env, err := store.GetEnvironment(ctx, sess.EnvironmentID)
+	if err != nil {
+		fmt.Fprintf(stderr, "get environment error: %v\n", err)
+		return 1
+	}
+	request := agent.EnvironmentMaterializationRequest{
+		SessionID:              sess.ID,
+		EnvironmentID:          env.ID,
+		EnvironmentName:        env.Name,
+		MinecraftVersion:       env.MinecraftVersion,
+		JavaVersion:            env.JavaVersion,
+		LoaderType:             string(env.LoaderType),
+		LoaderVersion:          env.LoaderVersion,
+		ServerCore:             string(env.ServerCore),
+		MCDRRequired:           env.MCDRRequired,
+		CarpetRequired:         env.CarpetRequired,
+		RuntimeProfileID:       env.RuntimeProfileID,
+		RuntimeProfileRequired: env.RuntimeProfileRequired,
+		ActorID:                *actor,
+	}
+	result, err := agentClient.MaterializeEnvironment(ctx, request)
+	if err != nil {
+		fmt.Fprintf(stderr, "materialize environment error: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Environment materialized for session %s\n", result.SessionID)
+	fmt.Fprintf(stdout, "  Environment:    %s (%s)\n", result.EnvironmentName, result.EnvironmentID)
+	fmt.Fprintf(stdout, "  Minecraft:      %s\n", result.MinecraftVersion)
+	fmt.Fprintf(stdout, "  Loader:         %s\n", result.LoaderType)
+	fmt.Fprintf(stdout, "  Server Core:    %s\n", result.ServerCore)
+	fmt.Fprintf(stdout, "  Runtime Profile: %s\n", result.RuntimeProfileID)
+	fmt.Fprintf(stdout, "  Status:         %s\n", result.Status)
+	fmt.Fprintf(stdout, "  Directories:    %s\n", strings.Join(result.Directories, ", "))
+	fmt.Fprintf(stdout, "  Materialized:   %s\n", result.MaterializedAt.Format(time.RFC3339))
 	return 0
 }
 

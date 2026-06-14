@@ -324,3 +324,43 @@ func decodeResponse(reader io.Reader, target any) error {
 	}
 	return nil
 }
+
+func (c *Client) MaterializeEnvironment(ctx context.Context, request agent.EnvironmentMaterializationRequest) (agent.EnvironmentMaterializationResult, error) {
+	dto := EnvironmentMaterializationRequest{
+		SessionID:              request.SessionID,
+		EnvironmentID:          request.EnvironmentID,
+		EnvironmentName:        request.EnvironmentName,
+		MinecraftVersion:       request.MinecraftVersion,
+		JavaVersion:            request.JavaVersion,
+		LoaderType:             request.LoaderType,
+		LoaderVersion:          request.LoaderVersion,
+		ServerCore:             request.ServerCore,
+		MCDRRequired:           request.MCDRRequired,
+		CarpetRequired:         request.CarpetRequired,
+		RuntimeProfileID:       request.RuntimeProfileID,
+		RuntimeProfileRequired: request.RuntimeProfileRequired,
+		ActorID:                request.ActorID,
+	}
+	var response EnvironmentMaterializationResponse
+	if err := c.do(ctx, http.MethodPost, "/v1/environments/materialize", dto, &response); err != nil {
+		return agent.EnvironmentMaterializationResult{}, err
+	}
+	return agent.EnvironmentMaterializationResult{
+		SessionID:              response.SessionID,
+		EnvironmentID:          response.EnvironmentID,
+		EnvironmentName:        response.EnvironmentName,
+		MinecraftVersion:       response.MinecraftVersion,
+		JavaVersion:            response.JavaVersion,
+		LoaderType:             response.LoaderType,
+		LoaderVersion:          response.LoaderVersion,
+		ServerCore:             response.ServerCore,
+		MCDRRequired:           response.MCDRRequired,
+		CarpetRequired:         response.CarpetRequired,
+		RuntimeProfileID:       response.RuntimeProfileID,
+		RuntimeProfileRequired: response.RuntimeProfileRequired,
+		MaterializedAt:         response.MaterializedAt,
+		Status:                 response.Status,
+		Directories:            response.Directories,
+		Metadata:               response.Metadata,
+	}, nil
+}
