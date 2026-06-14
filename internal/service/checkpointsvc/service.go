@@ -3,11 +3,11 @@ package checkpointsvc
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/stratummc/stratum/internal/domain/audit"
 	"github.com/stratummc/stratum/internal/domain/checkpoint"
+	"github.com/stratummc/stratum/internal/domain/session"
 	"github.com/stratummc/stratum/internal/util"
 )
 
@@ -18,8 +18,12 @@ type CreateRequest struct {
 	Notes     string
 }
 
+type SessionReader interface {
+	GetSession(ctx context.Context, id string) (session.Session, error)
+}
+
 type Repository interface {
-	GetSession(ctx context.Context, id string) (interface{}, error)
+	SessionReader
 	CreateCheckpoint(ctx context.Context, cp checkpoint.Checkpoint) error
 	GetCheckpoint(ctx context.Context, id string) (checkpoint.Checkpoint, error)
 	ListCheckpoints(ctx context.Context) ([]checkpoint.Checkpoint, error)
@@ -27,22 +31,14 @@ type Repository interface {
 	AppendAuditEvent(ctx context.Context, event audit.Event) error
 }
 
-type sessionData struct {
-	ID            string
-	ProjectID     string
-	RoomID        string
-	EnvironmentID string
-}
-
 func Create(ctx context.Context, repo Repository, req CreateRequest) (checkpoint.Checkpoint, error) {
 	if req.ActorID == "" {
 		return checkpoint.Checkpoint{}, fmt.Errorf("actor required")
 	}
-	sessRaw, err := repo.GetSession(ctx, req.SessionID)
+	sess, err := repo.GetSession(ctx, req.SessionID)
 	if err != nil {
 		return checkpoint.Checkpoint{}, err
 	}
-	sess := extractSessionData(sessRaw)
 	cp, err := checkpoint.New(checkpoint.CreateParams{
 		ID:              req.ID,
 		ProjectID:       sess.ProjectID,
@@ -85,14 +81,4 @@ func List(ctx context.Context, repo Repository) ([]checkpoint.Checkpoint, error)
 
 func ListBySession(ctx context.Context, repo Repository, sessionID string) ([]checkpoint.Checkpoint, error) {
 	return repo.ListCheckpointsBySession(ctx, sessionID)
-}
-
-func extractSessionData(sessRaw interface{}) sessionData {
-	v := reflect.ValueOf(sessRaw)
-	return sessionData{
-		ID:            v.FieldByName("ID").String(),
-		ProjectID:     v.FieldByName("ProjectID").String(),
-		RoomID:        v.FieldByName("RoomID").String(),
-		EnvironmentID: v.FieldByName("EnvironmentID").String(),
-	}
 }

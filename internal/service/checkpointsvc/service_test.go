@@ -18,11 +18,11 @@ type mockRepo struct {
 	createErr   error
 }
 
-func (m *mockRepo) GetSession(ctx context.Context, id string) (interface{}, error) {
+func (m *mockRepo) GetSession(ctx context.Context, id string) (session.Session, error) {
 	if s, ok := m.sessions[id]; ok {
 		return s, nil
 	}
-	return nil, nil
+	return session.Session{}, fmt.Errorf("session not found")
 }
 func (m *mockRepo) CreateCheckpoint(ctx context.Context, cp checkpoint.Checkpoint) error {
 	if m.createErr != nil {

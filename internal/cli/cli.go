@@ -980,7 +980,7 @@ func createCheckpoint(ctx context.Context, store *filesystem.Store, args []strin
 		fmt.Fprintln(stderr, "--id, --session, and --actor are required")
 		return 2
 	}
-	cp, err := checkpointsvc.Create(ctx, &storeWrapper{store}, checkpointsvc.CreateRequest{
+	cp, err := checkpointsvc.Create(ctx, store, checkpointsvc.CreateRequest{
 		ID:        *id,
 		SessionID: *sessionID,
 		ActorID:   *actor,
@@ -994,14 +994,6 @@ func createCheckpoint(ctx context.Context, store *filesystem.Store, args []strin
 	return 0
 }
 
-type storeWrapper struct {
-	*filesystem.Store
-}
-
-func (w *storeWrapper) GetSession(ctx context.Context, id string) (interface{}, error) {
-	return w.Store.GetSession(ctx, id)
-}
-
 func listCheckpoints(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
 	flags := newFlagSet("checkpoints list", stderr)
 	sessionID := flags.String("session", "", "")
@@ -1011,9 +1003,9 @@ func listCheckpoints(ctx context.Context, store *filesystem.Store, args []string
 	var values []checkpoint.Checkpoint
 	var err error
 	if *sessionID != "" {
-		values, err = checkpointsvc.ListBySession(ctx, &storeWrapper{store}, *sessionID)
+		values, err = checkpointsvc.ListBySession(ctx, store, *sessionID)
 	} else {
-		values, err = checkpointsvc.List(ctx, &storeWrapper{store})
+		values, err = checkpointsvc.List(ctx, store)
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "list checkpoints error: %v\n", err)
@@ -1035,7 +1027,7 @@ func inspectCheckpoint(ctx context.Context, store *filesystem.Store, args []stri
 		fmt.Fprintln(stderr, "--id is required")
 		return 2
 	}
-	cp, err := checkpointsvc.Get(ctx, &storeWrapper{store}, *id)
+	cp, err := checkpointsvc.Get(ctx, store, *id)
 	if err != nil {
 		fmt.Fprintf(stderr, "get checkpoint error: %v\n", err)
 		return 1
