@@ -59,6 +59,25 @@ leaves Session state unchanged.
 The gate does not materialize, apply, repair, delete, or execute artifacts and
 does not create checkpoint backups.
 
+## Environment Materialization Metadata
+
+Session start and restart Operations call Agent Environment materialization after
+Environment/RuntimeProfile compatibility validation and before Agent runtime
+launch. Operation metadata records:
+
+- `environmentMaterializationStatus`: preparation status returned by the Agent
+  (e.g., `prepared`, `failed`).
+- `environmentMaterializationDirectories`: count of created directories.
+- `environmentMaterializationError`: error message if materialization failed.
+
+If materialization fails, the Operation completes as failed, and Session state
+remains unchanged (e.g., `created` or `stopped`). Lifecycle audit metadata also
+includes Environment ID, RuntimeProfile ID, and compatibility validation results.
+
+Environment materialization does not install Java, Minecraft, Fabric, or Carpet,
+does not download files, does not call Lucy, and does not start MCDR or
+Minecraft. It prepares runtime directory structure only.
+
 ## Manual Reconciliation Operations
 
 Reconciliation is an explicit human-confirmed metadata repair. Supported

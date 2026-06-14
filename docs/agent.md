@@ -13,6 +13,7 @@ work on one runtime host.
 controller services. It exposes:
 
 - session prepare, start, stop, restart, freeze, unfreeze, and inspection;
+- environment materialization;
 - fake log collection and resource reporting;
 - checkpoint create/restore stubs;
 - agent identity and endpoint metadata.
@@ -47,6 +48,7 @@ POST /v1/sessions/{id}/freeze
 POST /v1/sessions/{id}/unfreeze
 GET  /v1/sessions/{id}/inspect
 GET  /v1/sessions/{id}/logs
+POST /v1/environments/materialize
 POST /v1/checkpoints/create-stub
 POST /v1/checkpoints/restore-stub
 ```
@@ -189,9 +191,10 @@ Minecraft.
 
 ## Why Agent controls MCDR, not the other way around
 
-MCDR is itself a process that requires supervision. A future trusted
-RuntimeProfile may launch MCDR as the child runtime, but the Agent must retain
-the outer process handle and terminal boundary.
+MCDR is itself a process that requires supervision. An example disabled MCDR
+RuntimeProfile exists in `docs/runtime-profiles/mcdr-managed.example.json`. If
+enabled in the future, the Agent would launch MCDR as a child runtime while
+retaining the outer process handle and terminal boundary.
 
 - If MCDR exits or crashes, the Agent must detect its exit code and report it.
 - If Minecraft or MCDR hangs, the Agent must still be able to enforce graceful
@@ -203,7 +206,15 @@ the outer process handle and terminal boundary.
 
 The intended chain is `Controller -> Agent HTTP API -> Runtime Supervisor ->
 optional MCDR child -> Minecraft`. The Controller does not call MCDR directly
-for its primary lifecycle operations.
+for its primary lifecycle operations. Real MCDR integration, Minecraft launch,
+Python environment setup, and MCDR plugin development remain future work.
+
+The Agent provides MCDR runtime directory layout helpers
+(`internal/agent/process.MCDRRuntimeLayout`) that compute and create
+MCDR-specific directories under the session work directory. Directory
+preparation does not start MCDR, invoke Python, generate config, or call Lucy.
+All paths remain under the session runtime root and follow existing path safety
+validation.
 
 ## Local fake agent
 

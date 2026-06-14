@@ -62,3 +62,48 @@ func TestEnvironmentRejectsUnsafeID(t *testing.T) {
 		t.Fatal("unsafe id should fail")
 	}
 }
+
+func TestEnvironmentWithRuntimeProfileID(t *testing.T) {
+	env := Environment{
+		ID:               "env-test",
+		Name:             "Test",
+		MinecraftVersion: "1.17.1",
+		LoaderType:       LoaderFabric,
+		ServerCore:       ServerCarpet,
+		RuntimeProfileID: "dummy-process",
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+	}
+	if err := env.Validate(); err != nil {
+		t.Fatalf("environment with runtime profile id: %v", err)
+	}
+}
+
+func TestEnvironmentRejectsUnsafeRuntimeProfileID(t *testing.T) {
+	env := Environment{
+		ID:               "env-test",
+		Name:             "Test",
+		MinecraftVersion: "1.17.1",
+		LoaderType:       LoaderFabric,
+		ServerCore:       ServerVanilla,
+		RuntimeProfileID: "../escape",
+	}
+	if err := env.Validate(); err == nil {
+		t.Fatal("unsafe runtime profile id should fail")
+	}
+}
+
+func TestEnvironmentWithoutRuntimeProfileIDStillValidates(t *testing.T) {
+	env := Environment{
+		ID:               "env-test",
+		Name:             "Test",
+		MinecraftVersion: "1.17.1",
+		LoaderType:       LoaderFabric,
+		ServerCore:       ServerVanilla,
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+	}
+	if err := env.Validate(); err != nil {
+		t.Fatalf("environment without runtime profile id: %v", err)
+	}
+}

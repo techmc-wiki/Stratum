@@ -70,6 +70,16 @@ Minecraft server.
   combines staging readiness and applied artifact verification, records the
   result in Operation/audit metadata, and blocks unsafe startup before Agent
   prepare/start or Session state mutation.
+- Agent-side Environment materialization that prepares runtime directory
+  structure based on Environment metadata (Minecraft version, Java version,
+  loader type, server core, MCDR/Carpet requirements, RuntimeProfile). Session
+  start and restart call Environment materialization after
+  Environment/RuntimeProfile compatibility validation and before Agent runtime
+  launch. Materialization creates session directories (config/, world/, logs/,
+  mods/) and records informational metadata. It does not install Java,
+  Minecraft, Fabric, or Carpet, does not download files, does not call Lucy, and
+  does not start MCDR or Minecraft. Materialization failure blocks session start
+  before Agent runtime launch.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active

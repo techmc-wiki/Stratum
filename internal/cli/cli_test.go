@@ -21,6 +21,33 @@ import (
 	"github.com/stratummc/stratum/internal/repository/filesystem"
 )
 
+func ensureTestEnvironment(dataDir string) []string {
+	var stdout, stderr bytes.Buffer
+	cmd := []string{"--data-dir", dataDir, "environments", "create", "--id", "env-test", "--name", "Test", "--minecraft-version", "1.17.1", "--loader", "fabric", "--server-core", "carpet"}
+	_ = Run(cmd, &stdout, &stderr)
+	return []string{"--data-dir", dataDir}
+}
+
+func createTestProject(t *testing.T, dataDir, id, name string) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"--data-dir", dataDir, "projects", "create", "--id", id, "--name", name}, &stdout, &stderr); code != 0 {
+		t.Fatalf("create project: code=%d stderr=%q", code, stderr.String())
+	}
+}
+
+func createTestRoom(t *testing.T, dataDir, id, projectID, name, environmentID string) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"--data-dir", dataDir, "rooms", "create", "--id", id, "--project", projectID, "--name", name, "--environment", environmentID}, &stdout, &stderr); code != 0 {
+		t.Fatalf("create room: code=%d stderr=%q", code, stderr.String())
+	}
+}
+
+func setupTestProjectRoomEnvironment(t *testing.T, dataDir string) {
+	_ = ensureTestEnvironment(dataDir)
+	createTestProject(t, dataDir, "project-1", "Project")
+	createTestRoom(t, dataDir, "room-1", "project-1", "Room", "env-test")
+}
+
 func TestCreateSharedSessionRequiresRoom(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")
@@ -40,10 +67,11 @@ func TestCLIUsesHTTPAgentWhenConfigured(t *testing.T) {
 	defer server.Close()
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")
+	_ = ensureTestEnvironment(dataDirectory)
 	base := []string{"--data-dir", dataDirectory, "--agent-url", server.URL, "--agent-token", "secret"}
 	commands := [][]string{
 		{"projects", "create", "--id", "project-1", "--name", "Project"},
-		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
+		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room", "--environment", "env-test"},
 		{"sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
 		{"sessions", "start", "--id", "session-1", "--actor", "actor-1"},
 		{"sessions", "inspect", "--id", "session-1"},
@@ -83,10 +111,11 @@ func TestCLIObservesRuntimeWithoutMutatingSession(t *testing.T) {
 	defer server.Close()
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")
+	_ = ensureTestEnvironment(dataDirectory)
 	base := []string{"--data-dir", dataDirectory, "--agent-url", server.URL}
 	commands := [][]string{
 		{"projects", "create", "--id", "project-1", "--name", "Project"},
-		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
+		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room", "--environment", "env-test"},
 		{"sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
 		{"sessions", "prepare", "--id", "session-1", "--actor", "actor-1"},
 		{"sessions", "start", "--id", "session-1", "--actor", "actor-1", "--runtime-profile", "dummy-process"},
@@ -178,10 +207,11 @@ func TestCLIManualMarkStoppedReconciliation(t *testing.T) {
 	defer server.Close()
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")
+	_ = ensureTestEnvironment(dataDirectory)
 	base := []string{"--data-dir", dataDirectory, "--agent-url", server.URL}
 	commands := [][]string{
 		{"projects", "create", "--id", "project-1", "--name", "Project"},
-		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
+		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room", "--environment", "env-test"},
 		{"sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
 		{"sessions", "prepare", "--id", "session-1", "--actor", "actor-1"},
 		{"sessions", "start", "--id", "session-1", "--actor", "actor-1", "--runtime-profile", "dummy-process"},
@@ -250,10 +280,11 @@ func TestCLIManualStopRuntimeReconciliation(t *testing.T) {
 	defer server.Close()
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")
+	_ = ensureTestEnvironment(dataDirectory)
 	base := []string{"--data-dir", dataDirectory, "--agent-url", server.URL}
 	commands := [][]string{
 		{"projects", "create", "--id", "project-1", "--name", "Project"},
-		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
+		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room", "--environment", "env-test"},
 		{"sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
 		{"sessions", "prepare", "--id", "session-1", "--actor", "actor-1"},
 		{"sessions", "start", "--id", "session-1", "--actor", "actor-1", "--runtime-profile", "dummy-process"},
@@ -305,10 +336,11 @@ func TestCLIManualMarkCrashedReconciliation(t *testing.T) {
 	defer server.Close()
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")
+	_ = ensureTestEnvironment(dataDirectory)
 	base := []string{"--data-dir", dataDirectory, "--agent-url", server.URL}
 	commands := [][]string{
 		{"projects", "create", "--id", "project-1", "--name", "Project"},
-		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
+		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room", "--environment", "env-test"},
 		{"sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
 		{"sessions", "prepare", "--id", "session-1", "--actor", "actor-1"},
 		{"sessions", "start", "--id", "session-1", "--actor", "actor-1", "--runtime-profile", "dummy-process"},
@@ -374,9 +406,8 @@ func TestCLIManualMarkCrashedReconciliation(t *testing.T) {
 func TestCLIManualMarkCrashedUnreachableAgentStillSucceeds(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")
+	setupTestProjectRoomEnvironment(t, dataDirectory)
 	commands := [][]string{
-		{"--data-dir", dataDirectory, "projects", "create", "--id", "project-1", "--name", "Project"},
-		{"--data-dir", dataDirectory, "rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
 		{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
 		{"--data-dir", dataDirectory, "sessions", "start", "--id", "session-1", "--actor", "actor-1"},
 	}
@@ -424,9 +455,8 @@ func TestCLIManualStopRuntimeRequiresAgentURL(t *testing.T) {
 func TestCLIManualStopRuntimeUnreachableAgentFailsWithoutStateChange(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")
+	setupTestProjectRoomEnvironment(t, dataDirectory)
 	commands := [][]string{
-		{"--data-dir", dataDirectory, "projects", "create", "--id", "project-1", "--name", "Project"},
-		{"--data-dir", dataDirectory, "rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
 		{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
 		{"--data-dir", dataDirectory, "sessions", "prepare", "--id", "session-1", "--actor", "actor-1"},
 		{"--data-dir", dataDirectory, "sessions", "start", "--id", "session-1", "--actor", "actor-1"},
@@ -490,9 +520,8 @@ func TestCLIRuntimeProfilesAndLogLimit(t *testing.T) {
 func TestCheckpointListAndGet(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")
+	setupTestProjectRoomEnvironment(t, dataDirectory)
 	commands := [][]string{
-		{"--data-dir", dataDirectory, "projects", "create", "--id", "project-1", "--name", "Project"},
-		{"--data-dir", dataDirectory, "rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
 		{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
 		{"--data-dir", dataDirectory, "checkpoints", "create", "--id", "checkpoint-1", "--session", "session-1", "--note", "before test"},
 	}
@@ -524,9 +553,8 @@ func TestCheckpointListAndGet(t *testing.T) {
 func TestCLIArtifactCreateCannotApproveOrStageWithoutPayload(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")
+	setupTestProjectRoomEnvironment(t, dataDirectory)
 	commands := [][]string{
-		{"--data-dir", dataDirectory, "projects", "create", "--id", "project-1", "--name", "Project"},
-		{"--data-dir", dataDirectory, "rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
 		{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
 		{"--data-dir", dataDirectory, "artifacts", "create", "--id", "artifact-1", "--name", "Test Artifact", "--type", "jar", "--project", "project-1", "--actor", "actor-1"},
 	}
@@ -943,10 +971,11 @@ func TestCLIArtifactStagingPlanListAndInspect(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := t.TempDir()
 	dataDirectory := filepath.Join(root, "data")
+	_ = ensureTestEnvironment(dataDirectory)
 	blobRoot := filepath.Join(root, "artifacts")
 	commands := [][]string{
 		{"--data-dir", dataDirectory, "projects", "create", "--id", "project-1", "--name", "Project"},
-		{"--data-dir", dataDirectory, "rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
+		{"--data-dir", dataDirectory, "rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room", "--environment", "env-test"},
 		{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
 	}
 	for _, command := range commands {
@@ -1020,9 +1049,10 @@ func TestCLIArtifactStagingMaterialize(t *testing.T) {
 	server := httptest.NewServer(httptransport.NewServer(runtime, "", nil).Handler())
 	defer server.Close()
 	base := []string{"--data-dir", dataDirectory, "--artifact-blob-root", blobRoot}
+	_ = ensureTestEnvironment(dataDirectory)
 	commands := [][]string{
 		{"projects", "create", "--id", "project-1", "--name", "Project"},
-		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
+		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room", "--environment", "env-test"},
 		{"sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1", "--type", "shared"},
 		{"artifacts", "create", "--id", "artifact-1", "--name", "Artifact", "--type", "jar", "--project", "project-1", "--actor", "creator-1"},
 		{"artifacts", "staging", "plan", "--session", "session-1", "--artifact", "artifact-1", "--actor", "actor-1", "--name", "mods/test.jar"},
@@ -1330,9 +1360,8 @@ func TestCLIArtifactReviewRequiresFields(t *testing.T) {
 func TestLifecycleCLIUpdatesPersistentSession(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")
+	setupTestProjectRoomEnvironment(t, dataDirectory)
 	commands := [][]string{
-		{"--data-dir", dataDirectory, "projects", "create", "--id", "project-1", "--name", "Project"},
-		{"--data-dir", dataDirectory, "rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
 		{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
 		{"--data-dir", dataDirectory, "sessions", "start", "--id", "session-1", "--actor", "actor-1"},
 		{"--data-dir", dataDirectory, "sessions", "freeze", "--id", "session-1", "--actor", "actor-1"},
@@ -1384,9 +1413,8 @@ func sessionAuditEvents(values []audit.Event) []audit.Event {
 func TestAgentAndSessionInspectionCommands(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")
+	setupTestProjectRoomEnvironment(t, dataDirectory)
 	commands := [][]string{
-		{"--data-dir", dataDirectory, "projects", "create", "--id", "project-1", "--name", "Project"},
-		{"--data-dir", dataDirectory, "rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room"},
 		{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
 		{"--data-dir", dataDirectory, "sessions", "start", "--id", "session-1", "--actor", "actor-1"},
 	}
@@ -1483,5 +1511,49 @@ func TestEnvironmentCreateListInspect(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "env-1-17-fabric") || !strings.Contains(stdout.String(), "1.17.1") {
 		t.Fatalf("stdout=%q", stdout.String())
+	}
+}
+
+func TestEnvironmentWithRuntimeProfile(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	args := []string{"--data-dir", dataDirectory, "environments", "create", "--id", "env-with-profile", "--name", "Test", "--minecraft-version", "1.17.1", "--loader", "fabric", "--server-core", "carpet", "--runtime-profile", "dummy-process"}
+	if code := Run(args, &stdout, &stderr); code != 0 {
+		t.Fatalf("create: code=%d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "environments", "list"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("list: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "dummy-process") {
+		t.Fatalf("list should show runtime profile: stdout=%q", stdout.String())
+	}
+	stdout.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "environments", "inspect", "--id", "env-with-profile"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("inspect: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "dummy-process") {
+		t.Fatalf("inspect should show runtime profile: stdout=%q", stdout.String())
+	}
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := store.GetEnvironment(context.Background(), "env-with-profile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.RuntimeProfileID != "dummy-process" {
+		t.Fatalf("runtime profile id = %q", env.RuntimeProfileID)
+	}
+}
+
+func TestEnvironmentWithUnsafeRuntimeProfileIDFails(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	args := []string{"--data-dir", dataDirectory, "environments", "create", "--id", "env-unsafe", "--name", "Test", "--minecraft-version", "1.17.1", "--loader", "fabric", "--server-core", "carpet", "--runtime-profile", "../escape"}
+	code := Run(args, &stdout, &stderr)
+	if code == 0 || !strings.Contains(stderr.String(), "unsafe") {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
 	}
 }

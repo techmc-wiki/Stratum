@@ -29,24 +29,25 @@ const (
 )
 
 type Environment struct {
-	ID               string            `json:"id"`
-	Name             string            `json:"name"`
-	Description      string            `json:"description"`
-	MinecraftVersion string            `json:"minecraftVersion"`
-	JavaVersion      string            `json:"javaVersion"`
-	LoaderType       LoaderType        `json:"loaderType"`
-	LoaderVersion    string            `json:"loaderVersion"`
-	ServerCore       ServerCore        `json:"serverCore"`
-	MCDRRequired     bool              `json:"mcdrRequired"`
-	CarpetRequired   bool              `json:"carpetRequired"`
-	LucyManifestRef  string            `json:"lucyManifestRef"`
-	LucyLockRef      string            `json:"lucyLockRef"`
-	RuntimeProfileID string            `json:"runtimeProfileId"`
-	ArtifactPolicyID string            `json:"artifactPolicyId"`
-	Notes            string            `json:"notes"`
-	CreatedAt        time.Time         `json:"createdAt"`
-	UpdatedAt        time.Time         `json:"updatedAt"`
-	Metadata         map[string]string `json:"metadata"`
+	ID                     string            `json:"id"`
+	Name                   string            `json:"name"`
+	Description            string            `json:"description"`
+	MinecraftVersion       string            `json:"minecraftVersion"`
+	JavaVersion            string            `json:"javaVersion"`
+	LoaderType             LoaderType        `json:"loaderType"`
+	LoaderVersion          string            `json:"loaderVersion"`
+	ServerCore             ServerCore        `json:"serverCore"`
+	MCDRRequired           bool              `json:"mcdrRequired"`
+	CarpetRequired         bool              `json:"carpetRequired"`
+	LucyManifestRef        string            `json:"lucyManifestRef"`
+	LucyLockRef            string            `json:"lucyLockRef"`
+	RuntimeProfileID       string            `json:"runtimeProfileId"`
+	RuntimeProfileRequired bool              `json:"runtimeProfileRequired"`
+	ArtifactPolicyID       string            `json:"artifactPolicyId"`
+	Notes                  string            `json:"notes"`
+	CreatedAt              time.Time         `json:"createdAt"`
+	UpdatedAt              time.Time         `json:"updatedAt"`
+	Metadata               map[string]string `json:"metadata"`
 }
 
 func (e Environment) Validate() error {
@@ -70,6 +71,9 @@ func (e Environment) Validate() error {
 	}
 	if !isValidServerCore(e.ServerCore) {
 		return fmt.Errorf("invalid server core: %q", e.ServerCore)
+	}
+	if e.RuntimeProfileID != "" && (strings.Contains(e.RuntimeProfileID, "/") || strings.Contains(e.RuntimeProfileID, "\\")) {
+		return fmt.Errorf("runtime profile id contains unsafe characters: %q", e.RuntimeProfileID)
 	}
 	return nil
 }

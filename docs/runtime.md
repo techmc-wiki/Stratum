@@ -123,6 +123,38 @@ creates the layout but still starts no OS process. Future MCDR and Minecraft
 profiles will use this layout for session-scoped files. Checkpoint backup,
 artifact mounting, cleanup policy, and sandboxing remain future work.
 
+## Environment Materialization During Start
+
+Session start prepares Environment runtime directories before starting the
+runtime. This materialization step occurs after Environment/RuntimeProfile
+compatibility validation and before Agent runtime launch.
+
+Environment materialization:
+
+- Creates session-specific directories (config/, world/, logs/, mods/) under
+  runtime-root/sessions/<session-id>/.
+- Records informational metadata about the Environment (Minecraft version, Java
+  version, loader type, loader version, server core, MCDR/Carpet requirements,
+  RuntimeProfile).
+- Returns preparation status to the Controller for Operation metadata recording.
+
+Environment materialization does not:
+
+- Install Java, Minecraft, Fabric, or Carpet executables.
+- Download mod or datapack files.
+- Call Lucy for dependency resolution.
+- Start MCDR or Minecraft processes.
+- Execute any user-provided code.
+- Modify Session state directly (the Controller owns state transitions).
+
+If materialization fails, session start fails before Agent runtime launch. The
+Session state remains unchanged (e.g., created or stopped). Operation metadata
+records materialization status and error details if available.
+
+Repeated start or restart operations tolerate already-prepared directories.
+Directory creation is idempotent. The manual `environments materialize` CLI
+command remains available for explicit preparation outside lifecycle workflows.
+
 ## Runtime Artifact and Config Staging
 
 Runtime staging is Agent-owned preparation inside a Session runtime layout. The
@@ -628,3 +660,57 @@ session startup behavior.
 
 Lucy remains a non-intrusive dependency, manifest, and lock-management
 integration. It is not a process supervisor or session lifecycle controller.
+
+## Environment and RuntimeProfile Linking
+
+Environment may declare a `runtimeProfileId` field to describe the intended
+RuntimeProfile for sessions using that Environment. This is optional metadata
+only. The link allows:
+
+- Environment metadata to record the expected Agent-side runtime launch profile
+- Future validation of Environment/RuntimeProfile compatibility
+- Documentation of which runtime profile should be used for an Environment
+
+The field is optional. If provided, it must be a safe ID without path separators.
+It does not require the RuntimeProfile to exist or be enabled at Environment
+creation time.
+
+Session start behavior is not changed by this field. Future integration may use
+Environment `runtimeProfileId` to validate or select the correct RuntimeProfile
+when starting a session.
+
+Environment may also declare `runtimeProfileRequired` to indicate that sessions
+must use the specified RuntimeProfile. This is not currently enforced.
+
+MCDR, Minecraft, Lucy integration, dependency installation, and automated runtime
+selection remain future work.
+
+## Environment RuntimeProfile Compatibility
+
+Session start and restart validate Environment/RuntimeProfile compatibility:
+
+- If Environment declares `runtimeProfileId`, sessions may use it as the default
+  when no explicit runtime profile is requested.
+- If Environment declares `runtimeProfileRequired: true`, the session must use
+  the Environment's `runtimeProfileId`. Explicit mismatches fail before Agent
+  start.
+- Missing Environment blocks start with a clear error.
+- Compatibility validation sets Operation metadata:
+  - `environmentId`
+  - `environmentRuntimeProfileId`
+  - `environmentRuntimeProfileRequired`
+  - `requestedRuntimeProfileId`
+  - `selectedRuntimeProfileId`
+  - `runtimeProfileCompatibilityStatus` (`ok` or `failed`)
+  - `runtimeProfileCompatibilityReason` (failure reason if status is `failed`)
+
+This validation is metadata-only. It does not:
+
+- Install Java, Minecraft, Fabric, Carpet, or MCDR
+- Call Lucy for dependency resolution
+- Launch MCDR or Minecraft
+- Validate host availability
+- Resolve or materialize artifacts
+
+RuntimeProfile existence and enablement are still validated by Agent registry
+behavior. Environment validation happens first, before Agent start is attempted.

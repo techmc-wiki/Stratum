@@ -18,6 +18,7 @@
     "lucyManifestRef": {"type": "string"},
     "lucyLockRef": {"type": "string"},
     "runtimeProfileId": {"type": "string"},
+    "runtimeProfileRequired": {"type": "boolean"},
     "artifactPolicyId": {"type": "string"},
     "notes": {"type": "string"},
     "createdAt": {"type": "string", "format": "date-time"},

@@ -1,0 +1,14 @@
+{
+  "id": "mcdr-managed-example",
+  "name": "MCDR Managed Example",
+  "runtimeType": "terminal",
+  "commandArgv": ["python", "-m", "mcdreforged"],
+  "workingDir": "",
+  "stopStrategy": "stdin",
+  "stopStdinCommand": "!!MCDR stop",
+  "gracefulStopTimeout": "30s",
+  "forceKillTimeout": "10s",
+  "logMode": "combined",
+  "enabled": false,
+  "notes": "Example only. Agent would supervise MCDR as a child runtime; MCDR is not the lifecycle owner. Do not enable without MCDR installation."
+}
