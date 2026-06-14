@@ -136,6 +136,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return listEnvironments(ctx, store, stdout, stderr)
 	case "environments inspect":
 		return inspectEnvironment(ctx, store, command[2:], stdout, stderr)
+	case "environments update":
+		return updateEnvironment(ctx, store, command[2:], stdout, stderr)
 	case "environments materialize":
 		return materializeEnvironment(ctx, store, agentClient, command[2:], stdout, stderr)
 	case "operations list":
@@ -2016,6 +2018,130 @@ func inspectEnvironment(ctx context.Context, store *filesystem.Store, args []str
 		fmt.Fprintf(stdout, "Runtime Profile:     required\n")
 	}
 	fmt.Fprintf(stdout, "Created At:          %s\n", env.CreatedAt.Format(time.RFC3339))
+	fmt.Fprintf(stdout, "Updated At:          %s\n", env.UpdatedAt.Format(time.RFC3339))
+	return 0
+}
+
+func updateEnvironment(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("environments update", stderr)
+	id := flags.String("id", "", "")
+	actor := flags.String("actor", "", "")
+	expectedUpdatedAt := flags.String("expected-updated-at", "", "")
+	name := flags.String("name", "", "")
+	description := flags.String("description", "", "")
+	minecraftVersion := flags.String("minecraft-version", "", "")
+	javaVersion := flags.String("java-version", "", "")
+	loader := flags.String("loader", "", "")
+	loaderVersion := flags.String("loader-version", "", "")
+	serverCore := flags.String("server-core", "", "")
+	mcdrRequired := flags.String("mcdr-required", "", "")
+	carpetRequired := flags.String("carpet-required", "", "")
+	runtimeProfile := flags.String("runtime-profile", "", "")
+	runtimeProfileRequired := flags.String("runtime-profile-required", "", "")
+	notes := flags.String("notes", "", "")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" {
+		fmt.Fprintln(stderr, "--id is required")
+		return 2
+	}
+	if *actor == "" {
+		fmt.Fprintln(stderr, "--actor is required")
+		return 2
+	}
+	if *expectedUpdatedAt == "" {
+		fmt.Fprintln(stderr, "--expected-updated-at is required")
+		return 2
+	}
+	expected, err := time.Parse(time.RFC3339, *expectedUpdatedAt)
+	if err != nil {
+		fmt.Fprintf(stderr, "invalid --expected-updated-at: %v\n", err)
+		return 2
+	}
+	env, err := store.GetEnvironment(ctx, *id)
+	if err != nil {
+		fmt.Fprintf(stderr, "get environment error: %v\n", err)
+		return 1
+	}
+	changed := []string{}
+	if *name != "" && *name != env.Name {
+		env.Name = *name
+		changed = append(changed, "name")
+	}
+	if *description != "" && *description != env.Description {
+		env.Description = *description
+		changed = append(changed, "description")
+	}
+	if *minecraftVersion != "" && *minecraftVersion != env.MinecraftVersion {
+		env.MinecraftVersion = *minecraftVersion
+		changed = append(changed, "minecraftVersion")
+	}
+	if *javaVersion != "" && *javaVersion != env.JavaVersion {
+		env.JavaVersion = *javaVersion
+		changed = append(changed, "javaVersion")
+	}
+	if *loader != "" && *loader != string(env.LoaderType) {
+		env.LoaderType = environment.LoaderType(*loader)
+		changed = append(changed, "loaderType")
+	}
+	if *loaderVersion != "" && *loaderVersion != env.LoaderVersion {
+		env.LoaderVersion = *loaderVersion
+		changed = append(changed, "loaderVersion")
+	}
+	if *serverCore != "" && *serverCore != string(env.ServerCore) {
+		env.ServerCore = environment.ServerCore(*serverCore)
+		changed = append(changed, "serverCore")
+	}
+	if *mcdrRequired != "" {
+		val := *mcdrRequired == "true"
+		if val != env.MCDRRequired {
+			env.MCDRRequired = val
+			changed = append(changed, "mcdrRequired")
+		}
+	}
+	if *carpetRequired != "" {
+		val := *carpetRequired == "true"
+		if val != env.CarpetRequired {
+			env.CarpetRequired = val
+			changed = append(changed, "carpetRequired")
+		}
+	}
+	if *runtimeProfile != "" && *runtimeProfile != env.RuntimeProfileID {
+		env.RuntimeProfileID = *runtimeProfile
+		changed = append(changed, "runtimeProfileId")
+	}
+	if *runtimeProfileRequired != "" {
+		val := *runtimeProfileRequired == "true"
+		if val != env.RuntimeProfileRequired {
+			env.RuntimeProfileRequired = val
+			changed = append(changed, "runtimeProfileRequired")
+		}
+	}
+	if *notes != "" && *notes != env.Notes {
+		env.Notes = *notes
+		changed = append(changed, "notes")
+	}
+	env.UpdatedAt = time.Now().UTC()
+	if err := env.Validate(); err != nil {
+		fmt.Fprintf(stderr, "validation error: %v\n", err)
+		return 1
+	}
+	if err := store.UpdateEnvironment(ctx, env, expected); err != nil {
+		if stratumerrors.IsKind(err, stratumerrors.KindConflict) {
+			fmt.Fprintf(stderr, "conflict: %v\n", err)
+		} else {
+			fmt.Fprintf(stderr, "update environment error: %v\n", err)
+		}
+		return 1
+	}
+	eventID, _ := util.NewID("audit")
+	event, _ := audit.NewEvent(eventID, *actor, "environment.updated", "environment", env.ID, time.Now().UTC())
+	event.Metadata = map[string]string{"environmentId": env.ID, "changedFields": strings.Join(changed, ","), "previousUpdatedAt": expected.Format(time.RFC3339), "newUpdatedAt": env.UpdatedAt.Format(time.RFC3339)}
+	_ = store.AppendAuditEvent(ctx, event)
+	fmt.Fprintf(stdout, "Environment updated: %s\n", env.ID)
+	fmt.Fprintf(stdout, "Updated At: %s\n", env.UpdatedAt.Format(time.RFC3339))
+	fmt.Fprintf(stdout, "Changed fields: %s\n", strings.Join(changed, ", "))
 	return 0
 }
 

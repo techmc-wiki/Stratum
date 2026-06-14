@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/stratummc/stratum/internal/domain/artifact"
 	"github.com/stratummc/stratum/internal/domain/artifactapply"
@@ -562,10 +563,17 @@ func (s *Store) GetEnvironment(_ context.Context, id string) (environment.Enviro
 func (s *Store) ListEnvironments(_ context.Context) ([]environment.Environment, error) {
 	return listJSON[environment.Environment](filepath.Join(s.Root, "environments"), "filesystem.ListEnvironments")
 }
-func (s *Store) UpdateEnvironment(_ context.Context, value environment.Environment) error {
+func (s *Store) UpdateEnvironment(ctx context.Context, value environment.Environment, expectedUpdatedAt time.Time) error {
 	const op = "filesystem.UpdateEnvironment"
 	if err := validateEnvironment(op, value); err != nil {
 		return err
+	}
+	existing, err := s.GetEnvironment(ctx, value.ID)
+	if err != nil {
+		return err
+	}
+	if !existing.UpdatedAt.Equal(expectedUpdatedAt) {
+		return repositoryError(stratumerrors.KindConflict, op, fmt.Sprintf("expected updated_at %s, got %s", expectedUpdatedAt.Format(time.RFC3339Nano), existing.UpdatedAt.Format(time.RFC3339Nano)), nil)
 	}
 	return updateJSON(s.entityPath("environments", value.ID), op, value)
 }
@@ -775,6 +783,9 @@ func validateEnvironment(op string, value environment.Environment) error {
 	}
 	if value.Name == "" || value.MinecraftVersion == "" || value.LoaderType == "" || value.ServerCore == "" {
 		return validationError(op, "environment requires name, Minecraft version, loader type, and server core")
+	}
+	if err := value.Validate(); err != nil {
+		return validationError(op, err.Error())
 	}
 	return nil
 }

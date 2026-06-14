@@ -89,6 +89,11 @@ Minecraft server.
   running Session now explicitly stops and persists stopped state before
   materialization and readiness, then calls Agent start only when ready.
   Sequence diagnostics are recorded in Operation metadata.
+- Environment metadata explicit update with optimistic conflict protection. Update
+  requires --expected-updated-at and fails with a conflict error if the current
+  updated_at does not match. Update mutates Environment metadata only. It does
+  not reinstall, rematerialize, restart, or automatically update Rooms or
+  Sessions referencing the Environment.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active
