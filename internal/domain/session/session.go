@@ -51,6 +51,7 @@ type Session struct {
 	Type               Type       `json:"type"`
 	State              State      `json:"state"`
 	EnvironmentID      string     `json:"environmentId"`
+	RuntimeProfileID   string     `json:"runtimeProfileId,omitempty"`
 	SourceCheckpointID string     `json:"sourceCheckpointId,omitempty"`
 	AssignedAgentID    string     `json:"assignedAgentId,omitempty"`
 	LastAgentStatus    string     `json:"lastAgentStatus,omitempty"`

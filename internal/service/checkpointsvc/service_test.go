@@ -82,6 +82,44 @@ func TestCreateMetadataOnlyCheckpoint(t *testing.T) {
 	}
 }
 
+func TestCreateCapturesRuntimeProfileID(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-profile": {ID: "s-profile", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1", RuntimeProfileID: "dummy-process"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	ctx := context.Background()
+	cp, err := Create(ctx, repo, CreateRequest{
+		ID: "cp-profile", SessionID: "s-profile", ActorID: "actor-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.RuntimeProfileID != "dummy-process" {
+		t.Fatalf("RuntimeProfileID = %q, want dummy-process", cp.RuntimeProfileID)
+	}
+}
+
+func TestCreateSucceedsWithEmptyRuntimeProfileID(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-noprofile": {ID: "s-noprofile", ProjectID: "p-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	ctx := context.Background()
+	cp, err := Create(ctx, repo, CreateRequest{
+		ID: "cp-noprofile", SessionID: "s-noprofile", ActorID: "actor-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.RuntimeProfileID != "" {
+		t.Fatalf("RuntimeProfileID = %q, want empty", cp.RuntimeProfileID)
+	}
+}
+
 func TestCreateDerivesFieldsFromSession(t *testing.T) {
 	repo := &mockRepo{
 		sessions: map[string]session.Session{

@@ -40,15 +40,16 @@ func Create(ctx context.Context, repo Repository, req CreateRequest) (checkpoint
 		return checkpoint.Checkpoint{}, err
 	}
 	cp, err := checkpoint.New(checkpoint.CreateParams{
-		ID:              req.ID,
-		ProjectID:       sess.ProjectID,
-		RoomID:          sess.RoomID,
-		SourceSessionID: sess.ID,
-		CreatorID:       req.ActorID,
-		Kind:            checkpoint.KindManual,
-		Status:          checkpoint.StatusMetadataOnly,
-		EnvironmentID:   sess.EnvironmentID,
-		Notes:           req.Notes,
+		ID:               req.ID,
+		ProjectID:        sess.ProjectID,
+		RoomID:           sess.RoomID,
+		SourceSessionID:  sess.ID,
+		CreatorID:        req.ActorID,
+		Kind:             checkpoint.KindManual,
+		Status:           checkpoint.StatusMetadataOnly,
+		EnvironmentID:    sess.EnvironmentID,
+		RuntimeProfileID: sess.RuntimeProfileID,
+		Notes:            req.Notes,
 	})
 	if err != nil {
 		return checkpoint.Checkpoint{}, err

@@ -27,10 +27,11 @@ Checkpoint metadata orchestration is handled by `internal/service/checkpointsvc`
 
 The service layer:
 
-* Loads Session to derive Project/Room/Environment identity
+* Loads Session to derive Project/Room/Environment/RuntimeProfile identity
 * Creates metadata-only Checkpoint via repository
 * Writes `checkpoint.created` audit events
 * Validates actor presence and checkpoint ID safety
+* Captures RuntimeProfileID from Session when available
 
 Repository remains storage-only (create/get/list/list-by-session).
 
@@ -45,7 +46,14 @@ Creation loads the Session and derives:
 * `project_id` from Session.ProjectID
 * `room_id` from Session.RoomID
 * `environment_id` from Session.EnvironmentID
-* `runtime_profile_id` from Session.RuntimeProfileID
+* `runtime_profile_id` from Session.RuntimeProfileID (when available)
+
+RuntimeProfileID capture is metadata-only. It records the selected RuntimeProfile from Session metadata. It does not:
+
+* Snapshot runtime files or directories
+* Call the Agent to infer runtime state
+* Restore or launch runtimes
+* Validate profile compatibility beyond what Session already stored
 
 Creation writes a `checkpoint.created` audit event with checkpoint metadata.
 
