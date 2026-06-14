@@ -34,6 +34,7 @@ import (
 	"github.com/stratummc/stratum/internal/service/artifactapplysvc"
 	"github.com/stratummc/stratum/internal/service/artifactstagingsvc"
 	"github.com/stratummc/stratum/internal/service/artifactsvc"
+	"github.com/stratummc/stratum/internal/service/checkpointsvc"
 	"github.com/stratummc/stratum/internal/service/observationsvc"
 	"github.com/stratummc/stratum/internal/service/reconcilesvc"
 	"github.com/stratummc/stratum/internal/service/roomsvc"
@@ -979,31 +980,26 @@ func createCheckpoint(ctx context.Context, store *filesystem.Store, args []strin
 		fmt.Fprintln(stderr, "--id, --session, and --actor are required")
 		return 2
 	}
-	sess, err := store.GetSession(ctx, *sessionID)
-	if err != nil {
-		fmt.Fprintf(stderr, "get session error: %v\n", err)
-		return 1
-	}
-	cp, err := checkpoint.New(checkpoint.CreateParams{
-		ID: *id, ProjectID: sess.ProjectID, RoomID: sess.RoomID,
-		SourceSessionID: sess.ID, CreatorID: *actor, Kind: checkpoint.KindManual,
-		Status: checkpoint.StatusMetadataOnly, EnvironmentID: sess.EnvironmentID,
-		Notes: *notes,
+	cp, err := checkpointsvc.Create(ctx, &storeWrapper{store}, checkpointsvc.CreateRequest{
+		ID:        *id,
+		SessionID: *sessionID,
+		ActorID:   *actor,
+		Notes:     *notes,
 	})
 	if err != nil {
-		fmt.Fprintf(stderr, "checkpoint creation error: %v\n", err)
-		return 1
-	}
-	if err := store.CreateCheckpoint(ctx, cp); err != nil {
 		fmt.Fprintf(stderr, "create checkpoint error: %v\n", err)
 		return 1
 	}
-	eventID, _ := util.NewID("audit")
-	event, _ := audit.NewEvent(eventID, *actor, "checkpoint.created", "checkpoint", cp.ID, time.Now().UTC())
-	event.Metadata = map[string]string{"checkpointId": cp.ID, "projectId": cp.ProjectID, "roomId": cp.RoomID, "sessionId": cp.SourceSessionID, "environmentId": cp.EnvironmentID, "status": string(cp.Status), "actor": *actor}
-	_ = store.AppendAuditEvent(ctx, event)
 	fmt.Fprintf(stdout, "Checkpoint created: %s\n", cp.ID)
 	return 0
+}
+
+type storeWrapper struct {
+	*filesystem.Store
+}
+
+func (w *storeWrapper) GetSession(ctx context.Context, id string) (interface{}, error) {
+	return w.Store.GetSession(ctx, id)
 }
 
 func listCheckpoints(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
@@ -1015,9 +1011,9 @@ func listCheckpoints(ctx context.Context, store *filesystem.Store, args []string
 	var values []checkpoint.Checkpoint
 	var err error
 	if *sessionID != "" {
-		values, err = store.ListCheckpointsBySession(ctx, *sessionID)
+		values, err = checkpointsvc.ListBySession(ctx, &storeWrapper{store}, *sessionID)
 	} else {
-		values, err = store.ListCheckpoints(ctx)
+		values, err = checkpointsvc.List(ctx, &storeWrapper{store})
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "list checkpoints error: %v\n", err)
@@ -1039,7 +1035,7 @@ func inspectCheckpoint(ctx context.Context, store *filesystem.Store, args []stri
 		fmt.Fprintln(stderr, "--id is required")
 		return 2
 	}
-	cp, err := store.GetCheckpoint(ctx, *id)
+	cp, err := checkpointsvc.Get(ctx, &storeWrapper{store}, *id)
 	if err != nil {
 		fmt.Fprintf(stderr, "get checkpoint error: %v\n", err)
 		return 1

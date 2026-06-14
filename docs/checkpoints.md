@@ -21,6 +21,19 @@ Checkpoints do **not** currently:
 * Enable restore or rollback
 * Stop, start, or restart sessions
 
+## Service Layer
+
+Checkpoint metadata orchestration is handled by `internal/service/checkpointsvc`.
+
+The service layer:
+
+* Loads Session to derive Project/Room/Environment identity
+* Creates metadata-only Checkpoint via repository
+* Writes `checkpoint.created` audit events
+* Validates actor presence and checkpoint ID safety
+
+Repository remains storage-only (create/get/list/list-by-session).
+
 ## Creation
 
 ```bash
