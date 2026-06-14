@@ -474,6 +474,27 @@ func (s *Service) restart(ctx context.Context, id, actor string) error {
 	}
 	var agentResult *agent.OperationResult
 	if s.agent != nil {
+		setOperationMetadata(ctx, map[string]string{"restartStartAttempted": "false"})
+		if previous == session.StateRunning {
+			setOperationMetadata(ctx, map[string]string{"restartStopStatus": "attempted"})
+			stopResult, callErr := s.agent.StopSession(ctx, agentRequest(ctx, value))
+			if callErr != nil {
+				setOperationMetadata(ctx, map[string]string{"restartStopStatus": "failed"})
+				return s.failWithAgent(ctx, "restart", value, actor, session.StateRunning, callErr, nil)
+			}
+			setOperationMetadata(ctx, map[string]string{"restartStopStatus": "succeeded"})
+			if err := applyPath(&value, []session.State{session.StateStopping, session.StateStopped}); err != nil {
+				return s.failWithAgent(ctx, "restart", value, actor, session.StateRunning, err, &stopResult)
+			}
+			s.applyAgentMetadata(ctx, &value, stopResult)
+			value.LastActiveAt = s.now()
+			if err := s.repository.SaveSession(ctx, value); err != nil {
+				return s.failWithAgent(ctx, "restart", session.Session{ID: value.ID, ProjectID: value.ProjectID, State: previous}, actor, session.StateStopped, err, &stopResult)
+			}
+			path = []session.State{session.StateStarting, session.StateRunning}
+		} else {
+			setOperationMetadata(ctx, map[string]string{"restartStopStatus": "not_required"})
+		}
 		materializationRequest := agent.EnvironmentMaterializationRequest{
 			SessionID:              value.ID,
 			EnvironmentID:          env.ID,
@@ -505,7 +526,8 @@ func (s *Service) restart(ctx context.Context, id, actor string) error {
 		if readinessErr := s.checkRuntimeReadiness(ctx, value.ID); readinessErr != nil {
 			return s.failWithAgent(ctx, "restart", value, actor, session.StateRunning, readinessErr, nil)
 		}
-		result, callErr := s.agent.RestartSession(ctx, agentRequest(ctx, value))
+		setOperationMetadata(ctx, map[string]string{"restartStartAttempted": "true"})
+		result, callErr := s.agent.StartSession(ctx, agentRequest(ctx, value))
 		if callErr != nil {
 			return s.failWithAgent(ctx, "restart", value, actor, session.StateRunning, callErr, nil)
 		}

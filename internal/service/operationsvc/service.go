@@ -123,7 +123,7 @@ func (s *Service) audit(ctx context.Context, value operation.Operation, action s
 	if profileID := value.Metadata["runtimeProfileId"]; profileID != "" {
 		metadata["runtimeProfileId"] = profileID
 	}
-	for _, key := range []string{"artifactCheckEnabled", "stagingReadinessStatus", "appliedVerifyStatus", "totalApplied", "validApplied", "missingApplied", "corruptedApplied", "artifactReadinessIssues", "runtimeReadinessStatus", "runtimeReadinessReady", "runtimeReadinessIssues", "runtimeReadinessProcessState", "runtimeReadinessEnvironmentManifestExists", "runtimeReadinessAppliedTotal", "runtimeReadinessAppliedValid", "runtimeReadinessAppliedMissing", "runtimeReadinessAppliedCorrupted", "runtimeReadinessAppliedError"} {
+	for _, key := range []string{"artifactCheckEnabled", "stagingReadinessStatus", "appliedVerifyStatus", "totalApplied", "validApplied", "missingApplied", "corruptedApplied", "artifactReadinessIssues", "restartStopStatus", "restartStartAttempted", "runtimeReadinessStatus", "runtimeReadinessReady", "runtimeReadinessIssues", "runtimeReadinessProcessState", "runtimeReadinessEnvironmentManifestExists", "runtimeReadinessAppliedTotal", "runtimeReadinessAppliedValid", "runtimeReadinessAppliedMissing", "runtimeReadinessAppliedCorrupted", "runtimeReadinessAppliedError"} {
 		if item, ok := value.Metadata[key]; ok {
 			metadata[key] = item
 		}

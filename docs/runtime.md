@@ -221,14 +221,26 @@ materialize, repair, install, start, stop, or execute anything.
 
 ## Runtime Readiness During Start
 
-After Environment materialization, Controller start and restart operations call
-the Agent readiness predicate before `StartSession` or `RestartSession`. A
-not-ready response or unreachable readiness endpoint fails the Operation before
-runtime launch and preserves the existing Controller Session state. Readiness
-issues are retained in Operation and audit metadata for diagnostics.
+After Environment materialization, Controller start operations call the Agent
+readiness predicate before `StartSession`. A not-ready response or unreachable
+readiness endpoint fails the Operation before runtime launch and preserves the
+existing Controller Session state. Readiness issues are retained in Operation
+and audit metadata for diagnostics.
 
 The Controller does not repair files, clean up artifacts, install dependencies,
 or start MCDR or Minecraft as part of this check.
+
+## Restart Sequencing
+
+Start readiness rejects an already-running process. For a running Session,
+restart therefore calls Agent `StopSession`, persists the stopped Controller
+state, materializes the Environment, checks ready-for-start, and only then calls
+`StartSession`. A stop failure leaves the Session running; a later readiness or
+start failure leaves it stopped.
+
+Restart does not repair or clean up files, install dependencies, or launch MCDR
+or Minecraft beyond the normal Agent runtime operation. Sequence diagnostics
+are recorded in Operation metadata.
 
 ## Runtime Artifact and Config Staging
 

@@ -19,6 +19,7 @@ type orderedReadinessAgent struct {
 	agent.AgentClient
 	readiness    agent.SessionStartReadiness
 	readinessErr error
+	stopErr      error
 	calls        []string
 }
 
@@ -37,9 +38,12 @@ func (a *orderedReadinessAgent) StartSession(ctx context.Context, request agent.
 	return a.AgentClient.StartSession(ctx, request)
 }
 
-func (a *orderedReadinessAgent) RestartSession(ctx context.Context, request agent.SessionRequest) (agent.OperationResult, error) {
-	a.calls = append(a.calls, "restart")
-	return a.AgentClient.RestartSession(ctx, request)
+func (a *orderedReadinessAgent) StopSession(ctx context.Context, request agent.SessionRequest) (agent.OperationResult, error) {
+	a.calls = append(a.calls, "stop")
+	if a.stopErr != nil {
+		return agent.OperationResult{}, a.stopErr
+	}
+	return a.AgentClient.StopSession(ctx, request)
 }
 
 func TestStartChecksRuntimeReadinessBeforeAgentLaunch(t *testing.T) {
@@ -96,20 +100,28 @@ func TestStartRuntimeReadinessFailureBlocksAgentLaunch(t *testing.T) {
 	}
 }
 
-func TestRestartChecksRuntimeReadinessBeforeAgentLaunch(t *testing.T) {
+func TestRestartStopsBeforeRuntimeReadinessAndStartsSafely(t *testing.T) {
 	for _, test := range []struct {
-		name      string
-		readiness agent.SessionStartReadiness
-		wantState session.State
-		wantCalls []string
-		wantError bool
+		name         string
+		sourceState  session.State
+		readiness    agent.SessionStartReadiness
+		readinessErr error
+		wantState    session.State
+		wantCalls    []string
+		wantStop     string
+		wantStart    string
+		wantIssues   string
+		wantError    bool
 	}{
-		{name: "ready", readiness: readyRuntime(), wantState: session.StateRunning, wantCalls: []string{"materialize", "readiness", "restart"}},
-		{name: "not ready", readiness: notReadyRuntime(), wantState: session.StateStopped, wantCalls: []string{"materialize", "readiness"}, wantError: true},
+		{name: "running ready", sourceState: session.StateRunning, readiness: readyRuntime(), wantState: session.StateRunning, wantCalls: []string{"stop", "materialize", "readiness", "start"}, wantStop: "succeeded", wantStart: "true"},
+		{name: "running not ready", sourceState: session.StateRunning, readiness: notReadyRuntime(), wantState: session.StateStopped, wantCalls: []string{"stop", "materialize", "readiness"}, wantStop: "succeeded", wantStart: "false", wantIssues: "environment_manifest_missing", wantError: true},
+		{name: "running readiness unavailable", sourceState: session.StateRunning, readinessErr: errors.New("agent unavailable"), wantState: session.StateStopped, wantCalls: []string{"stop", "materialize", "readiness"}, wantStop: "succeeded", wantStart: "false", wantIssues: "agent unavailable", wantError: true},
+		{name: "stopped ready", sourceState: session.StateStopped, readiness: readyRuntime(), wantState: session.StateRunning, wantCalls: []string{"materialize", "readiness", "start"}, wantStop: "not_required", wantStart: "true"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			agentClient := newOrderedReadinessAgent(test.readiness)
-			ctx, store, service := runtimeReadinessLifecycle(t, agentClient, session.StateStopped)
+			agentClient.readinessErr = test.readinessErr
+			ctx, store, service := runtimeReadinessLifecycle(t, agentClient, test.sourceState)
 
 			value, _, err := service.RestartWithOptions(ctx, "session-1", "actor-1", OperationOptions{})
 			if (err != nil) != test.wantError {
@@ -122,10 +134,71 @@ func TestRestartChecksRuntimeReadinessBeforeAgentLaunch(t *testing.T) {
 			if stored.State != test.wantState {
 				t.Fatalf("state = %s, want %s", stored.State, test.wantState)
 			}
-			if test.wantError && (value.Status != operation.StatusFailed || value.Metadata["runtimeReadinessIssues"] != "environment_manifest_missing") {
+			if value.Metadata["restartStopStatus"] != test.wantStop {
+				t.Fatalf("restartStopStatus = %q", value.Metadata["restartStopStatus"])
+			}
+			if value.Metadata["restartStartAttempted"] != test.wantStart {
+				t.Fatalf("restartStartAttempted = %q, want %q", value.Metadata["restartStartAttempted"], test.wantStart)
+			}
+			events, auditErr := store.ListAuditEvents(ctx)
+			if auditErr != nil {
+				t.Fatal(auditErr)
+			}
+			foundSequenceAudit := false
+			for _, event := range events {
+				if event.Action == "operation.completed" && event.Metadata["restartStopStatus"] == test.wantStop && event.Metadata["restartStartAttempted"] == test.wantStart {
+					foundSequenceAudit = true
+					break
+				}
+			}
+			if !foundSequenceAudit {
+				t.Fatalf("restart sequence audit metadata missing: %+v", events)
+			}
+			if test.wantError && (value.Status != operation.StatusFailed || value.Metadata["runtimeReadinessIssues"] != test.wantIssues) {
 				t.Fatalf("operation = %+v", value)
 			}
 		})
+	}
+}
+
+func TestRestartStopFailureDoesNotCheckReadinessOrStart(t *testing.T) {
+	agentClient := newOrderedReadinessAgent(readyRuntime())
+	agentClient.stopErr = errors.New("stop unavailable")
+	ctx, store, service := runtimeReadinessLifecycle(t, agentClient, session.StateRunning)
+
+	value, _, err := service.RestartWithOptions(ctx, "session-1", "actor-1", OperationOptions{})
+	if err == nil || value.Status != operation.StatusFailed {
+		t.Fatalf("operation=%+v err=%v", value, err)
+	}
+	if !reflect.DeepEqual(agentClient.calls, []string{"stop"}) {
+		t.Fatalf("calls = %v", agentClient.calls)
+	}
+	if value.Metadata["restartStopStatus"] != "failed" || value.Metadata["restartStartAttempted"] != "false" {
+		t.Fatalf("metadata = %+v", value.Metadata)
+	}
+	stored, _ := store.GetSession(ctx, "session-1")
+	if stored.State != session.StateRunning {
+		t.Fatalf("state = %s", stored.State)
+	}
+}
+
+func TestStartReadinessRejectsAlreadyRunningAgentProcess(t *testing.T) {
+	readiness := notReadyRuntime()
+	readiness.Issues = []agent.SessionStartReadinessIssue{{Code: "process_running", Message: "process is running", Severity: "error"}}
+	readiness.RuntimeStatusSummary.ProcessState = "running"
+	agentClient := newOrderedReadinessAgent(readiness)
+	ctx, store, service := runtimeReadinessLifecycle(t, agentClient, session.StateCreated)
+
+	value, _, err := service.StartWithOptions(ctx, "session-1", "actor-1", OperationOptions{})
+	if err == nil || value.Metadata["runtimeReadinessIssues"] != "process_running" {
+		t.Fatalf("operation=%+v err=%v", value, err)
+	}
+	if !reflect.DeepEqual(agentClient.calls, []string{"materialize", "readiness"}) {
+		t.Fatalf("calls = %v", agentClient.calls)
+	}
+	stored, _ := store.GetSession(ctx, "session-1")
+	if stored.State != session.StateCreated {
+		t.Fatalf("state = %s", stored.State)
 	}
 }
 

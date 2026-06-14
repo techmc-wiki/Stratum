@@ -83,16 +83,27 @@ manifest at `config/environment-materialization.json`.
 
 ## Runtime Readiness During Start
 
-After successful Environment materialization, session start and restart
-Operations call the Agent's read-only `SessionReadyForStart` predicate before
-runtime launch. A not-ready result or Agent error fails the Operation without
-calling Agent start/restart or changing the Controller Session to running.
+After successful Environment materialization, session start Operations call the
+Agent's read-only `SessionReadyForStart` predicate before runtime launch. A
+not-ready result or Agent error fails the Operation without calling Agent start
+or changing the Controller Session to running.
 
 Operation and lifecycle audit metadata include `runtimeReadinessStatus`,
 `runtimeReadinessReady`, `runtimeReadinessIssues`, process state, Environment
 manifest presence, and applied artifact valid/missing/corrupted/error counts.
 This check does not repair, install, clean up, or execute anything and does not
 start MCDR or Minecraft.
+
+## Restart Sequencing
+
+Restart of a running Session records an explicit `StopSession` then
+`SessionReadyForStart` then `StartSession` sequence. Operation and lifecycle
+audit metadata include `restartStopStatus`, readiness diagnostics, and
+`restartStartAttempted`. Stop failure leaves the Controller Session running;
+readiness or start failure after a successful stop leaves it stopped.
+
+The sequence does not repair, install, or clean up runtime files and does not
+launch MCDR or Minecraft beyond the normal Agent runtime operation.
 
 ## Manual Reconciliation Operations
 

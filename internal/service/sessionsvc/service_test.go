@@ -301,7 +301,7 @@ func TestStopAndRestartCallAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := fake.Calls()
-	if !containsOperation(calls, agent.OperationRestart) || !containsOperation(calls, agent.OperationStop) {
+	if containsOperation(calls, agent.OperationRestart) || !containsOperation(calls, agent.OperationStart) || !containsOperation(calls, agent.OperationStop) {
 		t.Fatalf("calls = %+v", calls)
 	}
 }
