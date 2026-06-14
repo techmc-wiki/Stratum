@@ -56,6 +56,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/artifacts/materialize", s.materializeArtifact)
 	s.mux.HandleFunc("POST /v1/artifacts/apply/dry-run", s.dryRunArtifactApply)
 	s.mux.HandleFunc("POST /v1/artifacts/apply/execute", s.executeArtifactApply)
+	s.mux.HandleFunc("GET /v1/sessions/{id}/applied-artifacts", s.listAppliedArtifacts)
+	s.mux.HandleFunc("GET /v1/sessions/{id}/applied-artifacts/verify", s.verifyAllAppliedArtifacts)
+	s.mux.HandleFunc("GET /v1/sessions/{id}/applied-artifacts/{plan}", s.inspectAppliedArtifact)
+	s.mux.HandleFunc("GET /v1/sessions/{id}/applied-artifacts/{plan}/verify", s.verifyAppliedArtifact)
 }
 
 func (s *Server) verifyMaterializedArtifacts(w http.ResponseWriter, r *http.Request) {
@@ -341,6 +345,58 @@ func (s *Server) executeArtifactApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, ArtifactApplyExecuteResultDTO{AgentID: result.AgentID, ApplyPlanID: result.ApplyPlanID, SessionID: result.SessionID, ArtifactID: result.ArtifactID, StagingPlanID: result.StagingPlanID, TargetRoot: result.TargetRoot, TargetRelativePath: result.TargetRelativePath, SourcePath: result.SourcePath, TargetPath: result.TargetPath, Action: result.Action, Status: result.Status, Issues: result.Issues, CopiedBytes: result.CopiedBytes, VerifiedTargetHash: result.VerifiedTargetHash, ExecutedAt: result.ExecutedAt, RequestID: requestID(r)})
+}
+
+func (s *Server) listAppliedArtifacts(w http.ResponseWriter, r *http.Request) {
+	result, err := s.client.ListAppliedArtifacts(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "list-applied-artifacts", err)
+		return
+	}
+	records := make([]AppliedArtifactRecordDTO, 0, len(result.Records))
+	for _, rec := range result.Records {
+		records = append(records, AppliedArtifactRecordDTO{ApplyPlanID: rec.ApplyPlanID, SessionID: rec.SessionID, ArtifactID: rec.ArtifactID, StagingPlanID: rec.StagingPlanID, SourceRuntimeRelativePath: rec.SourceRuntimeRelativePath, TargetRuntimeRelativePath: rec.TargetRuntimeRelativePath, TargetRoot: rec.TargetRoot, TargetRelativePath: rec.TargetRelativePath, PayloadAlgorithm: rec.PayloadAlgorithm, PayloadHash: rec.PayloadHash, PayloadSize: rec.PayloadSize, Action: rec.Action, Status: rec.Status, ActorID: rec.ActorID, AppliedAt: rec.AppliedAt})
+	}
+	writeJSON(w, http.StatusOK, AppliedArtifactsResponse{SessionID: result.SessionID, Records: records, RequestID: requestID(r)})
+}
+
+func (s *Server) inspectAppliedArtifact(w http.ResponseWriter, r *http.Request) {
+	result, err := s.client.InspectAppliedArtifact(r.Context(), r.PathValue("id"), r.PathValue("plan"))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, agent.ErrMaterializedArtifactNotFound) {
+			status = http.StatusNotFound
+		}
+		s.writeError(w, r, status, "inspect-applied-artifact", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, AppliedArtifactRecordDTO{ApplyPlanID: result.ApplyPlanID, SessionID: result.SessionID, ArtifactID: result.ArtifactID, StagingPlanID: result.StagingPlanID, SourceRuntimeRelativePath: result.SourceRuntimeRelativePath, TargetRuntimeRelativePath: result.TargetRuntimeRelativePath, TargetRoot: result.TargetRoot, TargetRelativePath: result.TargetRelativePath, PayloadAlgorithm: result.PayloadAlgorithm, PayloadHash: result.PayloadHash, PayloadSize: result.PayloadSize, Action: result.Action, Status: result.Status, ActorID: result.ActorID, AppliedAt: result.AppliedAt})
+}
+
+func (s *Server) verifyAppliedArtifact(w http.ResponseWriter, r *http.Request) {
+	result, err := s.client.VerifyAppliedArtifact(r.Context(), r.PathValue("id"), r.PathValue("plan"))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, agent.ErrMaterializedArtifactNotFound) {
+			status = http.StatusNotFound
+		}
+		s.writeError(w, r, status, "verify-applied-artifact", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, AppliedArtifactVerificationDTO{SessionID: result.SessionID, ApplyPlanID: result.ApplyPlanID, ArtifactID: result.ArtifactID, StagingPlanID: result.StagingPlanID, TargetRoot: result.TargetRoot, TargetRelativePath: result.TargetRelativePath, TargetRuntimeRelativePath: result.TargetRuntimeRelativePath, PayloadAlgorithm: result.PayloadAlgorithm, ExpectedHash: result.ExpectedHash, ActualHash: result.ActualHash, PayloadSize: result.PayloadSize, ActualSize: result.ActualSize, Status: result.Status, VerifiedAt: result.VerifiedAt, ErrorMessage: result.ErrorMessage, RequestID: requestID(r)})
+}
+
+func (s *Server) verifyAllAppliedArtifacts(w http.ResponseWriter, r *http.Request) {
+	result, err := s.client.VerifyAllAppliedArtifacts(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "verify-all-applied-artifacts", err)
+		return
+	}
+	entries := make([]AppliedArtifactVerificationDTO, len(result.Entries))
+	for i, e := range result.Entries {
+		entries[i] = AppliedArtifactVerificationDTO{SessionID: e.SessionID, ApplyPlanID: e.ApplyPlanID, ArtifactID: e.ArtifactID, StagingPlanID: e.StagingPlanID, TargetRoot: e.TargetRoot, TargetRelativePath: e.TargetRelativePath, TargetRuntimeRelativePath: e.TargetRuntimeRelativePath, PayloadAlgorithm: e.PayloadAlgorithm, ExpectedHash: e.ExpectedHash, ActualHash: e.ActualHash, PayloadSize: e.PayloadSize, ActualSize: e.ActualSize, Status: e.Status, VerifiedAt: e.VerifiedAt, ErrorMessage: e.ErrorMessage}
+	}
+	writeJSON(w, http.StatusOK, BatchAppliedArtifactVerificationDTO{SessionID: result.SessionID, VerifiedAt: result.VerifiedAt, Total: result.Total, ValidCount: result.ValidCount, MissingCount: result.MissingCount, CorruptedCount: result.CorruptedCount, ErrorCount: result.ErrorCount, Entries: entries, RequestID: requestID(r)})
 }
 
 func newRequestID() string {

@@ -254,6 +254,22 @@ func (f *Fake) RemoveSessionFiles(_ context.Context, sessionID string) error {
 	return nil
 }
 
+func (f *Fake) ListAppliedArtifacts(_ context.Context, sessionID string) (agent.AppliedArtifactsResponse, error) {
+	return agent.AppliedArtifactsResponse{SessionID: sessionID, Records: []agent.AppliedArtifactRecord{}}, nil
+}
+
+func (f *Fake) InspectAppliedArtifact(_ context.Context, sessionID, applyPlanID string) (agent.AppliedArtifactRecord, error) {
+	return agent.AppliedArtifactRecord{}, agent.ErrMaterializedArtifactNotFound
+}
+
+func (f *Fake) VerifyAppliedArtifact(_ context.Context, sessionID, applyPlanID string) (agent.AppliedArtifactVerification, error) {
+	return agent.AppliedArtifactVerification{}, agent.ErrMaterializedArtifactNotFound
+}
+
+func (f *Fake) VerifyAllAppliedArtifacts(_ context.Context, sessionID string) (agent.BatchAppliedArtifactVerification, error) {
+	return agent.BatchAppliedArtifactVerification{SessionID: sessionID, Total: 0, Entries: []agent.AppliedArtifactVerification{}}, nil
+}
+
 func (f *Fake) setStatus(sessionID, status string, running, frozen bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,30 @@ import (
 
 	"github.com/stratummc/stratum/internal/agent"
 )
+
+type AppliedArtifactRecord struct {
+	ApplyPlanID               string    `json:"applyPlanId"`
+	SessionID                 string    `json:"sessionId"`
+	ArtifactID                string    `json:"artifactId"`
+	StagingPlanID             string    `json:"stagingPlanId"`
+	SourceRuntimeRelativePath string    `json:"sourceRuntimeRelativePath"`
+	TargetRuntimeRelativePath string    `json:"targetRuntimeRelativePath"`
+	TargetRoot                string    `json:"targetRoot"`
+	TargetRelativePath        string    `json:"targetRelativePath"`
+	PayloadAlgorithm          string    `json:"payloadAlgorithm"`
+	PayloadHash               string    `json:"payloadHash"`
+	PayloadSize               int64     `json:"payloadSize"`
+	Action                    string    `json:"action"`
+	Status                    string    `json:"status"`
+	ActorID                   string    `json:"actorId,omitempty"`
+	AppliedAt                 time.Time `json:"appliedAt"`
+}
+
+type AppliedArtifactsManifest struct {
+	SessionID string                  `json:"sessionId"`
+	Records   []AppliedArtifactRecord `json:"records"`
+	UpdatedAt time.Time               `json:"updatedAt"`
+}
 
 func DryRunArtifactApply(ctx context.Context, runtimeRoot string, req agent.ArtifactApplyDryRunRequest, at time.Time) (agent.ArtifactApplyDryRunResult, error) {
 	result := agent.ArtifactApplyDryRunResult{ApplyPlanID: req.ApplyPlanID, SessionID: req.SessionID, ArtifactID: req.ArtifactID, StagingPlanID: req.StagingPlanID, TargetRoot: req.TargetRoot, TargetRelativePath: req.TargetRelativePath, Action: "would_copy", Status: "not_ready", Issues: []string{}, CheckedAt: at}
@@ -136,6 +161,11 @@ func ExecuteArtifactApply(ctx context.Context, runtimeRoot string, req agent.Art
 	result.CopiedBytes = copied
 	result.VerifiedTargetHash = verifiedHash
 	result.Status = "applied"
+	targetRelPath, _ := filepath.Rel(layout.SessionRoot, targetPath)
+	record := AppliedArtifactRecord{ApplyPlanID: req.ApplyPlanID, SessionID: req.SessionID, ArtifactID: req.ArtifactID, StagingPlanID: req.StagingPlanID, SourceRuntimeRelativePath: dryRun.SourceRuntimeRelativePath, TargetRuntimeRelativePath: targetRelPath, TargetRoot: req.TargetRoot, TargetRelativePath: req.TargetRelativePath, PayloadAlgorithm: "sha256", PayloadHash: verifiedHash, PayloadSize: copied, Action: "copied", Status: "applied", AppliedAt: at}
+	if err := writeAppliedArtifactRecord(layout, record); err != nil {
+		result.Issues = append(result.Issues, fmt.Sprintf("cannot write applied manifest: %v", err))
+	}
 	return result, nil
 }
 
@@ -193,4 +223,168 @@ func mapTargetRootForExecution(root, workDir string) string {
 	default:
 		return ""
 	}
+}
+
+func writeAppliedArtifactRecord(layout SessionRuntimeLayout, record AppliedArtifactRecord) error {
+	manifestPath := filepath.Join(layout.ArtifactsDir, "applied-artifacts.json")
+	var manifest AppliedArtifactsManifest
+	data, err := os.ReadFile(manifestPath)
+	if err == nil {
+		_ = json.Unmarshal(data, &manifest)
+	}
+	if manifest.Records == nil {
+		manifest.Records = []AppliedArtifactRecord{}
+	}
+	manifest.SessionID = record.SessionID
+	for i, existing := range manifest.Records {
+		if existing.ApplyPlanID == record.ApplyPlanID {
+			manifest.Records[i] = record
+			manifest.UpdatedAt = record.AppliedAt
+			data, _ := json.MarshalIndent(manifest, "", "  ")
+			return os.WriteFile(manifestPath, data, 0o640)
+		}
+	}
+	manifest.Records = append(manifest.Records, record)
+	manifest.UpdatedAt = record.AppliedAt
+	data, _ = json.MarshalIndent(manifest, "", "  ")
+	return os.WriteFile(manifestPath, data, 0o640)
+}
+
+func ReadAppliedArtifacts(ctx context.Context, runtimeRoot, sessionID string) ([]AppliedArtifactRecord, error) {
+	layout, err := NewSessionRuntimeLayout(runtimeRoot, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	manifestPath := filepath.Join(layout.ArtifactsDir, "applied-artifacts.json")
+	data, err := os.ReadFile(manifestPath)
+	if os.IsNotExist(err) {
+		return []AppliedArtifactRecord{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var manifest AppliedArtifactsManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil, fmt.Errorf("malformed applied artifacts manifest: %w", err)
+	}
+	return manifest.Records, nil
+}
+
+func ReadAppliedArtifact(ctx context.Context, runtimeRoot, sessionID, applyPlanID string) (AppliedArtifactRecord, error) {
+	records, err := ReadAppliedArtifacts(ctx, runtimeRoot, sessionID)
+	if err != nil {
+		return AppliedArtifactRecord{}, err
+	}
+	for _, r := range records {
+		if r.ApplyPlanID == applyPlanID {
+			return r, nil
+		}
+	}
+	return AppliedArtifactRecord{}, agent.ErrMaterializedArtifactNotFound
+}
+
+type AppliedArtifactVerification struct {
+	SessionID                 string
+	ApplyPlanID               string
+	ArtifactID                string
+	StagingPlanID             string
+	TargetRoot                string
+	TargetRelativePath        string
+	TargetRuntimeRelativePath string
+	PayloadAlgorithm          string
+	ExpectedHash              string
+	ActualHash                string
+	PayloadSize               int64
+	ActualSize                int64
+	Status                    string
+	VerifiedAt                time.Time
+	ErrorMessage              string
+}
+
+type BatchAppliedArtifactVerification struct {
+	SessionID      string
+	VerifiedAt     time.Time
+	Total          int
+	ValidCount     int
+	MissingCount   int
+	CorruptedCount int
+	ErrorCount     int
+	Entries        []AppliedArtifactVerification
+}
+
+func VerifyAllAppliedArtifacts(ctx context.Context, runtimeRoot, sessionID string, at time.Time) (BatchAppliedArtifactVerification, error) {
+	result := BatchAppliedArtifactVerification{SessionID: sessionID, VerifiedAt: at, Entries: []AppliedArtifactVerification{}}
+	records, err := ReadAppliedArtifacts(ctx, runtimeRoot, sessionID)
+	if err != nil {
+		return result, err
+	}
+	result.Total = len(records)
+	for _, record := range records {
+		verification, err := VerifyAppliedArtifact(ctx, runtimeRoot, sessionID, record.ApplyPlanID, at)
+		if err != nil {
+			continue
+		}
+		result.Entries = append(result.Entries, verification)
+		switch verification.Status {
+		case "valid":
+			result.ValidCount++
+		case "missing":
+			result.MissingCount++
+		case "corrupted":
+			result.CorruptedCount++
+		case "error":
+			result.ErrorCount++
+		}
+	}
+	return result, nil
+}
+
+func VerifyAppliedArtifact(ctx context.Context, runtimeRoot, sessionID, applyPlanID string, at time.Time) (AppliedArtifactVerification, error) {
+	layout, err := NewSessionRuntimeLayout(runtimeRoot, sessionID)
+	if err != nil {
+		return AppliedArtifactVerification{}, err
+	}
+	record, err := ReadAppliedArtifact(ctx, runtimeRoot, sessionID, applyPlanID)
+	if err != nil {
+		return AppliedArtifactVerification{}, err
+	}
+	result := AppliedArtifactVerification{SessionID: sessionID, ApplyPlanID: applyPlanID, ArtifactID: record.ArtifactID, StagingPlanID: record.StagingPlanID, TargetRoot: record.TargetRoot, TargetRelativePath: record.TargetRelativePath, TargetRuntimeRelativePath: record.TargetRuntimeRelativePath, PayloadAlgorithm: record.PayloadAlgorithm, ExpectedHash: record.PayloadHash, PayloadSize: record.PayloadSize, VerifiedAt: at}
+	targetPath := filepath.Join(layout.SessionRoot, record.TargetRuntimeRelativePath)
+	if !strings.HasPrefix(targetPath, layout.SessionRoot) {
+		result.Status = "error"
+		result.ErrorMessage = "target path escapes session runtime layout"
+		return result, nil
+	}
+	info, err := os.Stat(targetPath)
+	if os.IsNotExist(err) {
+		result.Status = "missing"
+		return result, nil
+	}
+	if err != nil {
+		result.Status = "error"
+		result.ErrorMessage = err.Error()
+		return result, nil
+	}
+	result.ActualSize = info.Size()
+	file, err := os.Open(targetPath)
+	if err != nil {
+		result.Status = "error"
+		result.ErrorMessage = err.Error()
+		return result, nil
+	}
+	defer file.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, file); err != nil {
+		result.Status = "error"
+		result.ErrorMessage = err.Error()
+		return result, nil
+	}
+	hash := hex.EncodeToString(h.Sum(nil))
+	result.ActualHash = hash
+	if hash != record.PayloadHash {
+		result.Status = "corrupted"
+		return result, nil
+	}
+	result.Status = "valid"
+	return result, nil
 }

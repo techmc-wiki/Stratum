@@ -229,6 +229,61 @@ type ArtifactApplyExecuteResultDTO struct {
 	RequestID          string    `json:"requestId"`
 }
 
+type AppliedArtifactRecordDTO struct {
+	ApplyPlanID               string    `json:"applyPlanId"`
+	SessionID                 string    `json:"sessionId"`
+	ArtifactID                string    `json:"artifactId"`
+	StagingPlanID             string    `json:"stagingPlanId"`
+	SourceRuntimeRelativePath string    `json:"sourceRuntimeRelativePath"`
+	TargetRuntimeRelativePath string    `json:"targetRuntimeRelativePath"`
+	TargetRoot                string    `json:"targetRoot"`
+	TargetRelativePath        string    `json:"targetRelativePath"`
+	PayloadAlgorithm          string    `json:"payloadAlgorithm"`
+	PayloadHash               string    `json:"payloadHash"`
+	PayloadSize               int64     `json:"payloadSize"`
+	Action                    string    `json:"action"`
+	Status                    string    `json:"status"`
+	ActorID                   string    `json:"actorId,omitempty"`
+	AppliedAt                 time.Time `json:"appliedAt"`
+}
+
+type AppliedArtifactsResponse struct {
+	SessionID string                     `json:"sessionId"`
+	Records   []AppliedArtifactRecordDTO `json:"records"`
+	RequestID string                     `json:"requestId"`
+}
+
+type AppliedArtifactVerificationDTO struct {
+	SessionID                 string    `json:"sessionId"`
+	ApplyPlanID               string    `json:"applyPlanId"`
+	ArtifactID                string    `json:"artifactId"`
+	StagingPlanID             string    `json:"stagingPlanId"`
+	TargetRoot                string    `json:"targetRoot"`
+	TargetRelativePath        string    `json:"targetRelativePath"`
+	TargetRuntimeRelativePath string    `json:"targetRuntimeRelativePath"`
+	PayloadAlgorithm          string    `json:"payloadAlgorithm"`
+	ExpectedHash              string    `json:"expectedHash"`
+	ActualHash                string    `json:"actualHash,omitempty"`
+	PayloadSize               int64     `json:"payloadSize"`
+	ActualSize                int64     `json:"actualSize"`
+	Status                    string    `json:"status"`
+	VerifiedAt                time.Time `json:"verifiedAt"`
+	ErrorMessage              string    `json:"errorMessage,omitempty"`
+	RequestID                 string    `json:"requestId"`
+}
+
+type BatchAppliedArtifactVerificationDTO struct {
+	SessionID      string                           `json:"sessionId"`
+	VerifiedAt     time.Time                        `json:"verifiedAt"`
+	Total          int                              `json:"total"`
+	ValidCount     int                              `json:"validCount"`
+	MissingCount   int                              `json:"missingCount"`
+	CorruptedCount int                              `json:"corruptedCount"`
+	ErrorCount     int                              `json:"errorCount"`
+	Entries        []AppliedArtifactVerificationDTO `json:"entries"`
+	RequestID      string                           `json:"requestId"`
+}
+
 type ErrorResponse struct {
 	Error     string `json:"error"`
 	Operation string `json:"operation,omitempty"`

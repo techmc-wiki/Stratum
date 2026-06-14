@@ -234,6 +234,46 @@ func (a *ProcessAgent) ExecuteArtifactApply(ctx context.Context, req agent.Artif
 	return result, nil
 }
 
+func (a *ProcessAgent) ListAppliedArtifacts(ctx context.Context, sessionID string) (agent.AppliedArtifactsResponse, error) {
+	records, err := agentprocess.ReadAppliedArtifacts(ctx, a.supervisor.RuntimeRoot(), sessionID)
+	if err != nil {
+		return agent.AppliedArtifactsResponse{}, agent.Error{AgentID: a.id, Operation: "list-applied-artifacts", Message: err.Error()}
+	}
+	result := agent.AppliedArtifactsResponse{SessionID: sessionID, Records: make([]agent.AppliedArtifactRecord, len(records))}
+	for i, r := range records {
+		result.Records[i] = agent.AppliedArtifactRecord{ApplyPlanID: r.ApplyPlanID, SessionID: r.SessionID, ArtifactID: r.ArtifactID, StagingPlanID: r.StagingPlanID, SourceRuntimeRelativePath: r.SourceRuntimeRelativePath, TargetRuntimeRelativePath: r.TargetRuntimeRelativePath, TargetRoot: r.TargetRoot, TargetRelativePath: r.TargetRelativePath, PayloadAlgorithm: r.PayloadAlgorithm, PayloadHash: r.PayloadHash, PayloadSize: r.PayloadSize, Action: r.Action, Status: r.Status, ActorID: r.ActorID, AppliedAt: r.AppliedAt}
+	}
+	return result, nil
+}
+
+func (a *ProcessAgent) InspectAppliedArtifact(ctx context.Context, sessionID, applyPlanID string) (agent.AppliedArtifactRecord, error) {
+	record, err := agentprocess.ReadAppliedArtifact(ctx, a.supervisor.RuntimeRoot(), sessionID, applyPlanID)
+	if err != nil {
+		return agent.AppliedArtifactRecord{}, agent.Error{AgentID: a.id, Operation: "inspect-applied-artifact", Message: err.Error()}
+	}
+	return agent.AppliedArtifactRecord{ApplyPlanID: record.ApplyPlanID, SessionID: record.SessionID, ArtifactID: record.ArtifactID, StagingPlanID: record.StagingPlanID, SourceRuntimeRelativePath: record.SourceRuntimeRelativePath, TargetRuntimeRelativePath: record.TargetRuntimeRelativePath, TargetRoot: record.TargetRoot, TargetRelativePath: record.TargetRelativePath, PayloadAlgorithm: record.PayloadAlgorithm, PayloadHash: record.PayloadHash, PayloadSize: record.PayloadSize, Action: record.Action, Status: record.Status, ActorID: record.ActorID, AppliedAt: record.AppliedAt}, nil
+}
+
+func (a *ProcessAgent) VerifyAppliedArtifact(ctx context.Context, sessionID, applyPlanID string) (agent.AppliedArtifactVerification, error) {
+	result, err := agentprocess.VerifyAppliedArtifact(ctx, a.supervisor.RuntimeRoot(), sessionID, applyPlanID, time.Now())
+	if err != nil {
+		return agent.AppliedArtifactVerification{}, agent.Error{AgentID: a.id, Operation: "verify-applied-artifact", Message: err.Error()}
+	}
+	return agent.AppliedArtifactVerification{SessionID: result.SessionID, ApplyPlanID: result.ApplyPlanID, ArtifactID: result.ArtifactID, StagingPlanID: result.StagingPlanID, TargetRoot: result.TargetRoot, TargetRelativePath: result.TargetRelativePath, TargetRuntimeRelativePath: result.TargetRuntimeRelativePath, PayloadAlgorithm: result.PayloadAlgorithm, ExpectedHash: result.ExpectedHash, ActualHash: result.ActualHash, PayloadSize: result.PayloadSize, ActualSize: result.ActualSize, Status: result.Status, VerifiedAt: result.VerifiedAt, ErrorMessage: result.ErrorMessage}, nil
+}
+
+func (a *ProcessAgent) VerifyAllAppliedArtifacts(ctx context.Context, sessionID string) (agent.BatchAppliedArtifactVerification, error) {
+	result, err := agentprocess.VerifyAllAppliedArtifacts(ctx, a.supervisor.RuntimeRoot(), sessionID, time.Now())
+	if err != nil {
+		return agent.BatchAppliedArtifactVerification{}, agent.Error{AgentID: a.id, Operation: "verify-all-applied-artifacts", Message: err.Error()}
+	}
+	batch := agent.BatchAppliedArtifactVerification{SessionID: result.SessionID, VerifiedAt: result.VerifiedAt, Total: result.Total, ValidCount: result.ValidCount, MissingCount: result.MissingCount, CorruptedCount: result.CorruptedCount, ErrorCount: result.ErrorCount, Entries: make([]agent.AppliedArtifactVerification, len(result.Entries))}
+	for i, e := range result.Entries {
+		batch.Entries[i] = agent.AppliedArtifactVerification{SessionID: e.SessionID, ApplyPlanID: e.ApplyPlanID, ArtifactID: e.ArtifactID, StagingPlanID: e.StagingPlanID, TargetRoot: e.TargetRoot, TargetRelativePath: e.TargetRelativePath, TargetRuntimeRelativePath: e.TargetRuntimeRelativePath, PayloadAlgorithm: e.PayloadAlgorithm, ExpectedHash: e.ExpectedHash, ActualHash: e.ActualHash, PayloadSize: e.PayloadSize, ActualSize: e.ActualSize, Status: e.Status, VerifiedAt: e.VerifiedAt, ErrorMessage: e.ErrorMessage}
+	}
+	return batch, nil
+}
+
 func (a *ProcessAgent) result(message string) agent.OperationResult {
 	return agent.OperationResult{AgentID: a.id, Status: "success", Message: message, Mode: agentprocess.RuntimeModeDummy}
 }

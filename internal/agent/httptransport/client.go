@@ -272,6 +272,46 @@ func decodeHTTPError(response *http.Response, operation string) error {
 	return HTTPError{StatusCode: response.StatusCode, RequestID: payload.RequestID, AgentID: payload.AgentID, Operation: payload.Operation, Message: payload.Error}
 }
 
+func (c *Client) ListAppliedArtifacts(ctx context.Context, sessionID string) (agent.AppliedArtifactsResponse, error) {
+	var dto AppliedArtifactsResponse
+	if err := c.do(ctx, http.MethodGet, "/v1/sessions/"+sessionID+"/applied-artifacts", nil, &dto); err != nil {
+		return agent.AppliedArtifactsResponse{}, err
+	}
+	result := agent.AppliedArtifactsResponse{SessionID: dto.SessionID, Records: make([]agent.AppliedArtifactRecord, len(dto.Records))}
+	for i, r := range dto.Records {
+		result.Records[i] = agent.AppliedArtifactRecord{ApplyPlanID: r.ApplyPlanID, SessionID: r.SessionID, ArtifactID: r.ArtifactID, StagingPlanID: r.StagingPlanID, SourceRuntimeRelativePath: r.SourceRuntimeRelativePath, TargetRuntimeRelativePath: r.TargetRuntimeRelativePath, TargetRoot: r.TargetRoot, TargetRelativePath: r.TargetRelativePath, PayloadAlgorithm: r.PayloadAlgorithm, PayloadHash: r.PayloadHash, PayloadSize: r.PayloadSize, Action: r.Action, Status: r.Status, ActorID: r.ActorID, AppliedAt: r.AppliedAt}
+	}
+	return result, nil
+}
+
+func (c *Client) InspectAppliedArtifact(ctx context.Context, sessionID, applyPlanID string) (agent.AppliedArtifactRecord, error) {
+	var dto AppliedArtifactRecordDTO
+	if err := c.do(ctx, http.MethodGet, "/v1/sessions/"+sessionID+"/applied-artifacts/"+applyPlanID, nil, &dto); err != nil {
+		return agent.AppliedArtifactRecord{}, err
+	}
+	return agent.AppliedArtifactRecord{ApplyPlanID: dto.ApplyPlanID, SessionID: dto.SessionID, ArtifactID: dto.ArtifactID, StagingPlanID: dto.StagingPlanID, SourceRuntimeRelativePath: dto.SourceRuntimeRelativePath, TargetRuntimeRelativePath: dto.TargetRuntimeRelativePath, TargetRoot: dto.TargetRoot, TargetRelativePath: dto.TargetRelativePath, PayloadAlgorithm: dto.PayloadAlgorithm, PayloadHash: dto.PayloadHash, PayloadSize: dto.PayloadSize, Action: dto.Action, Status: dto.Status, ActorID: dto.ActorID, AppliedAt: dto.AppliedAt}, nil
+}
+
+func (c *Client) VerifyAppliedArtifact(ctx context.Context, sessionID, applyPlanID string) (agent.AppliedArtifactVerification, error) {
+	var dto AppliedArtifactVerificationDTO
+	if err := c.do(ctx, http.MethodGet, "/v1/sessions/"+sessionID+"/applied-artifacts/"+applyPlanID+"/verify", nil, &dto); err != nil {
+		return agent.AppliedArtifactVerification{}, err
+	}
+	return agent.AppliedArtifactVerification{SessionID: dto.SessionID, ApplyPlanID: dto.ApplyPlanID, ArtifactID: dto.ArtifactID, StagingPlanID: dto.StagingPlanID, TargetRoot: dto.TargetRoot, TargetRelativePath: dto.TargetRelativePath, TargetRuntimeRelativePath: dto.TargetRuntimeRelativePath, PayloadAlgorithm: dto.PayloadAlgorithm, ExpectedHash: dto.ExpectedHash, ActualHash: dto.ActualHash, PayloadSize: dto.PayloadSize, ActualSize: dto.ActualSize, Status: dto.Status, VerifiedAt: dto.VerifiedAt, ErrorMessage: dto.ErrorMessage}, nil
+}
+
+func (c *Client) VerifyAllAppliedArtifacts(ctx context.Context, sessionID string) (agent.BatchAppliedArtifactVerification, error) {
+	var dto BatchAppliedArtifactVerificationDTO
+	if err := c.do(ctx, http.MethodGet, "/v1/sessions/"+sessionID+"/applied-artifacts/verify", nil, &dto); err != nil {
+		return agent.BatchAppliedArtifactVerification{}, err
+	}
+	batch := agent.BatchAppliedArtifactVerification{SessionID: dto.SessionID, VerifiedAt: dto.VerifiedAt, Total: dto.Total, ValidCount: dto.ValidCount, MissingCount: dto.MissingCount, CorruptedCount: dto.CorruptedCount, ErrorCount: dto.ErrorCount, Entries: make([]agent.AppliedArtifactVerification, len(dto.Entries))}
+	for i, e := range dto.Entries {
+		batch.Entries[i] = agent.AppliedArtifactVerification{SessionID: e.SessionID, ApplyPlanID: e.ApplyPlanID, ArtifactID: e.ArtifactID, StagingPlanID: e.StagingPlanID, TargetRoot: e.TargetRoot, TargetRelativePath: e.TargetRelativePath, TargetRuntimeRelativePath: e.TargetRuntimeRelativePath, PayloadAlgorithm: e.PayloadAlgorithm, ExpectedHash: e.ExpectedHash, ActualHash: e.ActualHash, PayloadSize: e.PayloadSize, ActualSize: e.ActualSize, Status: e.Status, VerifiedAt: e.VerifiedAt, ErrorMessage: e.ErrorMessage}
+	}
+	return batch, nil
+}
+
 func decodeResponse(reader io.Reader, target any) error {
 	decoder := json.NewDecoder(io.LimitReader(reader, 2<<20))
 	decoder.DisallowUnknownFields()

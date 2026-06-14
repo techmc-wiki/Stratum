@@ -202,6 +202,58 @@ type ArtifactApplyExecuteResult struct {
 	ExecutedAt         time.Time
 }
 
+type AppliedArtifactRecord struct {
+	ApplyPlanID               string
+	SessionID                 string
+	ArtifactID                string
+	StagingPlanID             string
+	SourceRuntimeRelativePath string
+	TargetRuntimeRelativePath string
+	TargetRoot                string
+	TargetRelativePath        string
+	PayloadAlgorithm          string
+	PayloadHash               string
+	PayloadSize               int64
+	Action                    string
+	Status                    string
+	ActorID                   string
+	AppliedAt                 time.Time
+}
+
+type AppliedArtifactsResponse struct {
+	SessionID string
+	Records   []AppliedArtifactRecord
+}
+
+type AppliedArtifactVerification struct {
+	SessionID                 string
+	ApplyPlanID               string
+	ArtifactID                string
+	StagingPlanID             string
+	TargetRoot                string
+	TargetRelativePath        string
+	TargetRuntimeRelativePath string
+	PayloadAlgorithm          string
+	ExpectedHash              string
+	ActualHash                string
+	PayloadSize               int64
+	ActualSize                int64
+	Status                    string
+	VerifiedAt                time.Time
+	ErrorMessage              string
+}
+
+type BatchAppliedArtifactVerification struct {
+	SessionID      string
+	VerifiedAt     time.Time
+	Total          int
+	ValidCount     int
+	MissingCount   int
+	CorruptedCount int
+	ErrorCount     int
+	Entries        []AppliedArtifactVerification
+}
+
 type OperationResult struct {
 	AgentID string
 	Status  string
@@ -290,6 +342,10 @@ type AgentClient interface {
 	VerifyMaterializedArtifacts(context.Context, string) (MaterializedArtifactsVerification, error)
 	DryRunArtifactApply(context.Context, ArtifactApplyDryRunRequest) (ArtifactApplyDryRunResult, error)
 	ExecuteArtifactApply(context.Context, ArtifactApplyExecuteRequest) (ArtifactApplyExecuteResult, error)
+	ListAppliedArtifacts(context.Context, string) (AppliedArtifactsResponse, error)
+	InspectAppliedArtifact(context.Context, string, string) (AppliedArtifactRecord, error)
+	VerifyAppliedArtifact(context.Context, string, string) (AppliedArtifactVerification, error)
+	VerifyAllAppliedArtifacts(context.Context, string) (BatchAppliedArtifactVerification, error)
 }
 
 type RuntimeAgent interface {
