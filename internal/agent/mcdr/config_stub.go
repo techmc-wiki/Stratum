@@ -19,7 +19,7 @@ const (
 	ConfigStubStatusStub    ConfigStubStatus = "stub"
 )
 
-const configStubNotes = "Stratum planning stub only; this is not MCDR config.yml, no dependencies were installed, and no MCDR or Minecraft process was started."
+const configStubNotes = "Stratum planning manifest only; this is not MCDR config.yml or Minecraft server.properties, it does not install MCDR, and no MCDR or Minecraft process was started."
 
 // ConfigStub describes intended MCDR configuration paths without writing files
 // or starting a runtime.

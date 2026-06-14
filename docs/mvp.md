@@ -159,9 +159,10 @@ Controller's lifecycle manager.
   resolution, CLI/package integration, manifests, locks, and downloads remain
   deferred.
 - Non-executing MCDR config stub contract with canonical Session-relative paths
-  and validation. It produces planning metadata only and does not write MCDR or
-  Minecraft configuration, install dependencies, invoke Python/Lucy, or start
-  processes.
+  and validation, plus optional atomic serialization to the informational
+  `work/mcdr/mcdr-config-stub.json` planning manifest. It does not write real
+  MCDR or Minecraft configuration, install dependencies, invoke Python/Lucy,
+  or start processes.
 - Standard-library tests for core behavior.
 
 ## Deferred

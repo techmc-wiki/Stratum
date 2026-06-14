@@ -721,6 +721,14 @@ configuration from this contract after Lucy/Environment resolution and server
 layout preparation are implemented. Stratum Agent remains the outer process
 lifecycle owner.
 
+After the MCDR directory layout is explicitly prepared, the Agent package can
+optionally serialize the validated contract to
+`work/mcdr/mcdr-config-stub.json`. This atomically written, idempotent file is a
+Stratum planning manifest only. Its field names identify future `config.yml`,
+`server.properties`, and `eula.txt` paths as planned paths; writing it does not
+create those files, install MCDR, invoke Python/Lucy, or start MCDR or
+Minecraft.
+
 ## Environment Metadata
 
 Environment is a Controller-owned metadata concept that describes the intended

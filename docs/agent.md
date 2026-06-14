@@ -244,6 +244,10 @@ no `config.yml`, `server.properties`, or `eula.txt`, invokes neither Python nor
 Lucy, installs nothing, and starts no MCDR or Minecraft process. A future Agent
 step may render real configuration only after dependency resolution and server
 layout preparation are ready; Agent process supervision remains authoritative.
+The validated stub may be atomically serialized as the optional informational
+`work/mcdr/mcdr-config-stub.json` manifest. That file is a Stratum plan, not
+MCDR `config.yml` or Minecraft `server.properties`, and writing it has no
+process, installation, dependency-resolution, or runtime lifecycle effects.
 
 ## Local fake agent
 
