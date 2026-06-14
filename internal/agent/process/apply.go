@@ -5,9 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -59,7 +61,12 @@ func DryRunArtifactApply(ctx context.Context, runtimeRoot string, req agent.Arti
 		result.Status = "not_ready"
 		return result, nil
 	}
-	sourcePath := filepath.Join(layout.ArtifactsDir, entry.Path)
+	sourcePath, sourceRelativePath, err := resolveMaterializedSourcePath(layout, *entry)
+	if err != nil {
+		result.Issues = append(result.Issues, fmt.Sprintf("unsafe materialized artifact source: %v", err))
+		result.Status = "error"
+		return result, nil
+	}
 	if _, err := os.Stat(sourcePath); err != nil {
 		result.Issues = append(result.Issues, "materialized artifact file missing")
 		result.Status = "not_ready"
@@ -94,7 +101,7 @@ func DryRunArtifactApply(ctx context.Context, runtimeRoot string, req agent.Arti
 		return result, nil
 	}
 	plannedTarget := filepath.Join(targetRoot, targetPath)
-	result.SourceRuntimeRelativePath = filepath.Join("artifacts", entry.Path)
+	result.SourceRuntimeRelativePath = filepath.ToSlash(filepath.Join("artifacts", sourceRelativePath))
 	result.PlannedTargetRuntimeRelativePath = plannedTarget
 	result.Status = "ready"
 	return result, nil
@@ -114,7 +121,15 @@ func ExecuteArtifactApply(ctx context.Context, runtimeRoot string, req agent.Art
 		return result, nil
 	}
 	layout, _ := NewSessionRuntimeLayout(runtimeRoot, req.SessionID)
-	sourcePath := filepath.Join(layout.SessionRoot, dryRun.SourceRuntimeRelativePath)
+	sourcePath, err := resolvePathUnderRoot(layout.SessionRoot, dryRun.SourceRuntimeRelativePath)
+	if err != nil || !pathWithin(layout.ArtifactsDir, sourcePath) {
+		result.Issues = append(result.Issues, "computed source escapes artifact root")
+		return result, nil
+	}
+	if err := rejectSymlinkPath(layout.ArtifactsDir, sourcePath); err != nil {
+		result.Issues = append(result.Issues, fmt.Sprintf("unsafe materialized artifact source: %v", err))
+		return result, nil
+	}
 	targetRoot := mapTargetRootForExecution(req.TargetRoot, layout.WorkDir)
 	if targetRoot == "" {
 		result.Issues = append(result.Issues, "unsupported target root")
@@ -167,6 +182,54 @@ func ExecuteArtifactApply(ctx context.Context, runtimeRoot string, req agent.Art
 		result.Issues = append(result.Issues, fmt.Sprintf("cannot write applied manifest: %v", err))
 	}
 	return result, nil
+}
+
+func resolveMaterializedSourcePath(layout SessionRuntimeLayout, entry StagedRuntimeItem) (string, string, error) {
+	sourcePath, err := resolvePathUnderRoot(layout.ArtifactsDir, entry.Name)
+	if err != nil {
+		return "", "", err
+	}
+	if err := rejectSymlinkPath(layout.ArtifactsDir, sourcePath); err != nil {
+		return "", "", err
+	}
+	if entry.Path != "" {
+		manifestPath := filepath.Clean(entry.Path)
+		if !filepath.IsAbs(manifestPath) {
+			manifestPath, err = resolvePathUnderRoot(layout.ArtifactsDir, entry.Path)
+			if err != nil {
+				return "", "", fmt.Errorf("invalid manifest path: %w", err)
+			}
+		}
+		if manifestPath != sourcePath {
+			return "", "", errors.New("manifest path does not match materialized source")
+		}
+	}
+	relative, err := filepath.Rel(layout.ArtifactsDir, sourcePath)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve materialized source path: %w", err)
+	}
+	return sourcePath, relative, nil
+}
+
+func resolvePathUnderRoot(root, relativePath string) (string, error) {
+	normalized := strings.ReplaceAll(strings.TrimSpace(relativePath), `\`, "/")
+	if normalized == "" || path.IsAbs(normalized) || filepath.IsAbs(filepath.FromSlash(normalized)) || hasWindowsVolumePrefix(normalized) {
+		return "", errors.New("source path must be relative")
+	}
+	clean := path.Clean(normalized)
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+		return "", errors.New("source path escapes artifact root")
+	}
+	root = filepath.Clean(root)
+	candidate := filepath.Join(root, filepath.FromSlash(clean))
+	if !pathWithin(root, candidate) {
+		return "", errors.New("source path escapes artifact root")
+	}
+	return candidate, nil
+}
+
+func hasWindowsVolumePrefix(value string) bool {
+	return len(value) >= 2 && ((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) && value[1] == ':'
 }
 
 func hashFile(path string) (string, int64, error) {

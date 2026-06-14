@@ -157,6 +157,97 @@ func TestExecuteArtifactApplyCopiesFile(t *testing.T) {
 	}
 }
 
+func TestResolvePathUnderRootNormalizesManifestSeparators(t *testing.T) {
+	root := t.TempDir()
+	got, err := resolvePathUnderRoot(root, `mods\nested/test.jar`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(root, "mods", "nested", "test.jar")
+	if got != want {
+		t.Fatalf("path = %q, want %q", got, want)
+	}
+}
+
+func TestResolvePathUnderRootRejectsAbsoluteAndTraversal(t *testing.T) {
+	root := t.TempDir()
+	for _, source := range []string{
+		filepath.Join(root, "test.jar"),
+		"C:/runtime/session/artifacts/test.jar",
+		`C:\runtime\session\artifacts\test.jar`,
+		"/runtime/session/artifacts/test.jar",
+		"../test.jar",
+		`..\test.jar`,
+		"nested/../../test.jar",
+	} {
+		t.Run(source, func(t *testing.T) {
+			if _, err := resolvePathUnderRoot(root, source); err == nil {
+				t.Fatalf("source path %q was accepted", source)
+			}
+		})
+	}
+}
+
+func TestDryRunArtifactApplyUsesMaterializedSourceNotApplyTarget(t *testing.T) {
+	root := t.TempDir()
+	layout, _ := NewSessionRuntimeLayout(root, "session-1")
+	if err := layout.Create(); err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte("materialized source")
+	hash := "5c4da2ddc912f5df005c826d86957e3a0f4fd0d583cadd9bbfc600b10c804576"
+	sourcePath := filepath.Join(layout.ArtifactsDir, "source", "artifact.jar")
+	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sourcePath, payload, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	entry := StagedRuntimeItem{ID: "item-1", StagingPlanID: "plan-1", ArtifactID: "artifact-1", Name: "source/artifact.jar", Path: sourcePath, Kind: "artifact", PayloadHash: hash, PayloadSize: int64(len(payload)), CreatedAt: time.Now()}
+	if err := layout.Staging().WriteArtifactManifest([]StagedRuntimeItem{entry}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	request := agent.ArtifactApplyDryRunRequest{ApplyPlanID: "apply-1", SessionID: "session-1", StagingPlanID: "plan-1", TargetRoot: "mods", TargetRelativePath: "different-target.jar"}
+	result, err := DryRunArtifactApply(context.Background(), root, request, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "ready" {
+		t.Fatalf("status = %q, issues = %v", result.Status, result.Issues)
+	}
+	if result.SourceRuntimeRelativePath != "artifacts/source/artifact.jar" {
+		t.Fatalf("source = %q", result.SourceRuntimeRelativePath)
+	}
+}
+
+func TestExecuteArtifactApplyWithMaterializationManifestAbsolutePath(t *testing.T) {
+	root := t.TempDir()
+	materialization := materializationRequest([]byte("artifact"))
+	if _, err := MaterializeArtifact(context.Background(), root, materialization, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	request := agent.ArtifactApplyExecuteRequest{
+		ApplyPlanID:        "apply-1",
+		SessionID:          materialization.SessionID,
+		StagingPlanID:      materialization.StagingPlanID,
+		ArtifactID:         materialization.ArtifactID,
+		TargetRoot:         "mods",
+		TargetRelativePath: "applied.jar",
+		ExpectedHash:       materialization.PayloadHash,
+		ExpectedSize:       materialization.PayloadSize,
+	}
+	result, err := ExecuteArtifactApply(context.Background(), root, request, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "applied" {
+		t.Fatalf("status = %q, issues = %v", result.Status, result.Issues)
+	}
+	if _, err := os.Stat(result.TargetPath); err != nil {
+		t.Fatalf("target missing: %v", err)
+	}
+}
+
 func TestExecuteArtifactApplyFailsWhenDryRunNotReady(t *testing.T) {
 	root := t.TempDir()
 	ctx := context.Background()
