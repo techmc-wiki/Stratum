@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/stratummc/stratum/internal/agent"
@@ -349,6 +350,9 @@ func (s *Service) start(ctx context.Context, id, actor string) error {
 			metadataMap["environmentMaterializationManifest"] = manifestPath
 		}
 		setOperationMetadata(ctx, metadataMap)
+		if readinessErr := s.checkRuntimeReadiness(ctx, value.ID); readinessErr != nil {
+			return s.failWithAgent(ctx, "start", value, actor, session.StateRunning, readinessErr, agentResult)
+		}
 		result, callErr := s.agent.StartSession(ctx, agentRequest(ctx, value))
 		if callErr != nil {
 			return s.failWithAgent(ctx, "start", value, actor, session.StateRunning, callErr, agentResult)
@@ -498,6 +502,9 @@ func (s *Service) restart(ctx context.Context, id, actor string) error {
 			metadataMap["environmentMaterializationManifest"] = manifestPath
 		}
 		setOperationMetadata(ctx, metadataMap)
+		if readinessErr := s.checkRuntimeReadiness(ctx, value.ID); readinessErr != nil {
+			return s.failWithAgent(ctx, "restart", value, actor, session.StateRunning, readinessErr, nil)
+		}
 		result, callErr := s.agent.RestartSession(ctx, agentRequest(ctx, value))
 		if callErr != nil {
 			return s.failWithAgent(ctx, "restart", value, actor, session.StateRunning, callErr, nil)
@@ -510,6 +517,35 @@ func (s *Service) restart(ctx context.Context, id, actor string) error {
 	}
 	value.LastActiveAt = s.now()
 	return s.persistAgentSuccess(ctx, "restart", previous, value, actor, agentResult)
+}
+
+func (s *Service) checkRuntimeReadiness(ctx context.Context, sessionID string) error {
+	readiness, err := s.agent.SessionReadyForStart(ctx, sessionID)
+	if err != nil {
+		setOperationMetadata(ctx, map[string]string{"runtimeReadinessStatus": "error", "runtimeReadinessReady": "false", "runtimeReadinessIssues": err.Error()})
+		return fmt.Errorf("check Agent runtime readiness: %w", err)
+	}
+	issues := make([]string, 0, len(readiness.Issues))
+	for _, issue := range readiness.Issues {
+		issues = append(issues, issue.Code)
+	}
+	summary := readiness.RuntimeStatusSummary
+	setOperationMetadata(ctx, map[string]string{
+		"runtimeReadinessStatus":                    readiness.Status,
+		"runtimeReadinessReady":                     fmt.Sprintf("%t", readiness.Ready),
+		"runtimeReadinessIssues":                    strings.Join(issues, ","),
+		"runtimeReadinessProcessState":              summary.ProcessState,
+		"runtimeReadinessEnvironmentManifestExists": fmt.Sprintf("%t", summary.EnvironmentManifestExists),
+		"runtimeReadinessAppliedTotal":              fmt.Sprintf("%d", summary.AppliedArtifactsTotal),
+		"runtimeReadinessAppliedValid":              fmt.Sprintf("%d", summary.AppliedArtifactsValid),
+		"runtimeReadinessAppliedMissing":            fmt.Sprintf("%d", summary.AppliedArtifactsMissing),
+		"runtimeReadinessAppliedCorrupted":          fmt.Sprintf("%d", summary.AppliedArtifactsCorrupted),
+		"runtimeReadinessAppliedError":              fmt.Sprintf("%d", summary.AppliedArtifactsError),
+	})
+	if !readiness.Ready {
+		return fmt.Errorf("Agent runtime is not ready for start: status=%s issues=%s", readiness.Status, strings.Join(issues, ","))
+	}
+	return nil
 }
 
 func (s *Service) freeze(ctx context.Context, id, actor string) error {

@@ -81,6 +81,19 @@ does not download files, does not call Lucy, and does not start MCDR or
 Minecraft. It prepares runtime directory structure and writes an informational
 manifest at `config/environment-materialization.json`.
 
+## Runtime Readiness During Start
+
+After successful Environment materialization, session start and restart
+Operations call the Agent's read-only `SessionReadyForStart` predicate before
+runtime launch. A not-ready result or Agent error fails the Operation without
+calling Agent start/restart or changing the Controller Session to running.
+
+Operation and lifecycle audit metadata include `runtimeReadinessStatus`,
+`runtimeReadinessReady`, `runtimeReadinessIssues`, process state, Environment
+manifest presence, and applied artifact valid/missing/corrupted/error counts.
+This check does not repair, install, clean up, or execute anything and does not
+start MCDR or Minecraft.
+
 ## Manual Reconciliation Operations
 
 Reconciliation is an explicit human-confirmed metadata repair. Supported

@@ -217,8 +217,18 @@ missing, corrupted, or unverifiable applied artifacts. An Environment that
 requires MCDR also requires the prepared MCDR layout root.
 
 This predicate does not validate Java or Minecraft installation and does not
-materialize, repair, install, start, stop, or execute anything. The Controller
-does not consume it during start/restart yet.
+materialize, repair, install, start, stop, or execute anything.
+
+## Runtime Readiness During Start
+
+After Environment materialization, Controller start and restart operations call
+the Agent readiness predicate before `StartSession` or `RestartSession`. A
+not-ready response or unreachable readiness endpoint fails the Operation before
+runtime launch and preserves the existing Controller Session state. Readiness
+issues are retained in Operation and audit metadata for diagnostics.
+
+The Controller does not repair files, clean up artifacts, install dependencies,
+or start MCDR or Minecraft as part of this check.
 
 ## Runtime Artifact and Config Staging
 

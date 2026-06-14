@@ -84,7 +84,9 @@ Minecraft server.
 - Agent-side read-only Session start readiness predicate. It summarizes runtime
   directories, Environment manifest status, process state, required MCDR layout,
   and applied artifact verification without repairing, installing, or starting
-  anything. Controller start/restart integration remains future work.
+  anything. Controller start/restart calls the predicate after Environment
+  materialization and blocks runtime launch when readiness fails, recording
+  diagnostics in Operation metadata.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active

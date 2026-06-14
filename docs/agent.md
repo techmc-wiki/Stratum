@@ -197,8 +197,17 @@ directories, the prepared Environment manifest, process state, optional MCDR
 layout, and applied artifact integrity are suitable for a future start attempt.
 
 The predicate does not materialize, repair, install, apply, clean up, start,
-stop, or execute anything. Controller lifecycle integration remains future
-work.
+stop, or execute anything. The Controller calls it after Environment
+materialization and before Agent start/restart runtime launch.
+
+## Runtime Readiness During Start
+
+Controller start and restart operations consume `SessionReadyForStart` after
+Environment materialization. A not-ready response or Agent error blocks runtime
+launch, leaves Controller Session state unchanged, and records readiness status,
+issue codes, process state, Environment manifest presence, and applied artifact
+counts in Operation metadata. The check performs no repair or cleanup and does
+not start MCDR or Minecraft.
 
 ## Why Agent controls MCDR, not the other way around
 
