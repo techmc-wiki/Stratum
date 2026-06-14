@@ -399,7 +399,68 @@ layout. Apply execution is invoked through the Agent API at
 go run ./cmd/stratum --data-dir .stratum/data --agent-url http://127.0.0.1:8787 artifacts apply execute --plan <apply-plan-id> --actor bryan
 ```
 
+After successful apply, the Agent writes an applied artifact record to
+`artifacts/applied-artifacts.json` inside the session runtime layout. Each
+record includes apply plan ID, session ID, artifact ID, staging plan ID, source
+and target runtime relative paths, target root, target relative path, payload
+algorithm, payload hash, payload size, action (copied or already_present),
+status, actor ID (if available), and applied timestamp.
+
 Checkpoint creation and rollback remain future work.
+
+### Inspecting Applied Artifacts
+
+Applied artifact inspection is read-only. It reports which files were copied
+into runtime target paths. Inspection does not load, install, execute, or
+activate artifacts:
+
+```powershell
+go run ./cmd/stratum --data-dir .stratum/data --agent-url http://127.0.0.1:8787 sessions applied-artifacts --id demo-session
+
+go run ./cmd/stratum --data-dir .stratum/data --agent-url http://127.0.0.1:8787 sessions applied-artifacts inspect --id demo-session --plan <apply-plan-id>
+```
+
+The list command returns all applied artifact records for a session. Missing
+manifest returns empty list. The inspect command returns one record by apply
+plan ID. Missing record returns not-found error. Malformed manifest returns
+structured error.
+
+Inspection does not verify file integrity, repair target files, delete applied
+artifacts, create operations, or create audit events beyond existing read-only
+diagnostics. Cleanup, rollback, checkpointing, Lucy integration, MCDR
+integration, and Minecraft runtime hot-reload remain future work.
+
+### Verifying Applied Artifacts
+
+Applied artifact verification is read-only. It recomputes the SHA-256 hash of
+the applied target file and checks target file integrity against the
+Agent-owned applied artifact manifest:
+
+```powershell
+go run ./cmd/stratum --data-dir .stratum/data --agent-url http://127.0.0.1:8787 sessions applied-artifacts verify --id demo-session --plan <apply-plan-id>
+```
+
+Verification is intended to detect runtime target corruption or manual
+tampering after apply execution. Missing manifest returns not-found. Missing
+apply plan entry returns not-found. Missing target file returns status=missing.
+Hash mismatch returns status=corrupted. Hash match returns status=valid. The
+CLI exits non-zero when status is not valid.
+
+Verification does not install, load, execute, repair, or hot-reload artifacts.
+
+### Batch Verification of Applied Artifacts
+
+Batch verification is read-only. It recomputes SHA-256 hash for every applied
+target file in the session manifest and checks target file integrity:
+
+```powershell
+go run ./cmd/stratum --data-dir .stratum/data --agent-url http://127.0.0.1:8787 sessions applied-artifacts verify-all --id demo-session
+```
+
+Batch verification is intended for operator health checks before runtime start
+or future checkpoint/apply workflows. Missing manifest returns empty summary.
+The CLI exits non-zero when any entry is not valid. Batch verification does not
+install, load, execute, repair, or hot-reload artifacts.
 
 ### Pre-start Artifact Readiness Gate
 

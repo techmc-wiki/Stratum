@@ -302,6 +302,78 @@ layout. The result includes status (applied or failed), action (currently copy),
 source and target absolute paths, copied bytes, verified target hash, and issues
 list. Checkpoint creation and rollback remain future work.
 
+After successful apply, the Agent writes an applied artifact record to
+`artifacts/applied-artifacts.json` inside the session runtime layout. Each
+record includes apply plan ID, session ID, artifact ID, staging plan ID, source
+and target runtime relative paths, target root, target relative path, payload
+algorithm, payload hash, payload size, action (copied or already_present),
+status, actor ID (if available), and applied timestamp.
+
+## Inspecting Applied Artifacts
+
+Applied artifact inspection is read-only. It reports which files were copied
+into runtime target paths. Inspection does not load, install, execute, or
+activate artifacts.
+
+Agents expose two read-only endpoints:
+
+- List applied artifacts: `GET /v1/sessions/{id}/applied-artifacts`
+- Inspect one applied artifact: `GET /v1/sessions/{id}/applied-artifacts/{apply_plan_id}`
+
+The list endpoint returns all applied artifact records for a session. Missing
+manifest returns empty list. The inspect endpoint returns one record by apply
+plan ID. Missing record returns not-found. Malformed manifest returns structured
+error.
+
+Inspection does not verify file integrity, repair target files, delete applied
+artifacts, create operations, or create audit events beyond existing read-only
+diagnostics. Cleanup, rollback, checkpointing, Lucy integration, MCDR
+integration, and Minecraft runtime hot-reload remain future work.
+
+## Verifying Applied Artifacts
+
+Applied artifact verification is read-only. It recomputes the SHA-256 hash of
+the applied target file and checks target file integrity against the
+Agent-owned applied artifact manifest. Verification is intended to detect
+runtime target corruption or manual tampering after apply execution.
+
+Agents expose one verification endpoint:
+
+- Verify applied artifact: `GET /v1/sessions/{id}/applied-artifacts/{apply_plan_id}/verify`
+
+The verification endpoint returns:
+
+- session_id, apply_plan_id, artifact_id, staging_plan_id
+- target_root, target_relative_path, target_runtime_relative_path
+- payload_algorithm, expected_hash, actual_hash, payload_size, actual_size
+- status: valid, missing, corrupted, error
+- verified_at, error_message
+
+Verification does not install, load, execute, repair, or hot-reload artifacts.
+Missing manifest returns not-found. Missing apply plan entry returns not-found.
+Missing target file returns status=missing. Hash mismatch returns
+status=corrupted. Hash match returns status=valid. Unsafe session ID or apply
+plan ID is rejected. Target path escaping session layout fails safely with
+status=error.
+
+## Batch Verification of Applied Artifacts
+
+Batch verification is read-only. It recomputes SHA-256 hash for every applied
+target file in the session manifest and checks target file integrity. Agents
+expose one batch verification endpoint:
+
+- Verify all applied artifacts: `GET /v1/sessions/{id}/applied-artifacts/verify`
+
+The batch verification endpoint returns:
+
+- session_id, verified_at
+- total, valid_count, missing_count, corrupted_count, error_count
+- entries array with per-entry verification results (same fields as single-entry verification)
+
+Batch verification is intended for operator health checks before runtime start
+or future checkpoint/apply workflows. Missing manifest returns empty summary.
+Malformed manifest returns structured error. Batch verification does not
+install, load, execute, repair, or hot-reload artifacts.
 
 ## Pre-start Artifact Readiness Gate
 

@@ -50,6 +50,22 @@ Minecraft server.
   artifacts to computed runtime target paths (mods, config, datapacks, plugins,
   schematics, worlds, custom) without installing, loading, or executing
   artifacts in a running Minecraft server.
+- Agent-side read-only inspection of applied artifact records. The Agent writes
+  an applied artifact manifest (`artifacts/applied-artifacts.json`) after each
+  successful apply execution. Inspection commands list all applied artifacts for
+  a session or inspect one record by apply plan ID. Inspection does not verify,
+  repair, delete, install, load, or execute artifacts.
+- Agent-side read-only verification of applied artifact target integrity.
+  Verification recomputes SHA-256 hash of the applied target file and checks
+  integrity against the applied artifact manifest. Verification detects runtime
+  target corruption or manual tampering. Verification does not repair, install,
+  load, or execute artifacts.
+- Agent-side read-only batch verification of all applied artifacts in a session.
+  Batch verification recomputes SHA-256 hash for every applied target file in
+  the session manifest and checks target file integrity. Batch verification is
+  intended for operator health checks before runtime start or future
+  checkpoint/apply workflows. Batch verification does not install, load,
+  execute, repair, or hot-reload artifacts.
 - Read-only pre-start artifact readiness gate for remote Session start. It
   combines staging readiness and applied artifact verification, records the
   result in Operation/audit metadata, and blocks unsafe startup before Agent
