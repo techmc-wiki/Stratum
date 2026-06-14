@@ -1459,3 +1459,29 @@ func TestProjectPersistsAcrossRuns(t *testing.T) {
 		t.Fatalf("stdout=%q", stdout.String())
 	}
 }
+
+func TestEnvironmentCreateListInspect(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	args := []string{"--data-dir", dataDirectory, "environments", "create", "--id", "env-1-17-fabric", "--name", "1.17 Fabric Carpet", "--minecraft-version", "1.17.1", "--loader", "fabric", "--server-core", "carpet"}
+	if code := Run(args, &stdout, &stderr); code != 0 {
+		t.Fatalf("create: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "env-1-17-fabric") {
+		t.Fatalf("stdout=%q", stdout.String())
+	}
+	stdout.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "environments", "list"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("list: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "env-1-17-fabric") || !strings.Contains(stdout.String(), "1.17 Fabric Carpet") {
+		t.Fatalf("stdout=%q", stdout.String())
+	}
+	stdout.Reset()
+	if code := Run([]string{"--data-dir", dataDirectory, "environments", "inspect", "--id", "env-1-17-fabric"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("inspect: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "env-1-17-fabric") || !strings.Contains(stdout.String(), "1.17.1") {
+		t.Fatalf("stdout=%q", stdout.String())
+	}
+}

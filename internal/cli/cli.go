@@ -119,6 +119,12 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return artifactStaging(ctx, store, *artifactBlobRoot, agentClient, agentMode, strings.TrimSpace(*agentURL) != "", command[2:], stdout, stderr)
 	case "artifacts apply":
 		return artifactApply(ctx, store, agentClient, command[2:], stdout, stderr)
+	case "environments create":
+		return createEnvironment(ctx, store, command[2:], stdout, stderr)
+	case "environments list":
+		return listEnvironments(ctx, store, stdout, stderr)
+	case "environments inspect":
+		return inspectEnvironment(ctx, store, command[2:], stdout, stderr)
 	case "operations list":
 		return listOperations(ctx, store, command[2:], stdout, stderr)
 	case "operations inspect":
@@ -180,7 +186,7 @@ func createRoom(ctx context.Context, store *filesystem.Store, args []string, std
 	id := flags.String("id", "", "room ID")
 	projectID := flags.String("project", "", "project ID")
 	name := flags.String("name", "", "room name")
-	environmentID := flags.String("environment", environment.MVP117Fabric().ID, "environment ID")
+	environmentID := flags.String("environment", "", "environment ID")
 	baseWorld := flags.String("base-world", "base-world:unconfigured", "immutable base-world reference")
 	if err := flags.Parse(args); err != nil {
 		return 2
@@ -240,7 +246,7 @@ func createSession(ctx context.Context, store *filesystem.Store, args []string, 
 	if _, err := store.GetProject(ctx, *projectID); err != nil {
 		return reportError(stderr, "find project", err)
 	}
-	environmentID := environment.MVP117Fabric().ID
+	environmentID := ""
 	if *roomID != "" {
 		roomValue, err := store.GetRoom(ctx, *roomID)
 		if err != nil {
@@ -1312,16 +1318,15 @@ func inspectArtifactStaging(ctx context.Context, store *filesystem.Store, args [
 }
 
 func ensureEnvironment(ctx context.Context, store *filesystem.Store, id string) error {
+	if id == "" {
+		return nil
+	}
 	if _, err := store.GetEnvironment(ctx, id); err == nil {
 		return nil
 	} else if !stratumerrors.IsKind(err, stratumerrors.KindNotFound) {
 		return err
 	}
-	defaultEnvironment := environment.MVP117Fabric()
-	if id != defaultEnvironment.ID {
-		return fmt.Errorf("environment %q is not registered", id)
-	}
-	return store.CreateEnvironment(ctx, defaultEnvironment)
+	return fmt.Errorf("environment %q is not registered", id)
 }
 
 func ensureResourcePolicy(ctx context.Context, store *filesystem.Store) (resourcepolicy.Policy, error) {
@@ -1690,6 +1695,77 @@ func sessionsAppliedArtifactsVerifyAll(ctx context.Context, agentClient agent.Ag
 	return 0
 }
 
+func createEnvironment(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("environments create", stderr)
+	id := flags.String("id", "", "")
+	name := flags.String("name", "", "")
+	minecraftVersion := flags.String("minecraft-version", "", "")
+	loaderType := flags.String("loader", string(environment.LoaderNone), "")
+	serverCore := flags.String("server-core", string(environment.ServerVanilla), "")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	env := environment.Environment{
+		ID:               *id,
+		Name:             *name,
+		MinecraftVersion: *minecraftVersion,
+		LoaderType:       environment.LoaderType(*loaderType),
+		ServerCore:       environment.ServerCore(*serverCore),
+		CreatedAt:        time.Now().UTC(),
+		UpdatedAt:        time.Now().UTC(),
+	}
+	if err := env.Validate(); err != nil {
+		fmt.Fprintf(stderr, "validation error: %v\n", err)
+		return 1
+	}
+	if err := store.CreateEnvironment(ctx, env); err != nil {
+		fmt.Fprintf(stderr, "create environment error: %v\n", err)
+		return 1
+	}
+	eventID, _ := util.NewID("audit")
+	event, _ := audit.NewEvent(eventID, "cli", "environment.created", "environment", env.ID, time.Now().UTC())
+	event.Metadata = map[string]string{"environmentId": env.ID, "name": env.Name, "minecraftVersion": env.MinecraftVersion, "loaderType": string(env.LoaderType), "serverCore": string(env.ServerCore)}
+	_ = store.AppendAuditEvent(ctx, event)
+	fmt.Fprintf(stdout, "Environment created: %s\n", env.ID)
+	return 0
+}
+
+func listEnvironments(ctx context.Context, store *filesystem.Store, stdout, _ io.Writer) int {
+	environments, err := store.ListEnvironments(ctx)
+	if err != nil {
+		fmt.Fprintf(stdout, "list error: %v\n", err)
+		return 1
+	}
+	for _, env := range environments {
+		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\t%s\n", env.ID, env.Name, env.MinecraftVersion, env.LoaderType, env.ServerCore)
+	}
+	return 0
+}
+
+func inspectEnvironment(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("environments inspect", stderr)
+	id := flags.String("id", "", "")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	env, err := store.GetEnvironment(ctx, *id)
+	if err != nil {
+		fmt.Fprintf(stderr, "get environment error: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "ID:                  %s\n", env.ID)
+	fmt.Fprintf(stdout, "Name:                %s\n", env.Name)
+	fmt.Fprintf(stdout, "Minecraft Version:   %s\n", env.MinecraftVersion)
+	fmt.Fprintf(stdout, "Java Version:        %s\n", env.JavaVersion)
+	fmt.Fprintf(stdout, "Loader Type:         %s\n", env.LoaderType)
+	fmt.Fprintf(stdout, "Server Core:         %s\n", env.ServerCore)
+	fmt.Fprintf(stdout, "MCDR Required:       %t\n", env.MCDRRequired)
+	fmt.Fprintf(stdout, "Carpet Required:     %t\n", env.CarpetRequired)
+	fmt.Fprintf(stdout, "Runtime Profile ID:  %s\n", env.RuntimeProfileID)
+	fmt.Fprintf(stdout, "Created At:          %s\n", env.CreatedAt.Format(time.RFC3339))
+	return 0
+}
+
 func usage(writer io.Writer) {
-	fmt.Fprintln(writer, "usage: stratum [--data-dir PATH] [--artifact-blob-root PATH] [--agent-url URL] [--agent-token TOKEN] <projects|rooms|sessions|checkpoints|artifacts|operations|runtime-observations|agents> <command> [flags]")
+	fmt.Fprintln(writer, "usage: stratum [--data-dir PATH] [--artifact-blob-root PATH] [--agent-url URL] [--agent-token TOKEN] <projects|rooms|sessions|checkpoints|artifacts|environments|operations|runtime-observations|agents> <command> [flags]")
 }
