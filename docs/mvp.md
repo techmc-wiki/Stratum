@@ -8,6 +8,8 @@ Minecraft server.
 - Go repository skeleton and core domain models.
 - File-backed metadata storage and append-only audit history.
 - Session lifecycle service and resource-policy enforcement.
+- Successful Session start/restart RuntimeProfile selection persisted for
+  inspection and metadata-only checkpoint capture.
 - HTTP Controller-Agent transport.
 - Durable Operation coordination, idempotency, locking, and timeout records.
 - Agent Process Supervision Stub.

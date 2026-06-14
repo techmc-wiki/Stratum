@@ -48,7 +48,9 @@ Creation loads the Session and derives:
 * `environment_id` from Session.EnvironmentID
 * `runtime_profile_id` from Session.RuntimeProfileID (when available)
 
-RuntimeProfileID capture is metadata-only. It records the selected RuntimeProfile from Session metadata. It does not:
+RuntimeProfileID capture is metadata-only. It records the selected
+RuntimeProfile persisted on Session after a successful start or restart. It
+does not:
 
 * Snapshot runtime files or directories
 * Call the Agent to infer runtime state

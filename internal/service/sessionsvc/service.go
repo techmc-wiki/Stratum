@@ -181,9 +181,6 @@ func (s *Service) coordinate(ctx context.Context, action, id, actor string, inte
 	if err != nil {
 		return operation.Operation{}, false, err
 	}
-	if (action == "start" || action == "restart") && options.RuntimeProfileID == "" {
-		options.RuntimeProfileID = runtimeprofile.DefaultProfileID
-	}
 	metadata := map[string]string{}
 	if (action == "start" || action == "restart") && options.RuntimeProfileID != "" {
 		metadata["runtimeProfileId"] = options.RuntimeProfileID
@@ -288,12 +285,16 @@ func (s *Service) start(ctx context.Context, id, actor string) error {
 	if selectedProfileID == "" && env.RuntimeProfileID != "" {
 		selectedProfileID = env.RuntimeProfileID
 	}
+	if selectedProfileID == "" {
+		selectedProfileID = runtimeprofile.DefaultProfileID
+	}
 	profileMetadata := map[string]string{
 		"environmentId":                     env.ID,
 		"environmentRuntimeProfileId":       env.RuntimeProfileID,
 		"environmentRuntimeProfileRequired": fmt.Sprintf("%t", env.RuntimeProfileRequired),
 		"requestedRuntimeProfileId":         requestedProfileID,
 		"selectedRuntimeProfileId":          selectedProfileID,
+		"runtimeProfileId":                  selectedProfileID,
 	}
 	if env.RuntimeProfileRequired {
 		if env.RuntimeProfileID == "" {
@@ -362,6 +363,7 @@ func (s *Service) start(ctx context.Context, id, actor string) error {
 		}
 		agentResult = &result
 		s.applyAgentMetadata(ctx, &value, result)
+		value.RuntimeProfileID = selectedProfileID
 	}
 	if err := applyPath(&value, path); err != nil {
 		return s.fail(ctx, "start", value, actor, session.StateRunning, err)
@@ -447,12 +449,16 @@ func (s *Service) restart(ctx context.Context, id, actor string) error {
 	if selectedProfileID == "" && env.RuntimeProfileID != "" {
 		selectedProfileID = env.RuntimeProfileID
 	}
+	if selectedProfileID == "" {
+		selectedProfileID = runtimeprofile.DefaultProfileID
+	}
 	profileMetadata := map[string]string{
 		"environmentId":                     env.ID,
 		"environmentRuntimeProfileId":       env.RuntimeProfileID,
 		"environmentRuntimeProfileRequired": fmt.Sprintf("%t", env.RuntimeProfileRequired),
 		"requestedRuntimeProfileId":         requestedProfileID,
 		"selectedRuntimeProfileId":          selectedProfileID,
+		"runtimeProfileId":                  selectedProfileID,
 	}
 	if env.RuntimeProfileRequired {
 		if env.RuntimeProfileID == "" {
@@ -536,6 +542,7 @@ func (s *Service) restart(ctx context.Context, id, actor string) error {
 		}
 		agentResult = &result
 		s.applyAgentMetadata(ctx, &value, result)
+		value.RuntimeProfileID = selectedProfileID
 	}
 	if err := applyPath(&value, path); err != nil {
 		return s.fail(ctx, "restart", value, actor, session.StateRunning, err)

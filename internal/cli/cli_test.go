@@ -84,6 +84,9 @@ func TestCLIUsesHTTPAgentWhenConfigured(t *testing.T) {
 		if code := Run(args, &stdout, &stderr); code != 0 {
 			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
 		}
+		if reflect.DeepEqual(command[:2], []string{"sessions", "inspect"}) && !strings.Contains(stdout.String(), "sessionRuntimeProfile=dummy-process") {
+			t.Fatalf("session inspect output = %q", stdout.String())
+		}
 	}
 	store, err := filesystem.New(dataDirectory)
 	if err != nil {

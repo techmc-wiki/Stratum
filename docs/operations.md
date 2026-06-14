@@ -12,6 +12,12 @@ Lifecycle commands accept `--idempotency-key`, `--request-id`, and `--operation-
 
 A timeout marks the operation `timed_out`; session metadata is changed only after the underlying lifecycle action succeeds.
 
+Successful Session start and restart operations record
+`selectedRuntimeProfileId` in lifecycle metadata and persist the same selection
+to Session `runtimeProfileId` after the Agent's final start succeeds. A failed
+attempt may report the selected profile for diagnosis, but it does not replace
+the Session's previously persisted profile.
+
 Runtime observation persists diagnostic RuntimeObservation records and audit
 events, but does not create an Operation or mutate Session state.
 

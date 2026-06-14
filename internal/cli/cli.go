@@ -419,8 +419,8 @@ func inspectSession(ctx context.Context, store *filesystem.Store, agentClient ag
 	if err != nil {
 		return reportError(stderr, "inspect session agent", err)
 	}
-	fmt.Fprintf(stdout, "id=%s project=%s room=%s type=%s state=%s agent=%s agentStatus=%s runtimeMessage=%q endpoint=%s observed=%s process=%s runtimeProfile=%s runtimeType=%s runtimeMode=%s pid=%d running=%t crashed=%t exitCode=%s runtimeError=%q sessionRoot=%s workDir=%s logsDir=%s\n",
-		value.ID, value.ProjectID, value.RoomID, value.Type, value.State, value.AssignedAgentID,
+	fmt.Fprintf(stdout, "id=%s project=%s room=%s type=%s state=%s sessionRuntimeProfile=%s agent=%s agentStatus=%s runtimeMessage=%q endpoint=%s observed=%s process=%s runtimeProfile=%s runtimeType=%s runtimeMode=%s pid=%d running=%t crashed=%t exitCode=%s runtimeError=%q sessionRoot=%s workDir=%s logsDir=%s\n",
+		value.ID, value.ProjectID, value.RoomID, value.Type, value.State, value.RuntimeProfileID, value.AssignedAgentID,
 		value.LastAgentStatus, value.LastRuntimeMessage, value.RuntimeEndpoint, observed.Status, observed.ProcessID,
 		observed.RuntimeProfileID, observed.RuntimeType, observed.RuntimeMode, observed.PID, observed.Running, observed.Crashed, optionalInt(observed.ExitCode), observed.LastError, observed.SessionRoot, observed.WorkDir, observed.LogsDir)
 	return 0

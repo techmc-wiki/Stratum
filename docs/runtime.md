@@ -799,12 +799,15 @@ selection remain future work.
 
 Session start and restart validate Environment/RuntimeProfile compatibility:
 
-- If Environment declares `runtimeProfileId`, sessions may use it as the default
-  when no explicit runtime profile is requested.
+- RuntimeProfile selection uses an explicit request first, then the
+  Environment's `runtimeProfileId`, then the built-in default profile.
 - If Environment declares `runtimeProfileRequired: true`, the session must use
   the Environment's `runtimeProfileId`. Explicit mismatches fail before Agent
   start.
 - Missing Environment blocks start with a clear error.
+- After the Agent's final start succeeds, Session `runtimeProfileId` records the
+  selected profile. Failed start or restart attempts do not replace the
+  previously stored value.
 - Compatibility validation sets Operation metadata:
   - `environmentId`
   - `environmentRuntimeProfileId`
@@ -818,7 +821,7 @@ This validation is metadata-only. It does not:
 
 - Install Java, Minecraft, Fabric, Carpet, or MCDR
 - Call Lucy for dependency resolution
-- Launch MCDR or Minecraft
+- Launch MCDR or Minecraft directly from the Controller
 - Validate host availability
 - Resolve or materialize artifacts
 
