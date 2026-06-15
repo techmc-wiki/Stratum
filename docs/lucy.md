@@ -97,6 +97,30 @@ Future implementations may replace CLIAdapter with Lucy Go package adapter or
 other integration strategies without changing Stratum Controller or Agent
 behavior.
 
+## Stratum Metadata to Lucy DTO Mapping
+
+Stratum maps Environment and Artifact metadata into Lucy adapter DTOs via the
+`lucybridge` package. This mapping is local and non-executing. It does not call
+Lucy, resolve packages, download files, or write manifests.
+
+`EnvironmentToSpec` maps Stratum Environment to `lucy.EnvironmentSpec`:
+environment_id, minecraft_version, java_version, loader_type, loader_version,
+server_core, carpet_required, mcdr_required, runtime_profile_id, and safe
+metadata subset. Mapped spec is validated before returning.
+
+`ArtifactToLocalRef` maps Stratum Artifact to `lucy.LocalArtifactRef`:
+artifact_id, payload_algorithm, payload_hash, payload_size, artifact_type,
+runtime_name, and safe metadata subset. Runtime_name traversal is rejected via
+validation. Mapped ref is validated before returning.
+
+PackageRef population and real dependency resolution remain future work. Empty
+Packages slice is acceptable; future Lucy manifest or provider work will
+populate package dependencies.
+
+LocalArtifactRef lets future Lucy providers reason about already-approved
+Stratum artifacts without owning Artifact lifecycle, blob storage, or approval
+workflow.
+
 ## Future Adapter Paths
 
 Possible implementations include:
