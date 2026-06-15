@@ -121,6 +121,28 @@ LocalArtifactRef lets future Lucy providers reason about already-approved
 Stratum artifacts without owning Artifact lifecycle, blob storage, or approval
 workflow.
 
+## Safe Exec CommandRunner
+
+`ExecCommandRunner` is a generic bounded process runner for future Lucy CLI
+adapters. It implements the `CommandRunner` interface using `os/exec.CommandContext`.
+It uses argv directly without shell execution, captures bounded stdout and
+stderr separately, supports timeout and cancellation via context, enforces max
+output bytes per stream, returns exit code and timeout status in `CommandResult`,
+and respects working directory and environment when explicitly provided.
+
+Security boundaries: empty command path rejected, no shell parsing, arguments
+passed literally to child process, output size bounded, context cancellation
+respected, no automatic logging of stdout/stderr or secrets.
+
+Tests use Go test helper process pattern for cross-platform behavior without
+requiring real Lucy binary. Context cancellation behavior is platform-dependent
+and tested manually.
+
+`ExecCommandRunner` does not require or invoke real Lucy unless explicitly
+configured later. It does not resolve packages, download files, write manifests,
+or alter runtime behavior by itself. It is a safe reusable building block for
+CLIAdapter or future process-based integrations.
+
 ## Future Adapter Paths
 
 Possible implementations include:
