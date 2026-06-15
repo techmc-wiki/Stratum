@@ -163,7 +163,10 @@ Controller's lifecycle manager.
   `work/mcdr/mcdr-config-stub.json` planning manifest. It does not write real
   MCDR or Minecraft configuration, install dependencies, invoke Python/Lucy,
   or start processes. Read-only inspection via `InspectConfigStubManifest`
-  validates manifest integrity without modification.
+  validates manifest integrity without modification. CLI command `stratum
+  sessions mcdr-config-stub inspect` validates Stratum planning manifest
+  integrity only, not real MCDR config.yml. Exits 0 only when manifest exists
+  and is valid.
 - Standard-library tests for core behavior.
 
 ## Deferred

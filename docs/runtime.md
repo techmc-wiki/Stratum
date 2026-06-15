@@ -735,6 +735,13 @@ modifying the file. It does not validate real MCDR config.yml, generate files,
 install MCDR, or start runtimes. Future Controller readiness checks may consume
 this inspection.
 
+The CLI command `stratum sessions mcdr-config-stub inspect --id <session-id>
+--agent-url <url>` calls the Agent HTTP endpoint `GET
+/v1/sessions/{id}/mcdr-config-stub` to validate Stratum planning manifest
+integrity. It does not validate real MCDR config.yml, generate config.yml or
+server.properties or eula.txt, install MCDR, invoke Python, call Lucy, or start
+runtimes. Exits 0 only when the manifest exists and is valid.
+
 ## Environment Metadata
 
 Environment is a Controller-owned metadata concept that describes the intended

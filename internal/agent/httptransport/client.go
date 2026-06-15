@@ -455,3 +455,22 @@ func (c *Client) SessionReadyForStart(ctx context.Context, sessionID string) (ag
 		},
 	}, nil
 }
+
+func (c *Client) InspectMCDRConfigStub(ctx context.Context, sessionID string) (agent.MCDRConfigStubInspection, error) {
+	var dto MCDRConfigStubInspectionDTO
+	if err := c.do(ctx, http.MethodGet, "/v1/sessions/"+sessionID+"/mcdr-config-stub", nil, &dto); err != nil {
+		return agent.MCDRConfigStubInspection{}, err
+	}
+	return agent.MCDRConfigStubInspection{
+		SessionID:                   dto.SessionID,
+		Exists:                      dto.Exists,
+		Path:                        dto.Path,
+		Valid:                       dto.Valid,
+		Status:                      dto.Status,
+		PlannedConfigYMLPath:        dto.PlannedConfigYMLPath,
+		PlannedServerPropertiesPath: dto.PlannedServerPropertiesPath,
+		PlannedEULAPath:             dto.PlannedEULAPath,
+		Issues:                      dto.Issues,
+		CheckedAt:                   dto.CheckedAt,
+	}, nil
+}

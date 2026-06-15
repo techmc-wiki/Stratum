@@ -63,6 +63,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/environments/materialize", s.materializeEnvironment)
 	s.mux.HandleFunc("GET /v1/sessions/{id}/runtime-status", s.sessionRuntimeStatus)
 	s.mux.HandleFunc("GET /v1/sessions/{id}/ready-for-start", s.sessionReadyForStart)
+	s.mux.HandleFunc("GET /v1/sessions/{id}/mcdr-config-stub", s.inspectMCDRConfigStub)
 }
 
 func (s *Server) verifyMaterializedArtifacts(w http.ResponseWriter, r *http.Request) {
@@ -478,6 +479,26 @@ func (s *Server) sessionReadyForStart(w http.ResponseWriter, r *http.Request) {
 			ProcessState: summary.ProcessState, AppliedArtifactsTotal: summary.AppliedArtifactsTotal, AppliedArtifactsValid: summary.AppliedArtifactsValid,
 			AppliedArtifactsMissing: summary.AppliedArtifactsMissing, AppliedArtifactsCorrupted: summary.AppliedArtifactsCorrupted, AppliedArtifactsError: summary.AppliedArtifactsError,
 		}, RequestID: requestID(r),
+	})
+}
+
+func (s *Server) inspectMCDRConfigStub(w http.ResponseWriter, r *http.Request) {
+	result, err := s.client.InspectMCDRConfigStub(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "inspect-mcdr-config-stub", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, MCDRConfigStubInspectionDTO{
+		SessionID:                   result.SessionID,
+		Exists:                      result.Exists,
+		Path:                        result.Path,
+		Valid:                       result.Valid,
+		Status:                      result.Status,
+		PlannedConfigYMLPath:        result.PlannedConfigYMLPath,
+		PlannedServerPropertiesPath: result.PlannedServerPropertiesPath,
+		PlannedEULAPath:             result.PlannedEULAPath,
+		Issues:                      result.Issues,
+		CheckedAt:                   result.CheckedAt,
 	})
 }
 

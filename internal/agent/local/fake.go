@@ -322,3 +322,7 @@ func (f *Fake) SessionReadyForStart(_ context.Context, sessionID string) (agent.
 	}
 	return agent.SessionStartReadiness{SessionID: sessionID, CheckedAt: f.now(), Ready: true, Status: "ready", Issues: []agent.SessionStartReadinessIssue{}, RuntimeStatusSummary: agent.SessionStartReadinessSummary{RuntimeRootExists: true, SessionRootExists: true, EnvironmentManifestExists: true, EnvironmentManifestStatus: "prepared", WorkDirExists: true, ConfigDirExists: true, LogsDirExists: true, ProcessState: "not_started"}}, nil
 }
+
+func (f *Fake) InspectMCDRConfigStub(_ context.Context, sessionID string) (agent.MCDRConfigStubInspection, error) {
+	return agent.MCDRConfigStubInspection{SessionID: sessionID, Exists: false, Path: "", Valid: false, Status: "missing", CheckedAt: f.now()}, nil
+}

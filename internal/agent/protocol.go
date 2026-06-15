@@ -417,6 +417,19 @@ type AgentInfo struct {
 
 // AgentClient is the controller-facing protocol. A future remote transport can
 // implement this interface without changing controller services.
+type MCDRConfigStubInspection struct {
+	SessionID                   string
+	Exists                      bool
+	Path                        string
+	Valid                       bool
+	Status                      string
+	PlannedConfigYMLPath        string
+	PlannedServerPropertiesPath string
+	PlannedEULAPath             string
+	Issues                      []string
+	CheckedAt                   time.Time
+}
+
 type AgentClient interface {
 	Info(context.Context) (AgentInfo, error)
 	RuntimeProfiles(context.Context) ([]runtimeprofile.Profile, error)
@@ -445,6 +458,7 @@ type AgentClient interface {
 	MaterializeEnvironment(context.Context, EnvironmentMaterializationRequest) (EnvironmentMaterializationResult, error)
 	GetSessionRuntimeStatus(context.Context, string) (SessionRuntimeStatus, error)
 	SessionReadyForStart(context.Context, string) (SessionStartReadiness, error)
+	InspectMCDRConfigStub(context.Context, string) (MCDRConfigStubInspection, error)
 }
 
 type RuntimeAgent interface {

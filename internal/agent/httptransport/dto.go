@@ -488,3 +488,16 @@ func sessionRuntimeStatusResponse(status agent.SessionRuntimeStatus, requestID s
 	}
 	return response
 }
+
+type MCDRConfigStubInspectionDTO struct {
+	SessionID                   string    `json:"sessionId"`
+	Exists                      bool      `json:"exists"`
+	Path                        string    `json:"path"`
+	Valid                       bool      `json:"valid"`
+	Status                      string    `json:"status"`
+	PlannedConfigYMLPath        string    `json:"plannedConfigYmlPath,omitempty"`
+	PlannedServerPropertiesPath string    `json:"plannedServerPropertiesPath,omitempty"`
+	PlannedEULAPath             string    `json:"plannedEulaPath,omitempty"`
+	Issues                      []string  `json:"issues,omitempty"`
+	CheckedAt                   time.Time `json:"checkedAt"`
+}

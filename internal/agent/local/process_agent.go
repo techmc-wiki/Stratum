@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stratummc/stratum/internal/agent"
+	"github.com/stratummc/stratum/internal/agent/mcdr"
 	agentprocess "github.com/stratummc/stratum/internal/agent/process"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
 )
@@ -311,4 +312,28 @@ func (a *ProcessAgent) SessionReadyForStart(ctx context.Context, sessionID strin
 		return agent.SessionStartReadiness{}, agent.Error{AgentID: a.id, Operation: agent.OperationSessionReadyForStart, Message: err.Error()}
 	}
 	return result, nil
+}
+
+func (a *ProcessAgent) InspectMCDRConfigStub(ctx context.Context, sessionID string) (agent.MCDRConfigStubInspection, error) {
+	sessionLayout, err := agentprocess.NewSessionRuntimeLayout(a.supervisor.RuntimeRoot(), sessionID)
+	if err != nil {
+		return agent.MCDRConfigStubInspection{}, agent.Error{AgentID: a.id, Operation: "inspect-mcdr-config-stub", Message: err.Error()}
+	}
+	layout, err := sessionLayout.MCDR()
+	if err != nil {
+		return agent.MCDRConfigStubInspection{}, agent.Error{AgentID: a.id, Operation: "inspect-mcdr-config-stub", Message: err.Error()}
+	}
+	result := mcdr.InspectConfigStubManifest(layout)
+	return agent.MCDRConfigStubInspection{
+		SessionID:                   result.SessionID,
+		Exists:                      result.Exists,
+		Path:                        result.Path,
+		Valid:                       result.Valid,
+		Status:                      result.Status,
+		PlannedConfigYMLPath:        result.PlannedConfigYMLPath,
+		PlannedServerPropertiesPath: result.PlannedServerPropertiesPath,
+		PlannedEULAPath:             result.PlannedEULAPath,
+		Issues:                      result.Issues,
+		CheckedAt:                   result.CheckedAt,
+	}, nil
 }
