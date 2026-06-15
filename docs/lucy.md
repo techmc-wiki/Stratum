@@ -187,6 +187,25 @@ Real Lucy package integration remains future work. When Lucy provides a stable
 public API, the backend can be wired to Lucy's resolver and planner without
 changing Stratum's DTO contract or domain models.
 
+## Agent Environment Materialization Wiring
+
+Agent environment materialization now accepts an optional Lucy Adapter. The
+Supervisor stores a `lucyAdapter` field initialized to NoopAdapter by default.
+`SetLucyAdapter(adapter)` allows injecting EmbeddedAdapter, CLIAdapter, or nil
+(which defaults to NoopAdapter).
+
+MaterializeEnvironment records Lucy adapter metadata in both the result Metadata
+map and the persisted environment-materialization.json manifest:
+
+* `lucyAdapterMode`: "noop", "embedded", "cli", or "unknown"
+* `lucyResolutionStatus`: "not_requested"
+* `lucyAdapterConfigured`: "true" or "false"
+
+This is wiring only. MaterializeEnvironment does not call Lucy adapter methods,
+does not resolve packages, does not download files, does not write lucy.yaml or
+lucy-lock.yaml, and does not start MCDR or Minecraft. Future work can call
+PlanEnvironment or LockEnvironment when the backend is properly integrated.
+
 ## Future Adapter Paths
 
 Possible implementations include:

@@ -209,6 +209,20 @@ issue codes, process state, Environment manifest presence, and applied artifact
 counts in Operation metadata. The check performs no repair or cleanup and does
 not start MCDR or Minecraft.
 
+## Lucy Adapter Wiring
+
+Agent Environment materialization now has an optional Lucy adapter injection
+point. Supervisor.SetLucyAdapter(adapter) allows supplying NoopAdapter (default),
+EmbeddedAdapter, or CLIAdapter. MaterializeEnvironment records Lucy adapter mode
+and resolution status in both result metadata and the persisted
+environment-materialization.json manifest.
+
+This is wiring only. MaterializeEnvironment does not call Lucy adapter methods,
+does not resolve packages, does not download files, does not write lucy.yaml or
+lucy-lock.yaml, and does not start MCDR or Minecraft. Future work can call
+PlanEnvironment or LockEnvironment when the backend is properly integrated. See
+docs/lucy.md for Stratum-owned DTO contract details.
+
 ## Why Agent controls MCDR, not the other way around
 
 MCDR is itself a process that requires supervision. An example disabled MCDR

@@ -15,6 +15,7 @@ import (
 
 	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
+	"github.com/stratummc/stratum/internal/integration/lucy"
 )
 
 type Status string
@@ -140,6 +141,7 @@ type Supervisor struct {
 	processes   map[string]*managedProcess
 	sequence    uint64
 	maxLogBytes int
+	lucyAdapter lucy.Adapter
 }
 
 func NewSupervisor(agentID string) *Supervisor {
@@ -165,7 +167,17 @@ func NewSupervisorWithRoot(agentID, root string, maxLogBytes int) (*Supervisor, 
 	if maxLogBytes <= 0 {
 		maxLogBytes = defaultLogBytes
 	}
-	return &Supervisor{agentID: agentID, runtimeRoot: filepath.Clean(root), now: func() time.Time { return time.Now().UTC() }, processes: map[string]*managedProcess{}, maxLogBytes: maxLogBytes}, nil
+	return &Supervisor{agentID: agentID, runtimeRoot: filepath.Clean(root), now: func() time.Time { return time.Now().UTC() }, processes: map[string]*managedProcess{}, maxLogBytes: maxLogBytes, lucyAdapter: lucy.NoopAdapter{}}, nil
+}
+
+func (s *Supervisor) SetLucyAdapter(adapter lucy.Adapter) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if adapter == nil {
+		s.lucyAdapter = lucy.NoopAdapter{}
+	} else {
+		s.lucyAdapter = adapter
+	}
 }
 
 func (s *Supervisor) StartProcess(ctx context.Context, sessionID string, profile runtimeprofile.Profile) (RuntimeProcess, error) {
@@ -505,6 +517,18 @@ func safeName(value string) string {
 }
 
 func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.EnvironmentMaterializationRequest) (agent.EnvironmentMaterializationResult, error) {
+	s.mu.RLock()
+	adapter := s.lucyAdapter
+	s.mu.RUnlock()
+	adapterMode := "unknown"
+	switch adapter.(type) {
+	case lucy.NoopAdapter:
+		adapterMode = "noop"
+	case *lucy.CLIAdapter:
+		adapterMode = "cli"
+	case *lucy.EmbeddedAdapter:
+		adapterMode = "embedded"
+	}
 	layout, err := NewSessionRuntimeLayout(s.runtimeRoot, request.SessionID)
 	if err != nil {
 		return agent.EnvironmentMaterializationResult{}, err
@@ -538,6 +562,9 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 		"materialized_at":          time.Now().UTC().Format(time.RFC3339),
 		"status":                   "prepared",
 		"prepared_directories":     directories,
+		"lucy_adapter_configured":  adapter != nil && adapterMode != "noop",
+		"lucy_adapter_mode":        adapterMode,
+		"lucy_resolution_status":   "not_requested",
 		"notes":                    "Environment materialization prepared directories only; it did not install Java, Minecraft, Fabric, Carpet, Lucy, MCDR, or start any runtime.",
 	}
 	manifestJSON, err := json.MarshalIndent(manifest, "", "  ")
@@ -548,8 +575,11 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 		return agent.EnvironmentMaterializationResult{}, fmt.Errorf("write manifest: %w", err)
 	}
 	metadata := map[string]string{
-		"manifestPath": manifestPath,
-		"sessionRoot":  sessionRoot,
+		"manifestPath":          manifestPath,
+		"sessionRoot":           sessionRoot,
+		"lucyAdapterMode":       adapterMode,
+		"lucyResolutionStatus":  "not_requested",
+		"lucyAdapterConfigured": fmt.Sprintf("%t", adapter != nil && adapterMode != "noop"),
 	}
 	result := agent.EnvironmentMaterializationResult{
 		SessionID:              request.SessionID,

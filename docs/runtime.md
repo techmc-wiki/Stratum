@@ -161,7 +161,14 @@ Environment materialization writes an informational manifest at
 `runtime-root/sessions/<session-id>/config/environment-materialization.json`.
 The manifest records Environment metadata (Minecraft version, Java version,
 loader type, server core, MCDR/Carpet requirements, RuntimeProfile ID),
-materialization timestamp, prepared directories, and status.
+materialization timestamp, prepared directories, Lucy adapter metadata, and
+status.
+
+The manifest includes Lucy adapter metadata:
+
+- `lucy_adapter_mode`: "noop", "embedded", "cli", or "unknown"
+- `lucy_resolution_status`: "not_requested"
+- `lucy_adapter_configured`: true or false
 
 The manifest is informational only. It does not install Java, Minecraft, Fabric,
 or Carpet. It does not start MCDR or Minecraft. It does not call Lucy. It may be
