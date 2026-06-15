@@ -729,6 +729,12 @@ Stratum planning manifest only. Its field names identify future `config.yml`,
 create those files, install MCDR, invoke Python/Lucy, or start MCDR or
 Minecraft.
 
+The manifest can be inspected read-only via `InspectConfigStubManifest`. This
+validates manifest integrity (JSON structure, path safety, session match) without
+modifying the file. It does not validate real MCDR config.yml, generate files,
+install MCDR, or start runtimes. Future Controller readiness checks may consume
+this inspection.
+
 ## Environment Metadata
 
 Environment is a Controller-owned metadata concept that describes the intended

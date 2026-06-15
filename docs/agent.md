@@ -249,6 +249,11 @@ The validated stub may be atomically serialized as the optional informational
 MCDR `config.yml` or Minecraft `server.properties`, and writing it has no
 process, installation, dependency-resolution, or runtime lifecycle effects.
 
+The manifest can be inspected read-only via `InspectConfigStubManifest`. This
+validates manifest integrity (JSON structure, path safety, session match) without
+modifying the file. It does not validate real MCDR config.yml, generate files,
+install MCDR, or start runtimes.
+
 ## Local fake agent
 
 `internal/agent/local.Fake` remains deterministic and in-process for focused

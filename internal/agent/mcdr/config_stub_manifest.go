@@ -35,6 +35,81 @@ type ConfigStubManifest struct {
 	Metadata                    map[string]string `json:"metadata,omitempty"`
 }
 
+type ConfigStubInspectionResult struct {
+	SessionID                   string
+	Exists                      bool
+	Path                        string
+	Valid                       bool
+	Status                      string
+	PlannedConfigYMLPath        string
+	PlannedServerPropertiesPath string
+	PlannedEULAPath             string
+	Issues                      []string
+	CheckedAt                   time.Time
+}
+
+func InspectConfigStubManifest(layout process.MCDRRuntimeLayout) ConfigStubInspectionResult {
+	result := ConfigStubInspectionResult{
+		SessionID: layout.SessionLayout.SessionID,
+		CheckedAt: time.Now().UTC(),
+		Issues:    []string{},
+	}
+	manifestPath := filepath.Join(layout.MCDRRoot, configStubManifestName)
+	result.Path = manifestPath
+	if !filesystemPathWithin(layout.MCDRRoot, manifestPath) {
+		result.Issues = append(result.Issues, "manifest path escapes MCDR root")
+		return result
+	}
+	info, err := os.Lstat(manifestPath)
+	if os.IsNotExist(err) {
+		result.Status = "missing"
+		return result
+	}
+	if err != nil {
+		result.Issues = append(result.Issues, fmt.Sprintf("inspect manifest: %v", err))
+		return result
+	}
+	if !info.Mode().IsRegular() {
+		result.Issues = append(result.Issues, "manifest is not a regular file")
+		return result
+	}
+	result.Exists = true
+	payload, err := os.ReadFile(manifestPath)
+	if err != nil {
+		result.Issues = append(result.Issues, fmt.Sprintf("read manifest: %v", err))
+		return result
+	}
+	var manifest ConfigStubManifest
+	if err := json.Unmarshal(payload, &manifest); err != nil {
+		result.Issues = append(result.Issues, fmt.Sprintf("parse JSON: %v", err))
+		return result
+	}
+	if manifest.SessionID != layout.SessionLayout.SessionID {
+		result.Issues = append(result.Issues, fmt.Sprintf("session mismatch: manifest=%s layout=%s", manifest.SessionID, layout.SessionLayout.SessionID))
+	}
+	if err := validateRuntimeRelativePath("mcdr_root", manifest.MCDRRoot); err != nil {
+		result.Issues = append(result.Issues, fmt.Sprintf("mcdr_root: %v", err))
+	}
+	if err := validateRuntimeRelativePath("config_dir", manifest.ConfigDir); err != nil {
+		result.Issues = append(result.Issues, fmt.Sprintf("config_dir: %v", err))
+	}
+	if err := validateRuntimeRelativePath("plugins_dir", manifest.PluginsDir); err != nil {
+		result.Issues = append(result.Issues, fmt.Sprintf("plugins_dir: %v", err))
+	}
+	if err := validateRuntimeRelativePath("server_dir", manifest.ServerDir); err != nil {
+		result.Issues = append(result.Issues, fmt.Sprintf("server_dir: %v", err))
+	}
+	if err := validateRuntimeRelativePath("planned_config_yml_path", manifest.PlannedConfigYMLPath); err != nil {
+		result.Issues = append(result.Issues, fmt.Sprintf("planned_config_yml_path: %v", err))
+	}
+	result.Valid = len(result.Issues) == 0
+	result.Status = string(manifest.Status)
+	result.PlannedConfigYMLPath = manifest.PlannedConfigYMLPath
+	result.PlannedServerPropertiesPath = manifest.PlannedServerPropertiesPath
+	result.PlannedEULAPath = manifest.PlannedEULAPath
+	return result
+}
+
 // SerializeConfigStub validates and serializes a planning-only manifest.
 func SerializeConfigStub(stub ConfigStub) ([]byte, error) {
 	if err := stub.Validate(); err != nil {

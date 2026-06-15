@@ -162,7 +162,8 @@ Controller's lifecycle manager.
   and validation, plus optional atomic serialization to the informational
   `work/mcdr/mcdr-config-stub.json` planning manifest. It does not write real
   MCDR or Minecraft configuration, install dependencies, invoke Python/Lucy,
-  or start processes.
+  or start processes. Read-only inspection via `InspectConfigStubManifest`
+  validates manifest integrity without modification.
 - Standard-library tests for core behavior.
 
 ## Deferred
