@@ -76,6 +76,27 @@ Error classification does not execute Lucy, resolve packages, download files, or
 alter runtime behavior. Future Controller and Agent logic may consume these
 codes for retry decisions, audit logging, and operator alerting.
 
+## CLI JSON Adapter Stub
+
+`CLIAdapter` is a provisional Stratum-owned boundary for communicating with Lucy
+via JSON DTOs. It does not depend on Lucy internal Go packages or Provider
+implementations. Real Lucy CLI command shape may evolve; the adapter invokes
+Lucy with operation-specific arguments (`capabilities`, `plan_environment`,
+`lock_environment`, `check_status`) and `--json` flag.
+
+The adapter serializes request DTOs as JSON to stdin, reads JSON response from
+stdout, decodes into Stratum-owned DTOs, validates decoded DTOs, maps
+process/JSON/validation errors to AdapterError codes, enforces timeout and max
+output size, and uses argv directly without shell execution.
+
+Tests use fake `CommandRunner` interface; real Lucy execution is not required.
+No Lucy binary is installed or invoked during tests. The adapter does not
+resolve packages, download files, write manifests, or alter runtime behavior.
+
+Future implementations may replace CLIAdapter with Lucy Go package adapter or
+other integration strategies without changing Stratum Controller or Agent
+behavior.
+
 ## Future Adapter Paths
 
 Possible implementations include:
