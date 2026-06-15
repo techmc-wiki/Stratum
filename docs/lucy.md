@@ -161,6 +161,32 @@ This wiring still does not resolve packages, download files, write manifests,
 or alter runtime behavior. It only wires the process runner abstraction for
 future Lucy CLI integration.
 
+## Embedded Go Adapter Contract
+
+Direct embedding is preferred for low-overhead integration when Lucy exposes a
+stable public API. EmbeddedAdapter implements the Stratum Adapter interface by
+wrapping an injected EmbeddedBackend that provides Plan, Lock, Status, and
+Capabilities methods.
+
+Stratum still owns the adapter DTO boundary. Stratum must not import Lucy
+internal packages. EmbeddedAdapter validates all requests before calling the
+backend and validates all responses after backend returns. Backend errors
+classified as AdapterError preserve their error codes. Ordinary backend errors
+are classified as internal_error.
+
+This approach avoids primary disk-based exchange and avoids spawning CLI
+processes. EmbeddedAdapter performs no disk I/O, does not call external
+commands, does not import Lucy directly, and does not assume Lucy internal
+provider names or types.
+
+CLIAdapter remains a fallback or debug integration path for deployments that
+prefer CLI-based integration or need compatibility with non-Go Lucy
+implementations.
+
+Real Lucy package integration remains future work. When Lucy provides a stable
+public API, the backend can be wired to Lucy's resolver and planner without
+changing Stratum's DTO contract or domain models.
+
 ## Future Adapter Paths
 
 Possible implementations include:
