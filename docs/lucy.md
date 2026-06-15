@@ -143,6 +143,24 @@ configured later. It does not resolve packages, download files, write manifests,
 or alter runtime behavior by itself. It is a safe reusable building block for
 CLIAdapter or future process-based integrations.
 
+## CLIAdapter Runner Configuration
+
+`CLIAdapter` constructor accepts `CLIAdapterOptions` with optional `Runner` or
+`UseExec` flag. If `Runner` is provided, it is used directly. If `Runner` is
+nil but `UseExec` is true, `ExecCommandRunner` is automatically instantiated.
+If neither `Runner` nor `UseExec` is provided, constructor returns
+`invalid_request` error.
+
+`CommandPath` is always required. Empty command path fails with `invalid_request`.
+
+Stratum does not auto-discover or auto-run Lucy from PATH. Real Lucy CLI
+integration requires explicit `CommandPath` configuration and remains opt-in
+future work.
+
+This wiring still does not resolve packages, download files, write manifests,
+or alter runtime behavior. It only wires the process runner abstraction for
+future Lucy CLI integration.
+
 ## Future Adapter Paths
 
 Possible implementations include:

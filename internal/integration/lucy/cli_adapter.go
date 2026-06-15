@@ -34,6 +34,7 @@ type CLIAdapterOptions struct {
 	Env            []string
 	MaxOutputBytes int64
 	Runner         CommandRunner
+	UseExec        bool
 }
 
 type CLIAdapter struct {
@@ -58,7 +59,11 @@ func NewCLIAdapter(opts CLIAdapterOptions) (*CLIAdapter, error) {
 		opts.MaxOutputBytes = 10 * 1024 * 1024
 	}
 	if opts.Runner == nil {
-		return nil, NewAdapterError(ErrorCodeInvalidRequest, "runner required", nil, false)
+		if opts.UseExec {
+			opts.Runner = ExecCommandRunner{}
+		} else {
+			return nil, NewAdapterError(ErrorCodeInvalidRequest, "runner required", nil, false)
+		}
 	}
 	return &CLIAdapter{
 		commandPath:    opts.CommandPath,

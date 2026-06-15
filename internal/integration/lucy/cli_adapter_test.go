@@ -235,3 +235,50 @@ func TestCLIAdapterNoopAdapterUnchanged(t *testing.T) {
 		t.Fatal("NoopAdapter behavior changed")
 	}
 }
+
+func TestCLIAdapterWithFakeRunnerStillWorks(t *testing.T) {
+	caps := Capabilities{SupportsPlan: true, SupportedSources: []string{"test"}, SupportedLoaders: []string{}, Metadata: map[string]string{}}
+	stdout, _ := json.Marshal(caps)
+	runner := &fakeRunner{result: CommandResult{Stdout: stdout, ExitCode: 0}}
+	adapter, err := NewCLIAdapter(CLIAdapterOptions{CommandPath: "lucy", Runner: runner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := adapter.Capabilities(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.SupportsPlan {
+		t.Fatal("expected SupportsPlan true")
+	}
+}
+
+func TestCLIAdapterWithUseExecBuildsWithoutExecuting(t *testing.T) {
+	adapter, err := NewCLIAdapter(CLIAdapterOptions{CommandPath: "lucy", UseExec: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adapter == nil {
+		t.Fatal("expected adapter")
+	}
+}
+
+func TestCLIAdapterWithoutRunnerWithoutUseExecFails(t *testing.T) {
+	_, err := NewCLIAdapter(CLIAdapterOptions{CommandPath: "lucy"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !IsCode(err, ErrorCodeInvalidRequest) {
+		t.Fatalf("expected invalid_request, got %v", err)
+	}
+}
+
+func TestCLIAdapterWithUseExecButEmptyCommandPathFails(t *testing.T) {
+	_, err := NewCLIAdapter(CLIAdapterOptions{UseExec: true})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !IsCode(err, ErrorCodeInvalidRequest) {
+		t.Fatalf("expected invalid_request, got %v", err)
+	}
+}
