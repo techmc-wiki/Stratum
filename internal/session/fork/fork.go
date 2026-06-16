@@ -21,7 +21,6 @@ type ForkOptions struct {
 	Reason                string
 	EnvironmentID         string
 	RuntimeProfileID      string
-	SkipCheckpoint        bool
 	InheritedArtifactIDs  []string
 	InheritedServerConfig map[string]string
 	TTL                   *time.Duration

@@ -7,7 +7,6 @@ import (
 
 	"github.com/stratummc/stratum/internal/audit"
 	"github.com/stratummc/stratum/internal/checkpoint"
-	"github.com/stratummc/stratum/internal/checkpoint/consistency"
 	"github.com/stratummc/stratum/internal/environment"
 	"github.com/stratummc/stratum/internal/idgen"
 	"github.com/stratummc/stratum/internal/room"
@@ -20,7 +19,6 @@ type Repository interface {
 	GetCheckpoint(ctx context.Context, id string) (checkpoint.Checkpoint, error)
 	GetEnvironment(ctx context.Context, id string) (environment.Environment, error)
 	SaveSession(ctx context.Context, value session.Session) error
-	CreateCheckpoint(ctx context.Context, cp checkpoint.Checkpoint) error
 	AppendAuditEvent(ctx context.Context, event audit.Event) error
 }
 
@@ -69,14 +67,6 @@ func (s *Service) CreateFork(ctx context.Context, opts ForkOptions) (session.Ses
 		return session.Session{}, fmt.Errorf("environment %q: %w", envID, err)
 	}
 
-	var preForkCheckpointID string
-	if !opts.SkipCheckpoint && opts.SourceType != SourceTypeCheckpoint && sourceSession.ID != "" {
-		preForkCheckpointID, err = s.createPreForkCheckpoint(ctx, sourceSession, opts)
-		if err != nil {
-			return session.Session{}, fmt.Errorf("pre-fork checkpoint: %w", err)
-		}
-	}
-
 	now := s.now()
 	forkSession := session.Session{
 		ID:                 sessionID,
@@ -104,7 +94,6 @@ func (s *Service) CreateFork(ctx context.Context, opts ForkOptions) (session.Ses
 		SourceCheckpointID:     opts.SourceCheckpointID,
 		CreatorID:              opts.CreatorID,
 		Reason:                 opts.Reason,
-		PreForkCheckpointID:    preForkCheckpointID,
 		InheritedEnvironmentID: envID,
 		InheritedArtifactIDs:   cloneSlice(opts.InheritedArtifactIDs),
 		InheritedServerConfig:  cloneMap(opts.InheritedServerConfig),
@@ -115,8 +104,7 @@ func (s *Service) CreateFork(ctx context.Context, opts ForkOptions) (session.Ses
 		return session.Session{}, fmt.Errorf("save fork session: %w", err)
 	}
 
-	auditErr := s.recordAudit(ctx, forkSession, preForkCheckpointID, opts)
-	if auditErr != nil {
+	if auditErr := s.recordAudit(ctx, forkSession, opts); auditErr != nil {
 		return forkSession, fmt.Errorf("fork session created but audit failed: %w", auditErr)
 	}
 
@@ -169,34 +157,7 @@ func (s *Service) resolveSourceSession(ctx context.Context, opts ForkOptions) (s
 	}
 }
 
-func (s *Service) createPreForkCheckpoint(ctx context.Context, sourceSession session.Session, opts ForkOptions) (string, error) {
-	cpID, err := s.newID("checkpoint")
-	if err != nil {
-		return "", fmt.Errorf("generate checkpoint id: %w", err)
-	}
-	cp, err := checkpoint.New(checkpoint.CreateParams{
-		ID:               cpID,
-		ProjectID:        sourceSession.ProjectID,
-		RoomID:           sourceSession.RoomID,
-		SourceSessionID:  sourceSession.ID,
-		CreatorID:        opts.CreatorID,
-		Kind:             checkpoint.KindPreOperation,
-		Status:           checkpoint.StatusMetadataOnly,
-		ConsistencyLevel: consistency.LevelMetadataOnly,
-		EnvironmentID:    sourceSession.EnvironmentID,
-		RuntimeProfileID: sourceSession.RuntimeProfileID,
-		Notes:            "pre-fork checkpoint created before forking session " + opts.SourceID,
-	})
-	if err != nil {
-		return "", err
-	}
-	if err := s.repo.CreateCheckpoint(ctx, cp); err != nil {
-		return "", err
-	}
-	return cpID, nil
-}
-
-func (s *Service) recordAudit(ctx context.Context, forkSession session.Session, preForkCheckpointID string, opts ForkOptions) error {
+func (s *Service) recordAudit(ctx context.Context, forkSession session.Session, opts ForkOptions) error {
 	eventID, err := s.newID("audit")
 	if err != nil {
 		return err
@@ -207,13 +168,12 @@ func (s *Service) recordAudit(ctx context.Context, forkSession session.Session, 
 	}
 	event.ProjectID = forkSession.ProjectID
 	event.Metadata = map[string]string{
-		"sourceType":          string(opts.SourceType),
-		"sourceId":            opts.SourceID,
-		"forkSessionId":       forkSession.ID,
-		"environmentId":       forkSession.EnvironmentID,
-		"reason":              opts.Reason,
-		"preForkCheckpointId": preForkCheckpointID,
-		"sourceSessionId":     forkSession.ForkProvenance.SourceSessionID,
+		"sourceType":      string(opts.SourceType),
+		"sourceId":        opts.SourceID,
+		"forkSessionId":   forkSession.ID,
+		"environmentId":   forkSession.EnvironmentID,
+		"reason":          opts.Reason,
+		"sourceSessionId": forkSession.ForkProvenance.SourceSessionID,
 	}
 	if opts.SourceCheckpointID != "" {
 		event.Metadata["sourceCheckpointId"] = opts.SourceCheckpointID

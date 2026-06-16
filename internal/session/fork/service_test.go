@@ -23,7 +23,6 @@ type mockRepo struct {
 	environments map[string]environment.Environment
 	auditEvents  []audit.Event
 	saveErr      error
-	cpCreateErr  error
 }
 
 func newMockRepo() *mockRepo {
@@ -72,14 +71,6 @@ func (m *mockRepo) SaveSession(_ context.Context, value session.Session) error {
 		return m.saveErr
 	}
 	m.sessions[value.ID] = value
-	return nil
-}
-
-func (m *mockRepo) CreateCheckpoint(_ context.Context, cp checkpoint.Checkpoint) error {
-	if m.cpCreateErr != nil {
-		return m.cpCreateErr
-	}
-	m.checkpoints[cp.ID] = cp
 	return nil
 }
 
@@ -133,11 +124,8 @@ func TestCreateForkFromSession(t *testing.T) {
 	if fork.ForkProvenance.SourceType != "session" || fork.ForkProvenance.SourceID != "source-session" || fork.ForkProvenance.CreatorID != "user-fork" || fork.ForkProvenance.Reason != "testing dangerous experiment" {
 		t.Fatalf("provenance = %+v", fork.ForkProvenance)
 	}
-	if fork.ForkProvenance.PreForkCheckpointID == "" {
-		t.Fatal("pre-fork checkpoint not created")
-	}
-	if _, ok := repo.checkpoints[fork.ForkProvenance.PreForkCheckpointID]; !ok {
-		t.Fatal("pre-fork checkpoint not persisted")
+	if fork.ForkProvenance.SourceSessionID != "source-session" {
+		t.Fatalf("source session = %q", fork.ForkProvenance.SourceSessionID)
 	}
 	if len(repo.auditEvents) != 1 || repo.auditEvents[0].Action != "session.fork" {
 		t.Fatalf("audit events = %+v", repo.auditEvents)
@@ -193,6 +181,7 @@ func TestCreateForkFromCheckpoint(t *testing.T) {
 		SourceID:   "cp-1",
 		ProjectID:  "project-1",
 		RoomID:     "room-1",
+		SourceCheckpointID: "cp-1",
 		CreatorID:  "user-fork",
 		Reason:     "forking from checkpoint",
 	})
@@ -204,10 +193,6 @@ func TestCreateForkFromCheckpoint(t *testing.T) {
 	}
 	if fork.EnvironmentID != "env-1" {
 		t.Fatalf("environment = %s", fork.EnvironmentID)
-	}
-	// forking from checkpoint does not create a pre-fork checkpoint
-	if fork.ForkProvenance.PreForkCheckpointID != "" {
-		t.Fatal("pre-fork checkpoint should not be created when forking from a checkpoint")
 	}
 }
 
@@ -238,9 +223,6 @@ func TestCreateForkFromCheckpointWithoutSession(t *testing.T) {
 	}
 	if fork.EnvironmentID != "env-1" {
 		t.Fatalf("environment = %s", fork.EnvironmentID)
-	}
-	if fork.ForkProvenance.PreForkCheckpointID != "" {
-		t.Fatal("pre-fork checkpoint should not be created when forking from a checkpoint")
 	}
 }
 
@@ -342,36 +324,6 @@ func TestCreateForkFromCheckpointWithExistingSourceSession(t *testing.T) {
 	}
 	if fork.ForkProvenance.SourceSessionID != "original-session" {
 		t.Fatalf("source session = %q", fork.ForkProvenance.SourceSessionID)
-	}
-	if fork.ForkProvenance.PreForkCheckpointID != "" {
-		t.Fatal("pre-fork checkpoint should not be created when forking from a checkpoint, even if source session exists")
-	}
-}
-
-func TestCreateForkSkipCheckpoint(t *testing.T) {
-	repo := newMockRepo()
-	repo.environments["env-1"] = environment.Environment{ID: "env-1", Name: "Test Env", MinecraftVersion: "1.17.1"}
-	repo.sessions["source-session"] = session.Session{
-		ID: "source-session", ProjectID: "project-1", RoomID: "room-1",
-		OwnerUserID: "owner-1", Type: session.TypeShared, State: session.StateRunning,
-		EnvironmentID: "env-1", CreatedAt: testTime, LastActiveAt: testTime,
-	}
-	svc := newTestService(repo)
-
-	fork, err := svc.CreateFork(context.Background(), ForkOptions{
-		SourceType:     SourceTypeSession,
-		SourceID:       "source-session",
-		ProjectID:      "project-1",
-		RoomID:         "room-1",
-		CreatorID:      "user-fork",
-		Reason:         "quick fork",
-		SkipCheckpoint: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fork.ForkProvenance.PreForkCheckpointID != "" {
-		t.Fatal("pre-fork checkpoint should not exist when skip is true")
 	}
 }
 
@@ -523,7 +475,7 @@ func TestCreateForkPersistsAndAudits(t *testing.T) {
 	}
 	svc := newTestService(repo)
 
-	fork, err := svc.CreateFork(context.Background(), ForkOptions{
+	_, err := svc.CreateFork(context.Background(), ForkOptions{
 		ID:         "fork-1",
 		SourceType: SourceTypeSession,
 		SourceID:   "source-session",
@@ -542,9 +494,6 @@ func TestCreateForkPersistsAndAudits(t *testing.T) {
 	}
 	if persisted.ForkProvenance == nil || persisted.ForkProvenance.Reason != "persistence check" {
 		t.Fatalf("persisted = %+v", persisted)
-	}
-	if fork.ForkProvenance.PreForkCheckpointID == "" {
-		t.Fatal("pre-fork checkpoint not created")
 	}
 
 	if len(repo.auditEvents) != 1 {
@@ -583,32 +532,5 @@ func TestCreateForkStoreFailureRollsBackImplicitly(t *testing.T) {
 	}
 	if len(repo.auditEvents) != 0 {
 		t.Fatal("audit should not be recorded on failed save")
-	}
-}
-
-func TestCreateForkCheckpointFailureDoesNotCreateSession(t *testing.T) {
-	repo := newMockRepo()
-	repo.environments["env-1"] = environment.Environment{ID: "env-1", Name: "Test Env", MinecraftVersion: "1.17.1"}
-	repo.sessions["source-session"] = session.Session{
-		ID: "source-session", ProjectID: "project-1", RoomID: "room-1",
-		OwnerUserID: "owner-1", Type: session.TypeShared, State: session.StateRunning,
-		EnvironmentID: "env-1", CreatedAt: testTime, LastActiveAt: testTime,
-	}
-	repo.cpCreateErr = fmt.Errorf("checkpoint storage failed")
-	svc := newTestService(repo)
-
-	_, err := svc.CreateFork(context.Background(), ForkOptions{
-		ID:         "fork-cp-fail",
-		SourceType: SourceTypeSession,
-		SourceID:   "source-session",
-		ProjectID:  "project-1",
-		CreatorID:  "user-fork",
-		Reason:     "cp fail",
-	})
-	if err == nil {
-		t.Fatal("expected checkpoint failure")
-	}
-	if _, exists := repo.sessions["fork-cp-fail"]; exists {
-		t.Fatal("session should not be created after checkpoint failure")
 	}
 }

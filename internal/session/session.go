@@ -50,7 +50,6 @@ type ForkProvenance struct {
 	SourceCheckpointID     string            `json:"sourceCheckpointId,omitempty"`
 	CreatorID              string            `json:"creatorId"`
 	Reason                 string            `json:"reason"`
-	PreForkCheckpointID    string            `json:"preForkCheckpointId,omitempty"`
 	InheritedEnvironmentID string            `json:"inheritedEnvironmentId,omitempty"`
 	InheritedArtifactIDs   []string          `json:"inheritedArtifactIds,omitempty"`
 	InheritedServerConfig  map[string]string `json:"inheritedServerConfig,omitempty"`
