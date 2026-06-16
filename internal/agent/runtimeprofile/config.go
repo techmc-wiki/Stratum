@@ -17,19 +17,41 @@ type configDocument struct {
 }
 
 type profileConfig struct {
-	ID                  string            `json:"id"`
-	Name                string            `json:"name"`
-	RuntimeType         Type              `json:"runtime_type"`
-	CommandArgv         []string          `json:"command_argv"`
-	WorkingDir          string            `json:"working_dir"`
-	Env                 map[string]string `json:"env"`
-	StopStrategy        StopStrategy      `json:"stop_strategy"`
-	StopStdinCommand    string            `json:"stop_stdin_command"`
-	GracefulStopTimeout string            `json:"graceful_stop_timeout"`
-	ForceKillTimeout    string            `json:"force_kill_timeout"`
-	LogMode             LogMode           `json:"log_mode"`
-	Enabled             bool              `json:"enabled"`
-	Notes               string            `json:"notes"`
+	ID                  string                   `json:"id"`
+	Name                string                   `json:"name"`
+	RuntimeType         Type                     `json:"runtime_type"`
+	CommandArgv         []string                 `json:"command_argv"`
+	WorkingDir          string                   `json:"working_dir"`
+	Env                 map[string]string        `json:"env"`
+	StopStrategy        StopStrategy             `json:"stop_strategy"`
+	StopStdinCommand    string                   `json:"stop_stdin_command"`
+	GracefulStopTimeout string                   `json:"graceful_stop_timeout"`
+	ForceKillTimeout    string                   `json:"force_kill_timeout"`
+	LogMode             LogMode                  `json:"log_mode"`
+	Enabled             bool                     `json:"enabled"`
+	Notes               string                   `json:"notes"`
+	ReadinessCheck      *readinessCheckConfig    `json:"readiness_check"`
+	HealthCheck         *healthCheckConfig       `json:"health_check"`
+	GracefulStopSteps   []gracefulStopStepConfig `json:"graceful_stop_steps"`
+}
+
+type readinessCheckConfig struct {
+	Type    string `json:"type"`
+	Pattern string `json:"pattern"`
+	Timeout string `json:"timeout"`
+}
+
+type healthCheckConfig struct {
+	Type             string `json:"type"`
+	MaxSilentSeconds int    `json:"max_silent_seconds"`
+	Timeout          string `json:"timeout"`
+}
+
+type gracefulStopStepConfig struct {
+	Type    string `json:"type"`
+	Command string `json:"command"`
+	Signal  string `json:"signal"`
+	Timeout string `json:"timeout"`
 }
 
 func LoadTrustedFile(path string) ([]Profile, error) {
@@ -102,6 +124,43 @@ func (value profileConfig) profile() (Profile, error) {
 	if err != nil {
 		return Profile{}, err
 	}
+	var readiness *ReadinessCheckConfig
+	if value.ReadinessCheck != nil {
+		timeout, err := parseConfigDuration("readiness_check.timeout", value.ReadinessCheck.Timeout)
+		if err != nil {
+			return Profile{}, err
+		}
+		readiness = &ReadinessCheckConfig{
+			Type:    ReadinessCheckType(value.ReadinessCheck.Type),
+			Pattern: value.ReadinessCheck.Pattern,
+			Timeout: timeout,
+		}
+	}
+	var health *HealthCheckConfig
+	if value.HealthCheck != nil {
+		timeout, err := parseConfigDuration("health_check.timeout", value.HealthCheck.Timeout)
+		if err != nil {
+			return Profile{}, err
+		}
+		health = &HealthCheckConfig{
+			Type:             HealthCheckType(value.HealthCheck.Type),
+			MaxSilentSeconds: value.HealthCheck.MaxSilentSeconds,
+			Timeout:          timeout,
+		}
+	}
+	steps := make([]GracefulStopStep, len(value.GracefulStopSteps))
+	for i, step := range value.GracefulStopSteps {
+		timeout, err := parseConfigDuration(fmt.Sprintf("graceful_stop_steps[%d].timeout", i), step.Timeout)
+		if err != nil {
+			return Profile{}, fmt.Errorf("graceful_stop_steps[%d]: %w", i, err)
+		}
+		steps[i] = GracefulStopStep{
+			Type:    GracefulStopStepType(step.Type),
+			Command: step.Command,
+			Signal:  step.Signal,
+			Timeout: timeout,
+		}
+	}
 	return Profile{
 		ID:                  value.ID,
 		Name:                value.Name,
@@ -116,6 +175,9 @@ func (value profileConfig) profile() (Profile, error) {
 		LogMode:             value.LogMode,
 		Enabled:             value.Enabled,
 		Notes:               value.Notes,
+		ReadinessCheck:      readiness,
+		HealthCheck:         health,
+		GracefulStopSteps:   steps,
 	}, nil
 }
 

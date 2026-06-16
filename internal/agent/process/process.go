@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/stratummc/stratum/internal/agent"
@@ -202,7 +203,7 @@ func (s *Supervisor) StartProcess(ctx context.Context, sessionID string, profile
 		return RuntimeProcess{}, err
 	}
 	workDir := layout.WorkDir
-	if profile.RuntimeType == runtimeprofile.TypeTerminal {
+	if profile.RuntimeType == runtimeprofile.TypeTerminal || profile.RuntimeType == runtimeprofile.TypeMCDRPython {
 		workDir, err = s.resolveWorkingDir(layout, profile.WorkingDir)
 		if err != nil {
 			return RuntimeProcess{}, err
@@ -223,7 +224,7 @@ func (s *Supervisor) StartProcess(ctx context.Context, sessionID string, profile
 	}
 	mode := RuntimeModeDummy
 	command := "stratum-dummy-runtime"
-	if profile.RuntimeType == runtimeprofile.TypeTerminal {
+	if profile.RuntimeType == runtimeprofile.TypeTerminal || profile.RuntimeType == runtimeprofile.TypeMCDRPython {
 		mode, command = RuntimeModeTerminal, profile.ID
 	}
 	item := &managedProcess{model: RuntimeProcess{ProcessID: fmt.Sprintf("process-%d", s.sequence), SessionID: sessionID, AgentID: s.agentID, Status: StatusStarting, Command: command, StartedAt: &now, LogRef: "memory://runtime/" + sessionID, RuntimeMode: mode, RuntimeProfileID: profile.ID, RuntimeType: string(profile.RuntimeType), SessionRoot: layout.SessionRoot, WorkDir: workDir, LogsDir: layout.LogsDir}, profile: profile, logs: logs, done: make(chan struct{})}
@@ -255,7 +256,7 @@ func (s *Supervisor) startTerminal(sessionID string, item *managedProcess, workD
 	cmd.Env = trustedEnvironment(item.profile.Env)
 	cmd.Stdout = streamWriter{s, sessionID, item, "stdout"}
 	cmd.Stderr = streamWriter{s, sessionID, item, "stderr"}
-	if item.profile.StopStrategy == runtimeprofile.StopStdin {
+	if item.profile.StopStrategy == runtimeprofile.StopStdin || len(item.profile.GracefulStopSteps) > 0 {
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
 			return s.failStart(sessionID, item, err)
@@ -308,6 +309,32 @@ func (s *Supervisor) StopProcess(ctx context.Context, sessionID string) (Runtime
 
 	if profile.RuntimeType == runtimeprofile.TypeDummy {
 		cancel()
+	} else if len(profile.GracefulStopSteps) > 0 {
+		for i, step := range profile.GracefulStopSteps {
+			switch step.Type {
+			case runtimeprofile.GracefulStopStdinCommand:
+				if stdin != nil {
+					_, _ = io.WriteString(stdin, step.Command+"\n")
+				}
+			case runtimeprofile.GracefulStopSignal:
+				sig := signalByName(step.Signal)
+				if cmd != nil && cmd.Process != nil && sig != nil {
+					_ = cmd.Process.Signal(sig)
+				}
+			}
+			timeout := step.Timeout
+			if timeout <= 0 {
+				timeout = 100 * time.Millisecond
+			}
+			select {
+			case <-done:
+				return s.InspectProcess(sessionID), nil
+			case <-time.After(timeout):
+			case <-ctx.Done():
+				return RuntimeProcess{}, fmt.Errorf("stop session %q process step %d (%s): %w", sessionID, i, step.Type, ctx.Err())
+			}
+		}
+		return RuntimeProcess{}, fmt.Errorf("session %q process did not exit after multi-step graceful stop", sessionID)
 	} else {
 		switch profile.StopStrategy {
 		case runtimeprofile.StopStdin:
@@ -733,4 +760,17 @@ func (s *Supervisor) GetSessionRuntimeStatus(ctx context.Context, sessionID stri
 		}
 	}
 	return status, nil
+}
+
+func signalByName(name string) os.Signal {
+	switch name {
+	case "SIGTERM":
+		return syscall.SIGTERM
+	case "SIGINT":
+		return syscall.SIGINT
+	case "SIGKILL":
+		return syscall.SIGKILL
+	default:
+		return nil
+	}
 }

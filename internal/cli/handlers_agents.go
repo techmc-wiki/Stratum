@@ -26,7 +26,12 @@ func agentRuntimeProfiles(ctx context.Context, agentClient agent.AgentClient, ar
 		return reportError(stderr, "list runtime profiles", err)
 	}
 	for _, value := range profiles {
-		fmt.Fprintf(stdout, "%s\t%s\t%s\tenabled=%t\tstop=%s\t%s\n", value.ID, value.Name, value.RuntimeType, value.Enabled, value.StopStrategy, value.Notes)
+		isReady := value.ReadinessCheck != nil
+		isHealthy := value.HealthCheck != nil
+		gsSteps := len(value.GracefulStopSteps)
+		fmt.Fprintf(stdout, "%s\t%s\t%s\tenabled=%t\tstop=%s\treadiness=%t\thealth=%t\tgsSteps=%d\t%s\n",
+			value.ID, value.Name, value.RuntimeType, value.Enabled, value.StopStrategy,
+			isReady, isHealthy, gsSteps, value.Notes)
 	}
 	return 0
 }

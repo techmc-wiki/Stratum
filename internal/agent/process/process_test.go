@@ -193,6 +193,39 @@ func TestSupervisorMarkCrashed(t *testing.T) {
 	}
 }
 
+func TestMCDRPythonMultiStepGracefulStop(t *testing.T) {
+	supervisor, profile := terminalTestSupervisor(t, "stdin")
+	profile.RuntimeType = runtimeprofile.TypeMCDRPython
+	profile.GracefulStopSteps = []runtimeprofile.GracefulStopStep{
+		{Type: runtimeprofile.GracefulStopStdinCommand, Command: "stop", Timeout: time.Second},
+		{Type: runtimeprofile.GracefulStopSignal, Signal: "SIGTERM", Timeout: 100 * time.Millisecond},
+		{Type: runtimeprofile.GracefulStopSignal, Signal: "SIGKILL", Timeout: time.Second},
+	}
+	profile.ReadinessCheck = &runtimeprofile.ReadinessCheckConfig{Type: runtimeprofile.ReadinessLogPattern, Pattern: "helper-ready", Timeout: 5 * time.Second}
+	profile.HealthCheck = &runtimeprofile.HealthCheckConfig{Type: runtimeprofile.HealthProcessAlive, MaxSilentSeconds: 60}
+	started, err := supervisor.StartProcess(context.Background(), "mcdr-multi-stop", profile)
+	if err != nil || started.Status != StatusRunning || started.PID <= 0 {
+		t.Fatalf("started=%+v err=%v", started, err)
+	}
+	waitForLog(t, supervisor, "mcdr-multi-stop", "helper-ready")
+	stopped, err := supervisor.StopProcess(context.Background(), "mcdr-multi-stop")
+	if err != nil || stopped.Status != StatusStopped || stopped.ExitCode == nil || *stopped.ExitCode != 0 {
+		t.Fatalf("stopped=%+v err=%v", stopped, err)
+	}
+}
+
+func TestMCDRPythonShellRejected(t *testing.T) {
+	if _, err := runtimeprofile.NewRegistry(runtimeprofile.Profile{
+		ID: "mcdr-shell", Name: "Shell", RuntimeType: runtimeprofile.TypeMCDRPython,
+		CommandArgv: []string{"bash", "-c", "mcdreforged"}, WorkingDir: ".",
+		StopStrategy: runtimeprofile.StopStdin, StopStdinCommand: "stop",
+		GracefulStopTimeout: time.Second, ForceKillTimeout: time.Second,
+		LogMode: runtimeprofile.LogMemory, Enabled: true,
+	}); err == nil {
+		t.Fatal("mcdr-python with shell executable should be rejected")
+	}
+}
+
 func terminalTestSupervisor(t *testing.T, mode string) (*Supervisor, runtimeprofile.Profile) {
 	t.Helper()
 	root := t.TempDir()
