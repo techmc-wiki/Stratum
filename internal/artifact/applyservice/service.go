@@ -16,8 +16,10 @@ import (
 	"github.com/stratummc/stratum/internal/session"
 )
 
-const ActionPlanCreated = "artifact.apply_plan.created"
-const ActionPlanRejected = "artifact.apply_plan.rejected"
+const (
+	ActionPlanCreated  = "artifact.apply_plan.created"
+	ActionPlanRejected = "artifact.apply_plan.rejected"
+)
 
 type Repository interface {
 	GetSession(context.Context, string) (session.Session, error)

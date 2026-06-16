@@ -2,8 +2,10 @@ package staging
 
 import "time"
 
-type Kind string
-type Status string
+type (
+	Kind   string
+	Status string
+)
 
 const (
 	KindArtifact Kind = "artifact"

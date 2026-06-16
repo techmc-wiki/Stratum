@@ -10,8 +10,10 @@ import (
 	"time"
 )
 
-const stagedArtifactManifestName = "staged-artifacts.json"
-const stagedConfigManifestName = "staged-config.json"
+const (
+	stagedArtifactManifestName = "staged-artifacts.json"
+	stagedConfigManifestName   = "staged-config.json"
+)
 
 type SessionRuntimeStaging struct {
 	SessionID               string

@@ -244,6 +244,7 @@ func waitForLog(t *testing.T, supervisor *Supervisor, sessionID, text string) {
 	}
 	t.Fatalf("log %q not found: %v", text, supervisor.CollectLogs(sessionID, 0))
 }
+
 func waitForTerminalStatus(t *testing.T, supervisor *Supervisor, sessionID string) RuntimeProcess {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -257,6 +258,7 @@ func waitForTerminalStatus(t *testing.T, supervisor *Supervisor, sessionID strin
 	t.Fatalf("terminal did not exit: %+v", supervisor.InspectProcess(sessionID))
 	return RuntimeProcess{}
 }
+
 func containsLog(lines []string, text string) bool {
 	for _, line := range lines {
 		if strings.Contains(line, text) {

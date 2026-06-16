@@ -2,9 +2,11 @@ package apply
 
 import "time"
 
-type Kind string
-type TargetRoot string
-type Status string
+type (
+	Kind       string
+	TargetRoot string
+	Status     string
+)
 
 const (
 	KindMod          Kind = "mod"

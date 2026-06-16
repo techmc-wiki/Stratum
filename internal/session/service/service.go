@@ -33,8 +33,10 @@ type Repository interface {
 	UpdateOperation(context.Context, operation.Operation) error
 }
 
-type Clock func() time.Time
-type IDGenerator func(string) (string, error)
+type (
+	Clock       func() time.Time
+	IDGenerator func(string) (string, error)
+)
 
 type Service struct {
 	repository   Repository
@@ -112,34 +114,42 @@ func (s *Service) Prepare(ctx context.Context, id, actor string) error {
 	_, _, err := s.PrepareWithOptions(ctx, id, actor, OperationOptions{})
 	return err
 }
+
 func (s *Service) Start(ctx context.Context, id, actor string) error {
 	_, _, err := s.StartWithOptions(ctx, id, actor, OperationOptions{})
 	return err
 }
+
 func (s *Service) Stop(ctx context.Context, id, actor string) error {
 	_, _, err := s.StopWithOptions(ctx, id, actor, OperationOptions{})
 	return err
 }
+
 func (s *Service) Restart(ctx context.Context, id, actor string) error {
 	_, _, err := s.RestartWithOptions(ctx, id, actor, OperationOptions{})
 	return err
 }
+
 func (s *Service) Freeze(ctx context.Context, id, actor string) error {
 	_, _, err := s.FreezeWithOptions(ctx, id, actor, OperationOptions{})
 	return err
 }
+
 func (s *Service) Unfreeze(ctx context.Context, id, actor string) error {
 	_, _, err := s.UnfreezeWithOptions(ctx, id, actor, OperationOptions{})
 	return err
 }
+
 func (s *Service) MarkCrashed(ctx context.Context, id, actor, reason string) error {
 	_, _, err := s.MarkCrashedWithOptions(ctx, id, actor, reason, OperationOptions{})
 	return err
 }
+
 func (s *Service) Archive(ctx context.Context, id, actor string) error {
 	_, _, err := s.ArchiveWithOptions(ctx, id, actor, OperationOptions{})
 	return err
 }
+
 func (s *Service) Delete(ctx context.Context, id, actor string) error {
 	_, _, err := s.DeleteWithOptions(ctx, id, actor, OperationOptions{})
 	return err
@@ -148,27 +158,35 @@ func (s *Service) Delete(ctx context.Context, id, actor string) error {
 func (s *Service) PrepareWithOptions(ctx context.Context, id, actor string, options OperationOptions) (operation.Operation, bool, error) {
 	return s.coordinate(ctx, "prepare", id, actor, session.StatePreparing, options, func(callCtx context.Context) error { return s.prepare(callCtx, id, actor) })
 }
+
 func (s *Service) StartWithOptions(ctx context.Context, id, actor string, options OperationOptions) (operation.Operation, bool, error) {
 	return s.coordinate(ctx, "start", id, actor, session.StateRunning, options, func(callCtx context.Context) error { return s.start(callCtx, id, actor) })
 }
+
 func (s *Service) StopWithOptions(ctx context.Context, id, actor string, options OperationOptions) (operation.Operation, bool, error) {
 	return s.coordinate(ctx, "stop", id, actor, session.StateStopped, options, func(callCtx context.Context) error { return s.stop(callCtx, id, actor) })
 }
+
 func (s *Service) RestartWithOptions(ctx context.Context, id, actor string, options OperationOptions) (operation.Operation, bool, error) {
 	return s.coordinate(ctx, "restart", id, actor, session.StateRunning, options, func(callCtx context.Context) error { return s.restart(callCtx, id, actor) })
 }
+
 func (s *Service) FreezeWithOptions(ctx context.Context, id, actor string, options OperationOptions) (operation.Operation, bool, error) {
 	return s.coordinate(ctx, "freeze", id, actor, session.StateFrozen, options, func(callCtx context.Context) error { return s.freeze(callCtx, id, actor) })
 }
+
 func (s *Service) UnfreezeWithOptions(ctx context.Context, id, actor string, options OperationOptions) (operation.Operation, bool, error) {
 	return s.coordinate(ctx, "unfreeze", id, actor, session.StateRunning, options, func(callCtx context.Context) error { return s.unfreeze(callCtx, id, actor) })
 }
+
 func (s *Service) MarkCrashedWithOptions(ctx context.Context, id, actor, reason string, options OperationOptions) (operation.Operation, bool, error) {
 	return s.coordinate(ctx, "mark-crashed", id, actor, session.StateCrashed, options, func(callCtx context.Context) error { return s.markCrashed(callCtx, id, actor, reason) })
 }
+
 func (s *Service) ArchiveWithOptions(ctx context.Context, id, actor string, options OperationOptions) (operation.Operation, bool, error) {
 	return s.coordinate(ctx, "archive", id, actor, session.StateArchived, options, func(callCtx context.Context) error { return s.archive(callCtx, id, actor) })
 }
+
 func (s *Service) DeleteWithOptions(ctx context.Context, id, actor string, options OperationOptions) (operation.Operation, bool, error) {
 	return s.coordinate(ctx, "delete", id, actor, session.StateDeleted, options, func(callCtx context.Context) error { return s.delete(callCtx, id, actor) })
 }

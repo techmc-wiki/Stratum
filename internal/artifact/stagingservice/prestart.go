@@ -50,7 +50,8 @@ type PreStartService struct {
 func NewPreStartService(repository ReadinessRepository, payloadVerifier PayloadVerifier, agentClient interface {
 	MaterializationVerifier
 	AppliedArtifactVerifier
-}) *PreStartService {
+},
+) *PreStartService {
 	return &PreStartService{repository: repository, payloadVerifier: payloadVerifier, agent: agentClient}
 }
 

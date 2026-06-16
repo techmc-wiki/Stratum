@@ -16,8 +16,10 @@ import (
 	stratumerrors "github.com/stratummc/stratum/internal/stratumerr"
 )
 
-const ActionPlanCreated = "artifact.staging.plan.created"
-const ActionPlanRejected = "artifact.staging.plan.rejected"
+const (
+	ActionPlanCreated  = "artifact.staging.plan.created"
+	ActionPlanRejected = "artifact.staging.plan.rejected"
+)
 
 type Repository interface {
 	GetArtifact(context.Context, string) (artifact.Artifact, error)

@@ -24,6 +24,7 @@ func (m *mockRepo) GetSession(ctx context.Context, id string) (session.Session, 
 	}
 	return session.Session{}, fmt.Errorf("session not found")
 }
+
 func (m *mockRepo) CreateCheckpoint(ctx context.Context, cp checkpoint.Checkpoint) error {
 	if m.createErr != nil {
 		return m.createErr
@@ -31,9 +32,11 @@ func (m *mockRepo) CreateCheckpoint(ctx context.Context, cp checkpoint.Checkpoin
 	m.checkpoints[cp.ID] = cp
 	return nil
 }
+
 func (m *mockRepo) GetCheckpoint(ctx context.Context, id string) (checkpoint.Checkpoint, error) {
 	return m.checkpoints[id], nil
 }
+
 func (m *mockRepo) ListCheckpoints(ctx context.Context) ([]checkpoint.Checkpoint, error) {
 	var result []checkpoint.Checkpoint
 	for _, cp := range m.checkpoints {
@@ -41,6 +44,7 @@ func (m *mockRepo) ListCheckpoints(ctx context.Context) ([]checkpoint.Checkpoint
 	}
 	return result, nil
 }
+
 func (m *mockRepo) ListCheckpointsBySession(ctx context.Context, sessionID string) ([]checkpoint.Checkpoint, error) {
 	var result []checkpoint.Checkpoint
 	for _, cp := range m.checkpoints {
@@ -50,6 +54,7 @@ func (m *mockRepo) ListCheckpointsBySession(ctx context.Context, sessionID strin
 	}
 	return result, nil
 }
+
 func (m *mockRepo) AppendAuditEvent(ctx context.Context, event audit.Event) error {
 	m.auditEvents = append(m.auditEvents, event)
 	return nil

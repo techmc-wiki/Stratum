@@ -21,8 +21,10 @@ const (
 	TypeWorldArchive Type = "world-archive"
 )
 
-type Status string
-type PayloadStatus string
+type (
+	Status        string
+	PayloadStatus string
+)
 
 const (
 	StatusPending    Status = "pending"

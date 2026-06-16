@@ -197,6 +197,7 @@ func (s *Store) CreateProject(_ context.Context, value project.Project) error {
 	}
 	return createJSON(s.entityPath("projects", value.ID), operation, value)
 }
+
 func (s *Store) GetProject(_ context.Context, id string) (project.Project, error) {
 	const operation = "filesystem.GetProject"
 	if err := validateID(operation, id); err != nil {
@@ -204,9 +205,11 @@ func (s *Store) GetProject(_ context.Context, id string) (project.Project, error
 	}
 	return readJSON[project.Project](s.entityPath("projects", id), operation)
 }
+
 func (s *Store) ListProjects(_ context.Context) ([]project.Project, error) {
 	return listJSON[project.Project](filepath.Join(s.Root, "projects"), "filesystem.ListProjects")
 }
+
 func (s *Store) UpdateProject(_ context.Context, value project.Project) error {
 	const operation = "filesystem.UpdateProject"
 	if err := validateProject(operation, value); err != nil {
@@ -214,6 +217,7 @@ func (s *Store) UpdateProject(_ context.Context, value project.Project) error {
 	}
 	return updateJSON(s.entityPath("projects", value.ID), operation, value)
 }
+
 func (s *Store) DeleteProject(_ context.Context, id string) error {
 	const op = "filesystem.DeleteProject"
 	if err := validateID(op, id); err != nil {
@@ -229,6 +233,7 @@ func (s *Store) CreateRoom(_ context.Context, value room.Room) error {
 	}
 	return createJSON(s.entityPath("rooms", value.ID), op, value)
 }
+
 func (s *Store) GetRoom(_ context.Context, id string) (room.Room, error) {
 	const op = "filesystem.GetRoom"
 	if err := validateID(op, id); err != nil {
@@ -236,9 +241,11 @@ func (s *Store) GetRoom(_ context.Context, id string) (room.Room, error) {
 	}
 	return readJSON[room.Room](s.entityPath("rooms", id), op)
 }
+
 func (s *Store) ListRooms(_ context.Context) ([]room.Room, error) {
 	return listJSON[room.Room](filepath.Join(s.Root, "rooms"), "filesystem.ListRooms")
 }
+
 func (s *Store) UpdateRoom(_ context.Context, value room.Room) error {
 	const op = "filesystem.UpdateRoom"
 	if err := validateRoom(op, value); err != nil {
@@ -246,6 +253,7 @@ func (s *Store) UpdateRoom(_ context.Context, value room.Room) error {
 	}
 	return updateJSON(s.entityPath("rooms", value.ID), op, value)
 }
+
 func (s *Store) DeleteRoom(_ context.Context, id string) error {
 	const op = "filesystem.DeleteRoom"
 	if err := validateID(op, id); err != nil {
@@ -261,6 +269,7 @@ func (s *Store) CreateSession(_ context.Context, value session.Session) error {
 	}
 	return createJSON(s.entityPath("sessions", value.ID), op, value)
 }
+
 func (s *Store) SaveSession(ctx context.Context, value session.Session) error {
 	if _, err := s.GetSession(ctx, value.ID); err == nil {
 		return s.UpdateSession(ctx, value)
@@ -269,6 +278,7 @@ func (s *Store) SaveSession(ctx context.Context, value session.Session) error {
 	}
 	return s.CreateSession(ctx, value)
 }
+
 func (s *Store) GetSession(_ context.Context, id string) (session.Session, error) {
 	const op = "filesystem.GetSession"
 	if err := validateID(op, id); err != nil {
@@ -276,9 +286,11 @@ func (s *Store) GetSession(_ context.Context, id string) (session.Session, error
 	}
 	return readJSON[session.Session](s.entityPath("sessions", id), op)
 }
+
 func (s *Store) ListSessions(_ context.Context) ([]session.Session, error) {
 	return listJSON[session.Session](filepath.Join(s.Root, "sessions"), "filesystem.ListSessions")
 }
+
 func (s *Store) UpdateSession(_ context.Context, value session.Session) error {
 	const op = "filesystem.UpdateSession"
 	if err := validateSession(op, value); err != nil {
@@ -286,6 +298,7 @@ func (s *Store) UpdateSession(_ context.Context, value session.Session) error {
 	}
 	return updateJSON(s.entityPath("sessions", value.ID), op, value)
 }
+
 func (s *Store) DeleteSession(_ context.Context, id string) error {
 	const op = "filesystem.DeleteSession"
 	if err := validateID(op, id); err != nil {
@@ -391,6 +404,7 @@ func (s *Store) CreateCheckpoint(_ context.Context, value checkpoint.Checkpoint)
 	}
 	return createJSON(s.entityPath("checkpoints", value.ID), op, value)
 }
+
 func (s *Store) SaveCheckpoint(ctx context.Context, value checkpoint.Checkpoint) error {
 	if _, err := s.GetCheckpoint(ctx, value.ID); err == nil {
 		return s.UpdateCheckpoint(ctx, value)
@@ -399,6 +413,7 @@ func (s *Store) SaveCheckpoint(ctx context.Context, value checkpoint.Checkpoint)
 	}
 	return s.CreateCheckpoint(ctx, value)
 }
+
 func (s *Store) GetCheckpoint(_ context.Context, id string) (checkpoint.Checkpoint, error) {
 	const op = "filesystem.GetCheckpoint"
 	if err := validateID(op, id); err != nil {
@@ -406,9 +421,11 @@ func (s *Store) GetCheckpoint(_ context.Context, id string) (checkpoint.Checkpoi
 	}
 	return readJSON[checkpoint.Checkpoint](s.entityPath("checkpoints", id), op)
 }
+
 func (s *Store) ListCheckpoints(_ context.Context) ([]checkpoint.Checkpoint, error) {
 	return listJSON[checkpoint.Checkpoint](filepath.Join(s.Root, "checkpoints"), "filesystem.ListCheckpoints")
 }
+
 func (s *Store) ListCheckpointsBySession(_ context.Context, sessionID string) ([]checkpoint.Checkpoint, error) {
 	const op = "filesystem.ListCheckpointsBySession"
 	if err := validateID(op, sessionID); err != nil {
@@ -426,6 +443,7 @@ func (s *Store) ListCheckpointsBySession(_ context.Context, sessionID string) ([
 	}
 	return result, nil
 }
+
 func (s *Store) UpdateCheckpoint(_ context.Context, value checkpoint.Checkpoint) error {
 	const op = "filesystem.UpdateCheckpoint"
 	if err := validateCheckpoint(op, value); err != nil {
@@ -433,6 +451,7 @@ func (s *Store) UpdateCheckpoint(_ context.Context, value checkpoint.Checkpoint)
 	}
 	return updateJSON(s.entityPath("checkpoints", value.ID), op, value)
 }
+
 func (s *Store) DeleteCheckpoint(_ context.Context, id string) error {
 	const op = "filesystem.DeleteCheckpoint"
 	if err := validateID(op, id); err != nil {
@@ -448,6 +467,7 @@ func (s *Store) CreateArtifact(_ context.Context, value artifact.Artifact) error
 	}
 	return createJSON(s.entityPath("artifacts", value.ID), op, value)
 }
+
 func (s *Store) SaveArtifact(ctx context.Context, value artifact.Artifact) error {
 	if _, err := s.GetArtifact(ctx, value.ID); err == nil {
 		return s.UpdateArtifact(ctx, value)
@@ -456,6 +476,7 @@ func (s *Store) SaveArtifact(ctx context.Context, value artifact.Artifact) error
 	}
 	return s.CreateArtifact(ctx, value)
 }
+
 func (s *Store) GetArtifact(_ context.Context, id string) (artifact.Artifact, error) {
 	const op = "filesystem.GetArtifact"
 	if err := validateID(op, id); err != nil {
@@ -463,9 +484,11 @@ func (s *Store) GetArtifact(_ context.Context, id string) (artifact.Artifact, er
 	}
 	return readJSON[artifact.Artifact](s.entityPath("artifacts", id), op)
 }
+
 func (s *Store) ListArtifacts(_ context.Context) ([]artifact.Artifact, error) {
 	return listJSON[artifact.Artifact](filepath.Join(s.Root, "artifacts"), "filesystem.ListArtifacts")
 }
+
 func (s *Store) UpdateArtifact(_ context.Context, value artifact.Artifact) error {
 	const op = "filesystem.UpdateArtifact"
 	if err := validateArtifact(op, value); err != nil {
@@ -473,6 +496,7 @@ func (s *Store) UpdateArtifact(_ context.Context, value artifact.Artifact) error
 	}
 	return updateJSON(s.entityPath("artifacts", value.ID), op, value)
 }
+
 func (s *Store) DeleteArtifact(_ context.Context, id string) error {
 	const op = "filesystem.DeleteArtifact"
 	if err := validateID(op, id); err != nil {
@@ -570,6 +594,7 @@ func (s *Store) CreateEnvironment(_ context.Context, value environment.Environme
 	}
 	return createJSON(s.entityPath("environments", value.ID), op, value)
 }
+
 func (s *Store) GetEnvironment(_ context.Context, id string) (environment.Environment, error) {
 	const op = "filesystem.GetEnvironment"
 	if err := validateID(op, id); err != nil {
@@ -577,9 +602,11 @@ func (s *Store) GetEnvironment(_ context.Context, id string) (environment.Enviro
 	}
 	return readJSON[environment.Environment](s.entityPath("environments", id), op)
 }
+
 func (s *Store) ListEnvironments(_ context.Context) ([]environment.Environment, error) {
 	return listJSON[environment.Environment](filepath.Join(s.Root, "environments"), "filesystem.ListEnvironments")
 }
+
 func (s *Store) UpdateEnvironment(ctx context.Context, value environment.Environment, expectedUpdatedAt time.Time) error {
 	const op = "filesystem.UpdateEnvironment"
 	if err := validateEnvironment(op, value); err != nil {
@@ -594,6 +621,7 @@ func (s *Store) UpdateEnvironment(ctx context.Context, value environment.Environ
 	}
 	return updateJSON(s.entityPath("environments", value.ID), op, value)
 }
+
 func (s *Store) DeleteEnvironment(_ context.Context, id string) error {
 	const op = "filesystem.DeleteEnvironment"
 	if err := validateID(op, id); err != nil {
@@ -609,6 +637,7 @@ func (s *Store) CreateResourcePolicy(_ context.Context, value resourcepolicy.Pol
 	}
 	return createJSON(s.entityPath("resource-policies", value.ID), op, value)
 }
+
 func (s *Store) GetResourcePolicy(_ context.Context, id string) (resourcepolicy.Policy, error) {
 	const op = "filesystem.GetResourcePolicy"
 	if err := validateID(op, id); err != nil {
@@ -616,9 +645,11 @@ func (s *Store) GetResourcePolicy(_ context.Context, id string) (resourcepolicy.
 	}
 	return readJSON[resourcepolicy.Policy](s.entityPath("resource-policies", id), op)
 }
+
 func (s *Store) ListResourcePolicies(_ context.Context) ([]resourcepolicy.Policy, error) {
 	return listJSON[resourcepolicy.Policy](filepath.Join(s.Root, "resource-policies"), "filesystem.ListResourcePolicies")
 }
+
 func (s *Store) UpdateResourcePolicy(_ context.Context, value resourcepolicy.Policy) error {
 	const op = "filesystem.UpdateResourcePolicy"
 	if err := validateResourcePolicy(op, value); err != nil {
@@ -626,6 +657,7 @@ func (s *Store) UpdateResourcePolicy(_ context.Context, value resourcepolicy.Pol
 	}
 	return updateJSON(s.entityPath("resource-policies", value.ID), op, value)
 }
+
 func (s *Store) DeleteResourcePolicy(_ context.Context, id string) error {
 	const op = "filesystem.DeleteResourcePolicy"
 	if err := validateID(op, id); err != nil {
@@ -699,6 +731,7 @@ func validateProject(op string, value project.Project) error {
 	}
 	return nil
 }
+
 func validateRoom(op string, value room.Room) error {
 	if err := validateID(op, value.ID); err != nil {
 		return err
@@ -708,6 +741,7 @@ func validateRoom(op string, value room.Room) error {
 	}
 	return nil
 }
+
 func validateSession(op string, value session.Session) error {
 	if err := validateID(op, value.ID); err != nil {
 		return err
@@ -727,6 +761,7 @@ func validateOperation(op string, value operation.Operation) error {
 	}
 	return nil
 }
+
 func validateRuntimeObservation(op string, value runtimeobservation.Observation) error {
 	if err := validateID(op, value.ID); err != nil {
 		return err
@@ -736,6 +771,7 @@ func validateRuntimeObservation(op string, value runtimeobservation.Observation)
 	}
 	return nil
 }
+
 func validateCheckpoint(op string, value checkpoint.Checkpoint) error {
 	if err := validateID(op, value.ID); err != nil {
 		return err
@@ -748,6 +784,7 @@ func validateCheckpoint(op string, value checkpoint.Checkpoint) error {
 	}
 	return nil
 }
+
 func validateArtifact(op string, value artifact.Artifact) error {
 	if err := validateID(op, value.ID); err != nil {
 		return err
@@ -779,6 +816,7 @@ func validateArtifact(op string, value artifact.Artifact) error {
 	}
 	return nil
 }
+
 func validateArtifactStagingPlan(op string, value artifactstaging.Plan) error {
 	if err := validateID(op, value.ID); err != nil {
 		return err
@@ -788,6 +826,7 @@ func validateArtifactStagingPlan(op string, value artifactstaging.Plan) error {
 	}
 	return nil
 }
+
 func validateArtifactApplyPlan(op string, value artifactapply.Plan) error {
 	if err := validateID(op, value.ID); err != nil {
 		return err
@@ -797,6 +836,7 @@ func validateArtifactApplyPlan(op string, value artifactapply.Plan) error {
 	}
 	return nil
 }
+
 func validateEnvironment(op string, value environment.Environment) error {
 	if err := validateID(op, value.ID); err != nil {
 		return err
@@ -809,6 +849,7 @@ func validateEnvironment(op string, value environment.Environment) error {
 	}
 	return nil
 }
+
 func validateResourcePolicy(op string, value resourcepolicy.Policy) error {
 	if err := validateID(op, value.ID); err != nil {
 		return err
@@ -818,6 +859,7 @@ func validateResourcePolicy(op string, value resourcepolicy.Policy) error {
 	}
 	return nil
 }
+
 func validateAuditEvent(op string, value audit.Event) error {
 	if err := validateID(op, value.ID); err != nil {
 		return err

@@ -159,6 +159,7 @@ func (a *ProcessAgent) ReportResources(context.Context) (agent.ResourceReport, e
 func (a *ProcessAgent) CreateCheckpointStub(_ context.Context, request agent.CheckpointRequest) (agent.OperationResult, error) {
 	return a.result("checkpoint-stub-created:" + request.CheckpointID), nil
 }
+
 func (a *ProcessAgent) RestoreCheckpointStub(_ context.Context, request agent.CheckpointRequest) (agent.OperationResult, error) {
 	return a.result("checkpoint-stub-restored:" + request.CheckpointID), nil
 }

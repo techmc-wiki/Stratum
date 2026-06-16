@@ -15,10 +15,12 @@ import (
 	stratumerrors "github.com/stratummc/stratum/internal/stratumerr"
 )
 
-const ActionCreated = "artifact.created"
-const ActionApproved = "artifact.approved"
-const ActionRejected = "artifact.rejected"
-const ActionPayloadImported = "artifact.payload.imported"
+const (
+	ActionCreated         = "artifact.created"
+	ActionApproved        = "artifact.approved"
+	ActionRejected        = "artifact.rejected"
+	ActionPayloadImported = "artifact.payload.imported"
+)
 
 type BlobStore interface {
 	HashFile(string) (algorithm, hash string, size int64, err error)

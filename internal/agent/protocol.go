@@ -10,8 +10,10 @@ import (
 
 var ErrMaterializedArtifactNotFound = errors.New("materialized artifact not found")
 
-type requestIDContextKey struct{}
-type logMaxBytesContextKey struct{}
+type (
+	requestIDContextKey   struct{}
+	logMaxBytesContextKey struct{}
+)
 
 func WithRequestID(ctx context.Context, requestID string) context.Context {
 	return context.WithValue(ctx, requestIDContextKey{}, requestID)

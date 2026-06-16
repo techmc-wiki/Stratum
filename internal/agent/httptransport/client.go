@@ -74,18 +74,23 @@ func (c *Client) RuntimeProfiles(ctx context.Context) ([]runtimeprofile.Profile,
 func (c *Client) PrepareSession(ctx context.Context, request agent.SessionRequest) (agent.OperationResult, error) {
 	return c.sessionOperation(ctx, request, "prepare")
 }
+
 func (c *Client) StartSession(ctx context.Context, request agent.SessionRequest) (agent.OperationResult, error) {
 	return c.sessionOperation(ctx, request, "start")
 }
+
 func (c *Client) StopSession(ctx context.Context, request agent.SessionRequest) (agent.OperationResult, error) {
 	return c.sessionOperation(ctx, request, "stop")
 }
+
 func (c *Client) RestartSession(ctx context.Context, request agent.SessionRequest) (agent.OperationResult, error) {
 	return c.sessionOperation(ctx, request, "restart")
 }
+
 func (c *Client) FreezeSession(ctx context.Context, request agent.SessionRequest) (agent.OperationResult, error) {
 	return c.sessionOperation(ctx, request, "freeze")
 }
+
 func (c *Client) UnfreezeSession(ctx context.Context, request agent.SessionRequest) (agent.OperationResult, error) {
 	return c.sessionOperation(ctx, request, "unfreeze")
 }

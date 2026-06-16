@@ -6,9 +6,11 @@ import (
 	"time"
 )
 
-type Type string
-type StopStrategy string
-type LogMode string
+type (
+	Type         string
+	StopStrategy string
+	LogMode      string
+)
 
 const (
 	TypeDummy    Type = "dummy"

@@ -31,9 +31,11 @@ const (
 	StatusUnknown    Status = "unknown"
 )
 
-const RuntimeModeDummy = "dummy-process"
-const RuntimeModeTerminal = "managed-terminal"
-const defaultLogBytes = 256 * 1024
+const (
+	RuntimeModeDummy    = "dummy-process"
+	RuntimeModeTerminal = "managed-terminal"
+	defaultLogBytes     = 256 * 1024
+)
 
 type RuntimeProcess struct {
 	ProcessID        string     `json:"processId"`
@@ -67,6 +69,7 @@ func newLogBuffer(maxBytes int) *logBuffer {
 	}
 	return &logBuffer{maxBytes: maxBytes}
 }
+
 func (b *logBuffer) append(line string) {
 	lineBytes := len(line) + 1
 	if lineBytes > b.maxBytes {
@@ -80,6 +83,7 @@ func (b *logBuffer) append(line string) {
 		b.lines = b.lines[1:]
 	}
 }
+
 func (b *logBuffer) tail(maxBytes int) []string {
 	if maxBytes <= 0 || maxBytes >= b.bytes {
 		return append([]string(nil), b.lines...)
@@ -361,6 +365,7 @@ func (s *Supervisor) InspectProcess(sessionID string) RuntimeProcess {
 	}
 	return RuntimeProcess{SessionID: sessionID, AgentID: s.agentID, Status: StatusNotStarted, Command: "stratum-dummy-runtime", LogRef: "memory://runtime/" + sessionID, RuntimeMode: RuntimeModeDummy, RuntimeProfileID: runtimeprofile.DefaultProfileID, RuntimeType: string(runtimeprofile.TypeDummy)}
 }
+
 func (s *Supervisor) CollectLogs(sessionID string, maxBytes int) []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -369,6 +374,7 @@ func (s *Supervisor) CollectLogs(sessionID string, maxBytes int) []string {
 	}
 	return nil
 }
+
 func (s *Supervisor) IsRunning(sessionID string) bool {
 	return s.InspectProcess(sessionID).Status == StatusRunning
 }
@@ -503,6 +509,7 @@ func trustedEnvironment(profileEnv map[string]string) []string {
 func formatLog(at time.Time, source, message string) string {
 	return at.Format(time.RFC3339Nano) + " [" + source + "] " + message
 }
+
 func safeName(value string) string {
 	value = strings.Map(func(r rune) rune {
 		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {

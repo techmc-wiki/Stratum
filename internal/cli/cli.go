@@ -42,8 +42,10 @@ import (
 	stratumerrors "github.com/stratummc/stratum/internal/stratumerr"
 )
 
-const defaultDataDirectory = ".stratum/data"
-const defaultArtifactBlobRoot = ".stratum/artifacts"
+const (
+	defaultDataDirectory    = ".stratum/data"
+	defaultArtifactBlobRoot = ".stratum/artifacts"
+)
 
 func Run(args []string, stdout, stderr io.Writer) int {
 	return runCobra(args, stdout, stderr)

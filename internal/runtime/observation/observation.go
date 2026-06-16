@@ -2,9 +2,11 @@ package observation
 
 import "time"
 
-type MismatchType string
-type Severity string
-type RecommendedAction string
+type (
+	MismatchType      string
+	Severity          string
+	RecommendedAction string
+)
 
 const (
 	MismatchNone                          MismatchType = "none"
