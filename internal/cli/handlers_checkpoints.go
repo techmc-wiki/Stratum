@@ -9,6 +9,7 @@ import (
 
 	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/checkpoint"
+	"github.com/stratummc/stratum/internal/checkpoint/consistency"
 	checkpointsvc "github.com/stratummc/stratum/internal/checkpoint/service"
 	"github.com/stratummc/stratum/internal/storage/filesystem"
 )
@@ -19,11 +20,21 @@ func createCheckpoint(ctx context.Context, store *filesystem.Store, agentClient 
 	sessionID := flags.String("session", "", "")
 	actor := flags.String("actor", "", "")
 	notes := flags.String("notes", "", "")
+	consistencyLevelValue := flags.String("consistency-level", string(consistency.LevelMetadataOnly), "")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
 	if *id == "" || *sessionID == "" || *actor == "" {
 		fmt.Fprintln(stderr, "--id, --session, and --actor are required")
+		return 2
+	}
+	consistencyLevel, err := consistency.Parse(*consistencyLevelValue)
+	if err != nil {
+		fmt.Fprintf(stderr, "invalid --consistency-level: %v\n", err)
+		return 2
+	}
+	if consistencyLevel != consistency.LevelMetadataOnly {
+		fmt.Fprintf(stderr, "unsupported --consistency-level %q: checkpoint orchestration is not implemented; only %q is supported\n", consistencyLevel, consistency.LevelMetadataOnly)
 		return 2
 	}
 	var snapshot *checkpoint.RuntimeStatusSnapshot
@@ -40,6 +51,7 @@ func createCheckpoint(ctx context.Context, store *filesystem.Store, agentClient 
 		SessionID:             *sessionID,
 		ActorID:               *actor,
 		Notes:                 *notes,
+		ConsistencyLevel:      consistencyLevel,
 		RuntimeStatusSnapshot: snapshot,
 	})
 	if err != nil {
@@ -68,7 +80,7 @@ func listCheckpoints(ctx context.Context, store *filesystem.Store, args []string
 		return 1
 	}
 	for _, cp := range values {
-		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\t%s\t%s\n", cp.ID, cp.ProjectID, cp.SourceSessionID, cp.Status, cp.Kind, cp.CreatedAt.Format(time.RFC3339))
+		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", cp.ID, cp.ProjectID, cp.SourceSessionID, cp.Status, cp.ConsistencyLevel, cp.Kind, cp.CreatedAt.Format(time.RFC3339))
 	}
 	return 0
 }
@@ -95,6 +107,7 @@ func inspectCheckpoint(ctx context.Context, store *filesystem.Store, args []stri
 	fmt.Fprintf(stdout, "Creator:            %s\n", cp.CreatorID)
 	fmt.Fprintf(stdout, "Kind:               %s\n", cp.Kind)
 	fmt.Fprintf(stdout, "Status:             %s\n", cp.Status)
+	fmt.Fprintf(stdout, "Consistency Level:  %s\n", cp.ConsistencyLevel)
 	fmt.Fprintf(stdout, "Environment ID:     %s\n", cp.EnvironmentID)
 	if cp.RuntimeProfileID != "" {
 		fmt.Fprintf(stdout, "Runtime Profile ID: %s\n", cp.RuntimeProfileID)

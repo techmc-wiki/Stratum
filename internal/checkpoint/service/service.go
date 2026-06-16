@@ -7,6 +7,7 @@ import (
 
 	"github.com/stratummc/stratum/internal/audit"
 	"github.com/stratummc/stratum/internal/checkpoint"
+	"github.com/stratummc/stratum/internal/checkpoint/consistency"
 	"github.com/stratummc/stratum/internal/idgen"
 	"github.com/stratummc/stratum/internal/session"
 )
@@ -16,6 +17,8 @@ type CreateRequest struct {
 	SessionID             string
 	ActorID               string
 	Notes                 string
+	ConsistencyLevel      consistency.Level
+	ConsistencyMetadata   map[string]string
 	RuntimeStatusSnapshot *checkpoint.RuntimeStatusSnapshot
 }
 
@@ -43,6 +46,13 @@ func Create(ctx context.Context, repo Repository, req CreateRequest) (checkpoint
 	if req.RuntimeStatusSnapshot != nil && req.RuntimeStatusSnapshot.SessionID != "" && req.RuntimeStatusSnapshot.SessionID != sess.ID {
 		return checkpoint.Checkpoint{}, fmt.Errorf("runtime status snapshot session %q does not match checkpoint session %q", req.RuntimeStatusSnapshot.SessionID, sess.ID)
 	}
+	consistencyLevel := req.ConsistencyLevel
+	if consistencyLevel == "" {
+		consistencyLevel = consistency.LevelMetadataOnly
+	}
+	if consistencyLevel != consistency.LevelMetadataOnly {
+		return checkpoint.Checkpoint{}, fmt.Errorf("checkpoint consistency level %q requires checkpoint orchestration; only %q is supported", consistencyLevel, consistency.LevelMetadataOnly)
+	}
 	cp, err := checkpoint.New(checkpoint.CreateParams{
 		ID:                    req.ID,
 		ProjectID:             sess.ProjectID,
@@ -51,6 +61,8 @@ func Create(ctx context.Context, repo Repository, req CreateRequest) (checkpoint
 		CreatorID:             req.ActorID,
 		Kind:                  checkpoint.KindManual,
 		Status:                checkpoint.StatusMetadataOnly,
+		ConsistencyLevel:      consistencyLevel,
+		ConsistencyMetadata:   req.ConsistencyMetadata,
 		EnvironmentID:         sess.EnvironmentID,
 		RuntimeProfileID:      sess.RuntimeProfileID,
 		RuntimeStatusSnapshot: prepareRuntimeStatusSnapshot(req.RuntimeStatusSnapshot, sess),
@@ -71,6 +83,7 @@ func Create(ctx context.Context, repo Repository, req CreateRequest) (checkpoint
 		"sessionId":                     cp.SourceSessionID,
 		"environmentId":                 cp.EnvironmentID,
 		"status":                        string(cp.Status),
+		"consistencyLevel":              string(cp.ConsistencyLevel),
 		"actor":                         req.ActorID,
 		"runtimeStatusSnapshotCaptured": fmt.Sprintf("%t", cp.RuntimeStatusSnapshot != nil),
 	}
