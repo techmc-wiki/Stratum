@@ -46,126 +46,7 @@ const defaultDataDirectory = ".stratum/data"
 const defaultArtifactBlobRoot = ".stratum/artifacts"
 
 func Run(args []string, stdout, stderr io.Writer) int {
-	global := flag.NewFlagSet("stratum", flag.ContinueOnError)
-	global.SetOutput(stderr)
-	dataDirectory := global.String("data-dir", defaultDataDirectory, "metadata data directory")
-	artifactBlobRoot := global.String("artifact-blob-root", defaultArtifactBlobRoot, "artifact blob storage root")
-	agentURL := global.String("agent-url", "", "agent HTTP endpoint; empty uses local fake")
-	agentToken := global.String("agent-token", "", "agent HTTP bearer token")
-	agentTimeout := global.Duration("agent-timeout", 10*time.Second, "agent HTTP request timeout")
-	if err := global.Parse(args); err != nil {
-		return 2
-	}
-	command := global.Args()
-	if len(command) < 2 {
-		usage(stderr)
-		return 2
-	}
-	resource, action := command[0], command[1]
-	if resource == "environments" && action == "validate-file" {
-		return validateEnvironmentFile(command[2:], stdout, stderr)
-	}
-
-	store, err := filesystem.New(*dataDirectory)
-	if err != nil {
-		fmt.Fprintf(stderr, "open data directory: %v\n", err)
-		return 1
-	}
-
-	ctx := context.Background()
-	agentClient, agentMode, err := buildAgentClient(*agentURL, *agentToken, *agentTimeout)
-	if err != nil {
-		fmt.Fprintf(stderr, "configure agent client: %v\n", err)
-		return 2
-	}
-	switch resource + " " + action {
-	case "projects create":
-		return createProject(ctx, store, command[2:], stdout, stderr)
-	case "projects list":
-		return listProjects(ctx, store, stdout, stderr)
-	case "rooms create":
-		return createRoom(ctx, store, command[2:], stdout, stderr)
-	case "rooms list":
-		return listRooms(ctx, store, stdout, stderr)
-	case "sessions create":
-		return createSession(ctx, store, command[2:], stdout, stderr)
-	case "sessions list":
-		return listSessions(ctx, store, stdout, stderr)
-	case "sessions inspect":
-		return inspectSession(ctx, store, agentClient, command[2:], stdout, stderr)
-	case "sessions observe":
-		return observeSession(ctx, store, agentClient, command[2:], stdout, stderr)
-	case "sessions reconcile":
-		return reconcileSession(ctx, store, agentClient, agentMode, strings.TrimSpace(*agentURL) != "", command[2:], stdout, stderr)
-	case "sessions logs":
-		return sessionLogs(ctx, agentClient, command[2:], stdout, stderr)
-	case "sessions artifacts":
-		return sessionArtifacts(ctx, agentClient, strings.TrimSpace(*agentURL) != "", command[2:], stdout, stderr)
-	case "sessions runtime-status":
-		return sessionRuntimeStatus(ctx, agentClient, command[2:], stdout, stderr)
-	case "sessions prepare", "sessions start", "sessions stop", "sessions restart",
-		"sessions freeze", "sessions unfreeze", "sessions mark-crashed",
-		"sessions archive", "sessions delete":
-		return runSessionLifecycle(ctx, store, *artifactBlobRoot, agentClient, agentMode, strings.TrimSpace(*agentURL) != "", action, command[2:], stdout, stderr)
-	case "checkpoints create":
-		return createCheckpoint(ctx, store, agentClient, strings.TrimSpace(*agentURL) != "", command[2:], stdout, stderr)
-	case "checkpoints list":
-		return listCheckpoints(ctx, store, command[2:], stdout, stderr)
-	case "checkpoints inspect":
-		return inspectCheckpoint(ctx, store, command[2:], stdout, stderr)
-	case "artifacts list":
-		return listArtifacts(ctx, store, stdout, stderr)
-	case "artifacts inspect":
-		return inspectArtifact(ctx, store, command[2:], stdout, stderr)
-	case "artifacts create":
-		return createArtifact(ctx, store, command[2:], stdout, stderr)
-	case "artifacts import-file":
-		return importArtifactFile(ctx, store, *artifactBlobRoot, command[2:], stdout, stderr)
-	case "artifacts blobs":
-		return artifactBlobs(ctx, *artifactBlobRoot, command[2:], stdout, stderr)
-	case "artifacts approve", "artifacts reject":
-		return reviewArtifact(ctx, store, *artifactBlobRoot, action, command[2:], stdout, stderr)
-	case "artifacts staging":
-		return artifactStaging(ctx, store, *artifactBlobRoot, agentClient, agentMode, strings.TrimSpace(*agentURL) != "", command[2:], stdout, stderr)
-	case "artifacts apply":
-		return artifactApply(ctx, store, agentClient, command[2:], stdout, stderr)
-	case "environments create":
-		return createEnvironment(ctx, store, command[2:], stdout, stderr)
-	case "environments import-file":
-		return importEnvironmentFile(ctx, store, command[2:], stdout, stderr)
-	case "environments list":
-		return listEnvironments(ctx, store, stdout, stderr)
-	case "environments inspect":
-		return inspectEnvironment(ctx, store, command[2:], stdout, stderr)
-	case "environments update":
-		return updateEnvironment(ctx, store, command[2:], stdout, stderr)
-	case "environments materialize":
-		return materializeEnvironment(ctx, store, agentClient, command[2:], stdout, stderr)
-	case "operations list":
-		return listOperations(ctx, store, command[2:], stdout, stderr)
-	case "operations inspect":
-		return inspectOperation(ctx, store, command[2:], stdout, stderr)
-	case "runtime-observations list":
-		return listRuntimeObservations(ctx, store, command[2:], stdout, stderr)
-	case "runtime-observations inspect":
-		return inspectRuntimeObservation(ctx, store, command[2:], stdout, stderr)
-	case "agents list":
-		return listAgents(ctx, agentClient, stdout, stderr)
-	case "agents inspect":
-		return inspectAgent(ctx, agentClient, command[2:], stdout, stderr)
-	case "agents resources":
-		return agentResources(ctx, agentClient, command[2:], stdout, stderr)
-	case "agents runtime-profiles":
-		return agentRuntimeProfiles(ctx, agentClient, command[2:], stdout, stderr)
-	case "sessions applied-artifacts":
-		return sessionsAppliedArtifacts(ctx, agentClient, command[2:], stdout, stderr)
-	case "sessions mcdr-config-stub":
-		return sessionsMCDRConfigStub(ctx, agentClient, command[2:], stdout, stderr)
-	default:
-		fmt.Fprintf(stderr, "unknown command %q\n", strings.Join(command[:2], " "))
-		usage(stderr)
-		return 2
-	}
+	return runCobra(args, stdout, stderr)
 }
 
 func createProject(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
@@ -1528,18 +1409,6 @@ func inspectArtifactStaging(ctx context.Context, store *filesystem.Store, args [
 	return 0
 }
 
-func ensureEnvironment(ctx context.Context, store *filesystem.Store, id string) error {
-	if id == "" {
-		return nil
-	}
-	if _, err := store.GetEnvironment(ctx, id); err == nil {
-		return nil
-	} else if !stratumerrors.IsKind(err, stratumerrors.KindNotFound) {
-		return err
-	}
-	return fmt.Errorf("environment %q is not registered", id)
-}
-
 func ensureResourcePolicy(ctx context.Context, store *filesystem.Store) (resourcepolicy.Policy, error) {
 	value, err := store.GetResourcePolicy(ctx, "default")
 	if err == nil {
@@ -2349,8 +2218,4 @@ func sessionsMCDRConfigStubInspect(ctx context.Context, agentClient agent.AgentC
 		return 1
 	}
 	return 0
-}
-
-func usage(writer io.Writer) {
-	fmt.Fprintln(writer, "usage: stratum [--data-dir PATH] [--artifact-blob-root PATH] [--agent-url URL] [--agent-token TOKEN] <projects|rooms|sessions|checkpoints|artifacts|environments|operations|runtime-observations|agents> <command> [flags]")
 }
