@@ -43,23 +43,38 @@ var allowedTransitions = map[State]map[State]struct{}{
 	StateDeleted:   {},
 }
 
+type ForkProvenance struct {
+	SourceType             string            `json:"sourceType"`
+	SourceID               string            `json:"sourceId"`
+	SourceSessionID        string            `json:"sourceSessionId,omitempty"`
+	SourceCheckpointID     string            `json:"sourceCheckpointId,omitempty"`
+	CreatorID              string            `json:"creatorId"`
+	Reason                 string            `json:"reason"`
+	PreForkCheckpointID    string            `json:"preForkCheckpointId,omitempty"`
+	InheritedEnvironmentID string            `json:"inheritedEnvironmentId,omitempty"`
+	InheritedArtifactIDs   []string          `json:"inheritedArtifactIds,omitempty"`
+	InheritedServerConfig  map[string]string `json:"inheritedServerConfig,omitempty"`
+	CreatedAt              time.Time         `json:"createdAt"`
+}
+
 type Session struct {
-	ID                 string     `json:"id"`
-	ProjectID          string     `json:"projectId"`
-	RoomID             string     `json:"roomId,omitempty"`
-	OwnerUserID        string     `json:"ownerUserId"`
-	Type               Type       `json:"type"`
-	State              State      `json:"state"`
-	EnvironmentID      string     `json:"environmentId"`
-	RuntimeProfileID   string     `json:"runtimeProfileId,omitempty"`
-	SourceCheckpointID string     `json:"sourceCheckpointId,omitempty"`
-	AssignedAgentID    string     `json:"assignedAgentId,omitempty"`
-	LastAgentStatus    string     `json:"lastAgentStatus,omitempty"`
-	LastRuntimeMessage string     `json:"lastRuntimeMessage,omitempty"`
-	RuntimeEndpoint    string     `json:"runtimeEndpoint,omitempty"`
-	CreatedAt          time.Time  `json:"createdAt"`
-	ExpiresAt          *time.Time `json:"expiresAt,omitempty"`
-	LastActiveAt       time.Time  `json:"lastActiveAt"`
+	ID                 string          `json:"id"`
+	ProjectID          string          `json:"projectId"`
+	RoomID             string          `json:"roomId,omitempty"`
+	OwnerUserID        string          `json:"ownerUserId"`
+	Type               Type            `json:"type"`
+	State              State           `json:"state"`
+	EnvironmentID      string          `json:"environmentId"`
+	RuntimeProfileID   string          `json:"runtimeProfileId,omitempty"`
+	SourceCheckpointID string          `json:"sourceCheckpointId,omitempty"`
+	AssignedAgentID    string          `json:"assignedAgentId,omitempty"`
+	LastAgentStatus    string          `json:"lastAgentStatus,omitempty"`
+	LastRuntimeMessage string          `json:"lastRuntimeMessage,omitempty"`
+	RuntimeEndpoint    string          `json:"runtimeEndpoint,omitempty"`
+	ForkProvenance     *ForkProvenance `json:"forkProvenance,omitempty"`
+	CreatedAt          time.Time       `json:"createdAt"`
+	ExpiresAt          *time.Time      `json:"expiresAt,omitempty"`
+	LastActiveAt       time.Time       `json:"lastActiveAt"`
 }
 
 func (s *Session) Transition(to State) error {
