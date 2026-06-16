@@ -88,3 +88,25 @@ func TestFakeUnfreezeAndLowLevelStubs(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestFakeSendCommand(t *testing.T) {
+	ctx := context.Background()
+	fake := NewFake()
+	_, _ = fake.StartSession(ctx, agent.SessionRequest{SessionID: "session-1"})
+	result, err := fake.SendCommand(ctx, "session-1", "save-all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "sent" || result.AgentID != DefaultAgentID {
+		t.Fatalf("result = %+v", result)
+	}
+	_, err = fake.SendCommand(ctx, "session-1", "")
+	if err == nil || !strings.Contains(err.Error(), "required") {
+		t.Fatalf("empty command err=%v", err)
+	}
+	failing := NewFake()
+	failing.SetFailure(agent.OperationSendCommand, "injected send failure")
+	if _, err := failing.SendCommand(ctx, "session-1", "save-all"); err == nil || !strings.Contains(err.Error(), "injected send failure") {
+		t.Fatalf("failure err=%v", err)
+	}
+}

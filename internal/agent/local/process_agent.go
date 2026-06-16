@@ -66,7 +66,7 @@ func (a *ProcessAgent) RuntimeProfiles(context.Context) ([]runtimeprofile.Profil
 }
 
 func (a *ProcessAgent) Info(context.Context) (agent.AgentInfo, error) {
-	return agent.AgentInfo{ID: a.id, Status: "available", RuntimeEndpoint: a.endpoint, Capabilities: []string{"prepare", "start", "stop", "restart", "freeze", "unfreeze", "inspect", "logs", "resources", "dummy-process", "checkpoint-stub", "artifact-materialize", "artifact-manifest-inspect"}, Mode: agentprocess.RuntimeModeDummy}, nil
+	return agent.AgentInfo{ID: a.id, Status: "available", RuntimeEndpoint: a.endpoint, Capabilities: []string{"prepare", "start", "stop", "restart", "freeze", "unfreeze", "inspect", "logs", "resources", "send-command", "dummy-process", "checkpoint-stub", "artifact-materialize", "artifact-manifest-inspect"}, Mode: agentprocess.RuntimeModeDummy}, nil
 }
 
 func (a *ProcessAgent) PrepareSession(_ context.Context, request agent.SessionRequest) (agent.OperationResult, error) {

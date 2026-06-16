@@ -59,7 +59,7 @@ func (f *Fake) Info(context.Context) (agent.AgentInfo, error) {
 	}
 	return agent.AgentInfo{
 		ID: f.id, Status: "available", RuntimeEndpoint: f.endpoint,
-		Capabilities: []string{"prepare", "start", "stop", "restart", "freeze", "unfreeze", "inspect", "logs", "resources", "checkpoint-stub", "artifact-materialize", "artifact-manifest-inspect"},
+		Capabilities: []string{"prepare", "start", "stop", "restart", "freeze", "unfreeze", "inspect", "logs", "resources", "send-command", "checkpoint-stub", "artifact-materialize", "artifact-manifest-inspect"},
 		Mode:         "local",
 	}, nil
 }
