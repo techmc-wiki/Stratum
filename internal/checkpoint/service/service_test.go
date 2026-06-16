@@ -8,6 +8,7 @@ import (
 
 	"github.com/stratummc/stratum/internal/audit"
 	"github.com/stratummc/stratum/internal/checkpoint"
+	"github.com/stratummc/stratum/internal/checkpoint/consistency"
 	"github.com/stratummc/stratum/internal/session"
 )
 
@@ -82,11 +83,55 @@ func TestCreateMetadataOnlyCheckpoint(t *testing.T) {
 	if cp.Status != checkpoint.StatusMetadataOnly {
 		t.Fatalf("status = %s, want metadata_only", cp.Status)
 	}
+	if cp.ConsistencyLevel != consistency.LevelMetadataOnly {
+		t.Fatalf("consistency level = %s, want metadata_only", cp.ConsistencyLevel)
+	}
 	if len(repo.auditEvents) != 1 || repo.auditEvents[0].Action != "checkpoint.created" {
 		t.Fatalf("audit events: %+v", repo.auditEvents)
 	}
+	if repo.auditEvents[0].Metadata["consistencyLevel"] != string(consistency.LevelMetadataOnly) {
+		t.Fatalf("audit metadata: %+v", repo.auditEvents[0].Metadata)
+	}
 	if cp.RuntimeStatusSnapshot != nil || repo.auditEvents[0].Metadata["runtimeStatusSnapshotCaptured"] != "false" {
 		t.Fatalf("unexpected runtime status snapshot: checkpoint=%+v audit=%+v", cp.RuntimeStatusSnapshot, repo.auditEvents[0])
+	}
+}
+
+func TestCreateRejectsNonMetadataOnlyConsistencyLevel(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	_, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-1", SessionID: "s-1", ActorID: "actor-1",
+		ConsistencyLevel:    consistency.LevelCommandQuiesced,
+		ConsistencyMetadata: map[string]string{"command": "save-all"},
+	})
+	if err == nil {
+		t.Fatal("expected non-metadata-only consistency level to fail")
+	}
+	if len(repo.checkpoints) != 0 || len(repo.auditEvents) != 0 {
+		t.Fatalf("writes after failure: checkpoints=%+v audits=%+v", repo.checkpoints, repo.auditEvents)
+	}
+}
+
+func TestCreateRejectsUnknownConsistencyLevel(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	_, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-1", SessionID: "s-1", ActorID: "actor-1", ConsistencyLevel: consistency.Level("unknown"),
+	})
+	if err == nil {
+		t.Fatal("expected unknown consistency level to fail")
+	}
+	if len(repo.checkpoints) != 0 || len(repo.auditEvents) != 0 {
+		t.Fatalf("writes after failure: checkpoints=%+v audits=%+v", repo.checkpoints, repo.auditEvents)
 	}
 }
 

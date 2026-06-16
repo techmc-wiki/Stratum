@@ -553,6 +553,37 @@ func TestCheckpointListAndGet(t *testing.T) {
 	}
 }
 
+func TestCheckpointCreateRejectsUnorchestratedConsistencyLevel(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	setupTestProjectRoomEnvironment(t, dataDirectory)
+	commands := [][]string{
+		{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(command, &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code := Run([]string{"--data-dir", dataDirectory, "checkpoints", "create", "--id", "checkpoint-1", "--session", "session-1", "--actor", "test-actor", "--consistency-level", "best_effort"}, &stdout, &stderr)
+	if code != 2 || !strings.Contains(stderr.String(), "checkpoint orchestration is not implemented") {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetCheckpoint(context.Background(), "checkpoint-1"); err == nil {
+		t.Fatal("unsupported consistency level should not create checkpoint")
+	}
+}
+
 func TestCLIArtifactCreateCannotApproveOrStageWithoutPayload(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")
