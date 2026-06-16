@@ -16,6 +16,7 @@ type ProcessAgent struct {
 	id         string
 	endpoint   string
 	supervisor *agentprocess.Supervisor
+	mcdr       *mcdr.Supervisor
 	profiles   *runtimeprofile.Registry
 	mu         sync.RWMutex
 	prepared   map[string]bool
@@ -43,7 +44,8 @@ func NewProcessAgentWithRegistry(id string, profiles *runtimeprofile.Registry) *
 	if profiles == nil {
 		profiles = runtimeprofile.Builtins()
 	}
-	return &ProcessAgent{id: id, endpoint: "local://agent/" + id, supervisor: agentprocess.NewSupervisor(id), profiles: profiles, prepared: map[string]bool{}, frozen: map[string]bool{}}
+	supervisor := agentprocess.NewSupervisor(id)
+	return &ProcessAgent{id: id, endpoint: "local://agent/" + id, supervisor: supervisor, mcdr: mcdr.NewSupervisor(supervisor), profiles: profiles, prepared: map[string]bool{}, frozen: map[string]bool{}}
 }
 
 func NewProcessAgentWithRegistryAndRoot(id string, profiles *runtimeprofile.Registry, runtimeRoot string) (*ProcessAgent, error) {
@@ -54,7 +56,7 @@ func NewProcessAgentWithRegistryAndRoot(id string, profiles *runtimeprofile.Regi
 	if err != nil {
 		return nil, err
 	}
-	return &ProcessAgent{id: id, endpoint: "local://agent/" + id, supervisor: supervisor, profiles: profiles, prepared: map[string]bool{}, frozen: map[string]bool{}}, nil
+	return &ProcessAgent{id: id, endpoint: "local://agent/" + id, supervisor: supervisor, mcdr: mcdr.NewSupervisor(supervisor), profiles: profiles, prepared: map[string]bool{}, frozen: map[string]bool{}}, nil
 }
 
 func (a *ProcessAgent) RuntimeProfiles(context.Context) ([]runtimeprofile.Profile, error) {
@@ -84,6 +86,16 @@ func (a *ProcessAgent) StartSession(ctx context.Context, request agent.SessionRe
 	if err != nil {
 		return agent.OperationResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationStart, Message: err.Error()}
 	}
+	if profile.RuntimeType == runtimeprofile.TypeMCDRPython {
+		state, startErr := a.mcdr.Start(ctx, request.SessionID, profile)
+		if startErr != nil {
+			return agent.OperationResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationStart, Message: startErr.Error()}
+		}
+		a.mu.Lock()
+		a.frozen[request.SessionID] = false
+		a.mu.Unlock()
+		return a.result("runtime " + string(state.Status)), nil
+	}
 	model, err := a.supervisor.StartProcess(ctx, request.SessionID, profile)
 	if err != nil {
 		return agent.OperationResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationStart, Message: err.Error()}
@@ -109,6 +121,16 @@ func (a *ProcessAgent) RestartSession(ctx context.Context, request agent.Session
 	profile, err := a.profiles.Get(request.RuntimeProfileID)
 	if err != nil {
 		return agent.OperationResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationRestart, Message: err.Error()}
+	}
+	if profile.RuntimeType == runtimeprofile.TypeMCDRPython {
+		state, restartErr := a.mcdr.Restart(ctx, request.SessionID, profile)
+		if restartErr != nil {
+			return agent.OperationResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationRestart, Message: restartErr.Error()}
+		}
+		a.mu.Lock()
+		a.frozen[request.SessionID] = false
+		a.mu.Unlock()
+		return a.result("runtime " + string(state.Status)), nil
 	}
 	model, err := a.supervisor.RestartProcess(ctx, request.SessionID, profile)
 	if err != nil {
