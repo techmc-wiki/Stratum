@@ -1,0 +1,185 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+
+	"github.com/stratummc/stratum/internal/agent"
+	"github.com/stratummc/stratum/internal/checkpoint"
+	checkpointsvc "github.com/stratummc/stratum/internal/checkpoint/service"
+	"github.com/stratummc/stratum/internal/storage/filesystem"
+)
+
+func createCheckpoint(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, hasAgentURL bool, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("checkpoints create", stderr)
+	id := flags.String("id", "", "")
+	sessionID := flags.String("session", "", "")
+	actor := flags.String("actor", "", "")
+	notes := flags.String("notes", "", "")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" || *sessionID == "" || *actor == "" {
+		fmt.Fprintln(stderr, "--id, --session, and --actor are required")
+		return 2
+	}
+	var snapshot *checkpoint.RuntimeStatusSnapshot
+	if hasAgentURL {
+		status, err := agentClient.GetSessionRuntimeStatus(ctx, *sessionID)
+		if err != nil {
+			return reportError(stderr, "capture checkpoint runtime status", err)
+		}
+		value := checkpointRuntimeStatusSnapshot(status)
+		snapshot = &value
+	}
+	cp, err := checkpointsvc.Create(ctx, store, checkpointsvc.CreateRequest{
+		ID:                    *id,
+		SessionID:             *sessionID,
+		ActorID:               *actor,
+		Notes:                 *notes,
+		RuntimeStatusSnapshot: snapshot,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "create checkpoint error: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Checkpoint created: %s\n", cp.ID)
+	return 0
+}
+
+func listCheckpoints(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("checkpoints list", stderr)
+	sessionID := flags.String("session", "", "")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	var values []checkpoint.Checkpoint
+	var err error
+	if *sessionID != "" {
+		values, err = checkpointsvc.ListBySession(ctx, store, *sessionID)
+	} else {
+		values, err = checkpointsvc.List(ctx, store)
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "list checkpoints error: %v\n", err)
+		return 1
+	}
+	for _, cp := range values {
+		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\t%s\t%s\n", cp.ID, cp.ProjectID, cp.SourceSessionID, cp.Status, cp.Kind, cp.CreatedAt.Format(time.RFC3339))
+	}
+	return 0
+}
+
+func inspectCheckpoint(ctx context.Context, store *filesystem.Store, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("checkpoints inspect", stderr)
+	id := flags.String("id", "", "")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *id == "" {
+		fmt.Fprintln(stderr, "--id is required")
+		return 2
+	}
+	cp, err := checkpointsvc.Get(ctx, store, *id)
+	if err != nil {
+		fmt.Fprintf(stderr, "get checkpoint error: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "ID:                 %s\n", cp.ID)
+	fmt.Fprintf(stdout, "Project ID:         %s\n", cp.ProjectID)
+	fmt.Fprintf(stdout, "Room ID:            %s\n", cp.RoomID)
+	fmt.Fprintf(stdout, "Source Session ID:  %s\n", cp.SourceSessionID)
+	fmt.Fprintf(stdout, "Creator:            %s\n", cp.CreatorID)
+	fmt.Fprintf(stdout, "Kind:               %s\n", cp.Kind)
+	fmt.Fprintf(stdout, "Status:             %s\n", cp.Status)
+	fmt.Fprintf(stdout, "Environment ID:     %s\n", cp.EnvironmentID)
+	if cp.RuntimeProfileID != "" {
+		fmt.Fprintf(stdout, "Runtime Profile ID: %s\n", cp.RuntimeProfileID)
+	}
+	if cp.Notes != "" {
+		fmt.Fprintf(stdout, "Notes:              %s\n", cp.Notes)
+	}
+	if cp.RuntimeStatusSnapshot == nil {
+		fmt.Fprintln(stdout, "Runtime Status Snapshot: no")
+	} else {
+		snapshot := cp.RuntimeStatusSnapshot
+		fmt.Fprintln(stdout, "Runtime Status Snapshot: yes")
+		fmt.Fprintf(stdout, "  Captured At:                %s\n", snapshot.CapturedAt.Format(time.RFC3339))
+		fmt.Fprintf(stdout, "  Overall Status:             %s\n", snapshot.OverallStatus)
+		fmt.Fprintf(stdout, "  Environment Manifest:       %t\n", snapshot.EnvironmentManifestExists)
+		fmt.Fprintf(stdout, "  Process State:              %s\n", snapshot.ProcessState)
+		fmt.Fprintf(stdout, "  Materialized Artifacts:     %d\n", snapshot.MaterializedArtifactsCount)
+		fmt.Fprintf(stdout, "  Applied Artifacts:          %d\n", snapshot.AppliedArtifactsCount)
+		if len(snapshot.Issues) > 0 {
+			fmt.Fprintf(stdout, "  Issues:                     %s\n", strings.Join(snapshot.Issues, ","))
+		}
+	}
+	fmt.Fprintf(stdout, "Created At:         %s\n", cp.CreatedAt.Format(time.RFC3339))
+	return 0
+}
+
+func checkpointRuntimeStatusSnapshot(status agent.SessionRuntimeStatus) checkpoint.RuntimeStatusSnapshot {
+	snapshot := checkpoint.RuntimeStatusSnapshot{
+		CapturedAt:        status.CheckedAt,
+		SessionID:         status.SessionID,
+		RuntimeRootExists: status.RuntimeRootExists,
+		SessionRootExists: status.SessionRootExists,
+		ProcessState:      "unknown",
+		OverallStatus:     "ok",
+	}
+	if snapshot.CapturedAt.IsZero() {
+		snapshot.CapturedAt = time.Now().UTC()
+	}
+	if !status.RuntimeRootExists {
+		snapshot.Issues = append(snapshot.Issues, "runtime_root_missing")
+	}
+	if !status.SessionRootExists {
+		snapshot.Issues = append(snapshot.Issues, "session_root_missing")
+	}
+	if status.EnvironmentManifest != nil {
+		manifest := status.EnvironmentManifest
+		snapshot.EnvironmentManifestExists = manifest.Exists
+		snapshot.EnvironmentID = manifest.EnvironmentID
+		snapshot.MinecraftVersion = manifest.MinecraftVersion
+		snapshot.LoaderType = manifest.LoaderType
+		snapshot.ServerCore = manifest.ServerCore
+		snapshot.RuntimeProfileID = manifest.RuntimeProfileID
+		if !manifest.Exists {
+			snapshot.Issues = append(snapshot.Issues, "environment_manifest_missing")
+		}
+		if manifest.ErrorMessage != "" {
+			snapshot.Issues = append(snapshot.Issues, "environment_manifest_error")
+		}
+	} else {
+		snapshot.Issues = append(snapshot.Issues, "environment_manifest_unavailable")
+	}
+	if status.MCDRLayout != nil {
+		snapshot.MCDRRootExists = status.MCDRLayout.MCDRRootExists
+		snapshot.MCDRLayoutManifestExists = status.MCDRLayout.ManifestExists
+	}
+	if status.MaterializedArtifacts != nil {
+		snapshot.MaterializedArtifactsCount = status.MaterializedArtifacts.Count
+	}
+	if status.AppliedArtifacts != nil {
+		snapshot.AppliedArtifactsCount = status.AppliedArtifacts.Count
+	}
+	if status.ProcessStatus != nil {
+		snapshot.ProcessState = status.ProcessStatus.Status
+		snapshot.PID = status.ProcessStatus.PID
+		if snapshot.RuntimeProfileID == "" {
+			snapshot.RuntimeProfileID = status.ProcessStatus.RuntimeProfileID
+		}
+		if status.ProcessStatus.Crashed {
+			snapshot.Issues = append(snapshot.Issues, "process_crashed")
+		}
+	} else {
+		snapshot.Issues = append(snapshot.Issues, "process_status_unavailable")
+	}
+	if len(snapshot.Issues) > 0 {
+		snapshot.OverallStatus = "issues"
+	}
+	return snapshot
+}
