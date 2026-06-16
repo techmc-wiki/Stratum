@@ -749,6 +749,56 @@ integrity. It does not validate real MCDR config.yml, generate config.yml or
 server.properties or eula.txt, install MCDR, invoke Python, call Lucy, or start
 runtimes. Exits 0 only when the manifest exists and is valid.
 
+### MCDR Bridge Launch Plan
+
+`internal/agent/mcdrbridge` defines a planning-only MCDR bridge contract that
+extends the config stub model into a structured launch plan. The bridge provides
+`BuildLaunchPlan`, `ValidateLaunchPlan`, and `InspectLaunchPlan` operations.
+All operations are planning-only: no MCDR or Minecraft process is started, no
+dependencies are installed, and no runtime config files are generated.
+
+`BuildLaunchPlan` derives the MCDR runtime layout from the bridge's runtime
+root and the request SessionID, constructs a `LaunchPlan` DTO with canonical
+session-relative paths, validates the plan, ensures MCDR directories exist, and
+atomically writes the plan to `work/mcdr/mcdr-launch-plan.json`.
+
+The `LaunchPlan` DTO records:
+
+- Environment identity (session ID, environment ID, Minecraft/Java versions,
+  loader type/version, server core, RuntimeProfile ID).
+- MCDR path layout (root, config, plugins, server, logs, work dirs, planned
+  config.yml/server.properties/eula.txt paths).
+- Launch command (executable, argv, working directory, env keys).
+- Stop strategy (stdin/signal/none with optional stdin command).
+- Preconditions (python, mcdr, server jar, eula -- all default to `not_checked`).
+- Plan status (planned / missing_layout / invalid / unsupported).
+- Issues, planned timestamp, notes, and user metadata.
+
+`ValidateLaunchPlan` checks the plan struct without filesystem access: session
+ID safety, runtime-relative paths (no backslashes, absolutes, traversal, or
+volume prefixes), argv-based command (no shell strings, no newlines in argv),
+valid stop strategy and precondition values.
+
+`InspectLaunchPlan` reads the persisted manifest and returns a
+`LaunchPlanStatus` with exists/valid/path/issues/summary fields. Inspection is
+read-only and never modifies the manifest.
+
+The bridge does not start MCDR or Minecraft, does not install Python or MCDR
+dependencies, does not generate config.yml/server.properties/eula.txt, does not
+call Lucy, and does not modify Session lifecycle state. Real MCDR RuntimeProfile
+launch is deferred to a future task. The launch plan is the planning contract
+that a future RuntimeProfile will read.
+
+The launch-plan manifest (`mcdr-launch-plan.json`) is written alongside the
+existing `mcdr-layout.json` and `mcdr-config-stub.json` in the MCDR root. All
+three files are planning-only manifests:
+
+| File | Purpose |
+|---|---|
+| `mcdr-layout.json` | Records prepared MCDR directory paths |
+| `mcdr-config-stub.json` | Records planned config location metadata |
+| `mcdr-launch-plan.json` | Records full launch plan for a future RuntimeProfile |
+
 ## Environment Metadata
 
 Environment is a Controller-owned metadata concept that describes the intended
