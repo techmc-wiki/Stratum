@@ -402,6 +402,37 @@ func (s *Supervisor) CollectLogs(sessionID string, maxBytes int) []string {
 	return nil
 }
 
+func (s *Supervisor) SendCommand(sessionID, command string) error {
+	if strings.TrimSpace(command) == "" {
+		return errors.New("command is required")
+	}
+	if strings.ContainsAny(command, "\r\n\x00") {
+		return errors.New("command contains control characters")
+	}
+	s.mu.RLock()
+	item := s.processes[sessionID]
+	s.mu.RUnlock()
+	if item == nil {
+		return fmt.Errorf("session %q process is not started", sessionID)
+	}
+	if item.model.Status != StatusRunning {
+		return fmt.Errorf("session %q process is not running (status=%s)", sessionID, item.model.Status)
+	}
+	if item.stdin == nil {
+		return fmt.Errorf("session %q process has no stdin pipe", sessionID)
+	}
+	_, err := io.WriteString(item.stdin, command+"\n")
+	if err != nil {
+		return fmt.Errorf("write command to session %q stdin: %w", sessionID, err)
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if current := s.processes[sessionID]; current == item {
+		current.logs.append(formatLog(time.Now().UTC(), "send-command", command))
+	}
+	return nil
+}
+
 func (s *Supervisor) IsRunning(sessionID string) bool {
 	return s.InspectProcess(sessionID).Status == StatusRunning
 }

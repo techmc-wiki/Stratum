@@ -64,6 +64,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/sessions/{id}/runtime-status", s.sessionRuntimeStatus)
 	s.mux.HandleFunc("GET /v1/sessions/{id}/ready-for-start", s.sessionReadyForStart)
 	s.mux.HandleFunc("GET /v1/sessions/{id}/mcdr-config-stub", s.inspectMCDRConfigStub)
+	s.mux.HandleFunc("POST /v1/sessions/{id}/send-command", s.sendCommand)
 }
 
 func (s *Server) verifyMaterializedArtifacts(w http.ResponseWriter, r *http.Request) {
@@ -500,6 +501,20 @@ func (s *Server) inspectMCDRConfigStub(w http.ResponseWriter, r *http.Request) {
 		Issues:                      result.Issues,
 		CheckedAt:                   result.CheckedAt,
 	})
+}
+
+func (s *Server) sendCommand(w http.ResponseWriter, r *http.Request) {
+	var body SendCommandRequest
+	if err := decodeJSON(r, &body); err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "send-command", err)
+		return
+	}
+	result, err := s.client.SendCommand(r.Context(), r.PathValue("id"), body.Command)
+	if err != nil {
+		s.writeError(w, r, http.StatusBadGateway, "send-command", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, SendCommandResponse{AgentID: result.AgentID, SessionID: r.PathValue("id"), Status: result.Status, Message: result.Message, RequestID: requestID(r)})
 }
 
 func newRequestID() string {

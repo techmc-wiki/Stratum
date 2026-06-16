@@ -52,6 +52,7 @@ const (
 	OperationMaterializeEnvironment  Operation = "materialize-environment"
 	OperationGetSessionRuntimeStatus Operation = "get-session-runtime-status"
 	OperationSessionReadyForStart    Operation = "session-ready-for-start"
+	OperationSendCommand             Operation = "send-command"
 )
 
 const MaxArtifactPayloadBytes = 64 << 20
@@ -266,6 +267,12 @@ type OperationResult struct {
 	Mode    string
 }
 
+type CommandResult struct {
+	AgentID string
+	Status  string
+	Message string
+}
+
 type Error struct {
 	AgentID   string
 	Operation Operation
@@ -461,6 +468,7 @@ type AgentClient interface {
 	GetSessionRuntimeStatus(context.Context, string) (SessionRuntimeStatus, error)
 	SessionReadyForStart(context.Context, string) (SessionStartReadiness, error)
 	InspectMCDRConfigStub(context.Context, string) (MCDRConfigStubInspection, error)
+	SendCommand(context.Context, string, string) (CommandResult, error)
 }
 
 type RuntimeAgent interface {

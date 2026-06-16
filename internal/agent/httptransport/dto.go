@@ -501,3 +501,15 @@ type MCDRConfigStubInspectionDTO struct {
 	Issues                      []string  `json:"issues,omitempty"`
 	CheckedAt                   time.Time `json:"checkedAt"`
 }
+
+type SendCommandRequest struct {
+	Command string `json:"command"`
+}
+
+type SendCommandResponse struct {
+	AgentID   string `json:"agentId"`
+	SessionID string `json:"sessionId"`
+	Status    string `json:"status"`
+	Message   string `json:"message"`
+	RequestID string `json:"requestId"`
+}

@@ -479,3 +479,13 @@ func (c *Client) InspectMCDRConfigStub(ctx context.Context, sessionID string) (a
 		CheckedAt:                   dto.CheckedAt,
 	}, nil
 }
+
+func (c *Client) SendCommand(ctx context.Context, sessionID, command string) (agent.CommandResult, error) {
+	var response SendCommandResponse
+	body := SendCommandRequest{Command: command}
+	path := "/v1/sessions/" + url.PathEscape(sessionID) + "/send-command"
+	if err := c.do(ctx, http.MethodPost, path, body, &response); err != nil {
+		return agent.CommandResult{}, err
+	}
+	return agent.CommandResult{AgentID: response.AgentID, Status: response.Status, Message: response.Message}, nil
+}

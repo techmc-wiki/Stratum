@@ -226,6 +226,41 @@ func TestMCDRPythonShellRejected(t *testing.T) {
 	}
 }
 
+func TestSupervisorSendCommand(t *testing.T) {
+	supervisor, profile := terminalTestSupervisor(t, "stdin")
+	if _, err := supervisor.StartProcess(context.Background(), "send-cmd", profile); err != nil {
+		t.Fatal(err)
+	}
+	waitForLog(t, supervisor, "send-cmd", "helper-ready")
+	if err := supervisor.SendCommand("send-cmd", "save-all"); err != nil {
+		t.Fatalf("SendCommand failed: %v", err)
+	}
+	logs := supervisor.CollectLogs("send-cmd", 0)
+	if !containsLog(logs, "save-all") {
+		t.Fatalf("command not found in logs: %v", logs)
+	}
+	if err := supervisor.SendCommand("send-cmd", ""); err == nil || !strings.Contains(err.Error(), "command is required") {
+		t.Fatalf("empty command err=%v", err)
+	}
+	if err := supervisor.SendCommand("send-cmd", "bad\ncommand"); err == nil || !strings.Contains(err.Error(), "control characters") {
+		t.Fatalf("control chars err=%v", err)
+	}
+	if err := supervisor.SendCommand("unknown-session", "save-all"); err == nil || !strings.Contains(err.Error(), "not started") {
+		t.Fatalf("unknown session err=%v", err)
+	}
+	if err := supervisor.SendCommand("send-cmd-dummy", "save-all"); err == nil || !strings.Contains(err.Error(), "not started") {
+		t.Fatalf("dummy session err=%v", err)
+	}
+	_, _ = supervisor.StopProcess(context.Background(), "send-cmd")
+	stopped := supervisor.InspectProcess("send-cmd")
+	if stopped.Status != StatusStopped {
+		t.Fatalf("expected stopped: %+v", stopped)
+	}
+	if err := supervisor.SendCommand("send-cmd", "save-all"); err == nil || !strings.Contains(err.Error(), "not running") {
+		t.Fatalf("stopped session SendCommand should fail: %v", err)
+	}
+}
+
 func terminalTestSupervisor(t *testing.T, mode string) (*Supervisor, runtimeprofile.Profile) {
 	t.Helper()
 	root := t.TempDir()

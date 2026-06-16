@@ -192,6 +192,25 @@ func TestClientMaterializedArtifactMalformedManifestReturnsStructuredError(t *te
 	}
 }
 
+func TestClientSendCommand(t *testing.T) {
+	fake := local.NewFake()
+	_, _ = fake.StartSession(context.Background(), agent.SessionRequest{SessionID: "session-1"})
+	server := httptest.NewServer(NewServer(fake, "", nil).Handler())
+	defer server.Close()
+	client := newTestClient(t, server.URL, "")
+	result, err := client.SendCommand(context.Background(), "session-1", "save-all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "sent" || result.AgentID != local.DefaultAgentID {
+		t.Fatalf("result=%+v", result)
+	}
+	_, err = client.SendCommand(context.Background(), "session-1", "")
+	if err == nil || !strings.Contains(err.Error(), "required") {
+		t.Fatalf("empty command err=%v", err)
+	}
+}
+
 func newTestClient(t *testing.T, rawURL, token string) *Client {
 	t.Helper()
 	client, err := NewClient(rawURL, token, time.Second)

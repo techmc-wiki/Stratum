@@ -191,3 +191,41 @@ func TestServerLogsMaxBytes(t *testing.T) {
 		t.Fatalf("logs=%+v bytes=%d", logs, total)
 	}
 }
+
+func TestServerSendCommand(t *testing.T) {
+	fake := local.NewFake()
+	_, _ = fake.StartSession(context.Background(), agent.SessionRequest{SessionID: "session-1"})
+	server := httptest.NewServer(NewServer(fake, "", nil).Handler())
+	defer server.Close()
+
+	body := strings.NewReader(`{"command":"save-all"}`)
+	response, err := http.Post(server.URL+"/v1/sessions/session-1/send-command", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d", response.StatusCode)
+	}
+	var result SendCommandResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "sent" || result.SessionID != "session-1" {
+		t.Fatalf("result=%+v", result)
+	}
+
+	empty := strings.NewReader(`{"command":""}`)
+	response, err = http.Post(server.URL+"/v1/sessions/session-1/send-command", "application/json", empty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var errResp ErrorResponse
+	if err := json.NewDecoder(response.Body).Decode(&errResp); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errResp.Error, "required") {
+		t.Fatalf("err=%s", errResp.Error)
+	}
+}

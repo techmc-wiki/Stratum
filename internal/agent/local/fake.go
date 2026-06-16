@@ -326,3 +326,13 @@ func (f *Fake) SessionReadyForStart(_ context.Context, sessionID string) (agent.
 func (f *Fake) InspectMCDRConfigStub(_ context.Context, sessionID string) (agent.MCDRConfigStubInspection, error) {
 	return agent.MCDRConfigStubInspection{SessionID: sessionID, Exists: false, Path: "", Valid: false, Status: "missing", CheckedAt: f.now()}, nil
 }
+
+func (f *Fake) SendCommand(_ context.Context, sessionID, command string) (agent.CommandResult, error) {
+	if err := f.record(agent.OperationSendCommand); err != nil {
+		return agent.CommandResult{}, err
+	}
+	if command == "" {
+		return agent.CommandResult{}, agent.Error{AgentID: f.id, Operation: agent.OperationSendCommand, Message: "command is required"}
+	}
+	return agent.CommandResult{AgentID: f.id, Status: "sent", Message: "command sent"}, nil
+}

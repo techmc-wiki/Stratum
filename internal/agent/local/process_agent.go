@@ -338,3 +338,10 @@ func (a *ProcessAgent) InspectMCDRConfigStub(ctx context.Context, sessionID stri
 		CheckedAt:                   result.CheckedAt,
 	}, nil
 }
+
+func (a *ProcessAgent) SendCommand(ctx context.Context, sessionID, command string) (agent.CommandResult, error) {
+	if err := a.supervisor.SendCommand(sessionID, command); err != nil {
+		return agent.CommandResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationSendCommand, Message: err.Error()}
+	}
+	return agent.CommandResult{AgentID: a.id, Status: "sent", Message: "command sent"}, nil
+}
