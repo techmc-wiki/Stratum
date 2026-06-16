@@ -3,6 +3,8 @@ package checkpoint
 import (
 	"errors"
 	"time"
+
+	"github.com/stratummc/stratum/internal/checkpoint/consistency"
 )
 
 type Kind string
@@ -56,6 +58,8 @@ type Checkpoint struct {
 	CreatorID                             string                 `json:"creatorId"`
 	Kind                                  Kind                   `json:"kind"`
 	Status                                Status                 `json:"status"`
+	ConsistencyLevel                      consistency.Level      `json:"consistencyLevel"`
+	ConsistencyMetadata                   map[string]string      `json:"consistencyMetadata,omitempty"`
 	EnvironmentID                         string                 `json:"environmentId"`
 	RuntimeProfileID                      string                 `json:"runtimeProfileId,omitempty"`
 	WorldStateRef                         string                 `json:"worldStateRef,omitempty"`
@@ -83,6 +87,8 @@ type CreateParams struct {
 	CreatorID                             string
 	Kind                                  Kind
 	Status                                Status
+	ConsistencyLevel                      consistency.Level
+	ConsistencyMetadata                   map[string]string
 	EnvironmentID                         string
 	RuntimeProfileID                      string
 	WorldStateRef                         string
@@ -108,6 +114,13 @@ func New(params CreateParams) (Checkpoint, error) {
 	if params.Status == StatusMetadataOnly && params.EnvironmentID == "" {
 		return Checkpoint{}, errors.New("metadata-only checkpoint requires environment id")
 	}
+	consistencyLevel := params.ConsistencyLevel
+	if consistencyLevel == "" {
+		consistencyLevel = consistency.LevelMetadataOnly
+	}
+	if err := consistencyLevel.Validate(); err != nil {
+		return Checkpoint{}, err
+	}
 	createdAt := params.CreatedAt
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
@@ -115,7 +128,8 @@ func New(params CreateParams) (Checkpoint, error) {
 	return Checkpoint{
 		ID: params.ID, ProjectID: params.ProjectID, RoomID: params.RoomID,
 		SourceSessionID: params.SourceSessionID, CreatorID: params.CreatorID,
-		Kind: params.Kind, Status: params.Status, EnvironmentID: params.EnvironmentID,
+		Kind: params.Kind, Status: params.Status, ConsistencyLevel: consistencyLevel,
+		ConsistencyMetadata: cloneMap(params.ConsistencyMetadata), EnvironmentID: params.EnvironmentID,
 		RuntimeProfileID: params.RuntimeProfileID, WorldStateRef: params.WorldStateRef,
 		LucyLockHash: params.LucyLockHash, ArtifactIDs: cloneSlice(params.ArtifactIDs),
 		AppliedArtifactRefs:                   cloneSlice(params.AppliedArtifactRefs),
