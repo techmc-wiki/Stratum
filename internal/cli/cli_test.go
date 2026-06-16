@@ -14,11 +14,11 @@ import (
 	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/agent/httptransport"
 	"github.com/stratummc/stratum/internal/agent/local"
-	"github.com/stratummc/stratum/internal/domain/artifact"
-	"github.com/stratummc/stratum/internal/domain/artifactstaging"
-	"github.com/stratummc/stratum/internal/domain/audit"
-	"github.com/stratummc/stratum/internal/repository/artifactblob"
-	"github.com/stratummc/stratum/internal/repository/filesystem"
+	"github.com/stratummc/stratum/internal/artifact"
+	artifactstaging "github.com/stratummc/stratum/internal/artifact/staging"
+	"github.com/stratummc/stratum/internal/audit"
+	"github.com/stratummc/stratum/internal/storage/artifactblob"
+	"github.com/stratummc/stratum/internal/storage/filesystem"
 )
 
 func ensureTestEnvironment(dataDir string) []string {

@@ -1,8 +1,8 @@
 package lucybridge
 
 import (
-	"github.com/stratummc/stratum/internal/domain/artifact"
-	"github.com/stratummc/stratum/internal/domain/environment"
+	"github.com/stratummc/stratum/internal/artifact"
+	"github.com/stratummc/stratum/internal/environment"
 	"github.com/stratummc/stratum/internal/integration/lucy"
 )
 

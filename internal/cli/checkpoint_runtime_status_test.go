@@ -13,7 +13,7 @@ import (
 	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/agent/httptransport"
 	"github.com/stratummc/stratum/internal/agent/local"
-	"github.com/stratummc/stratum/internal/repository/filesystem"
+	"github.com/stratummc/stratum/internal/storage/filesystem"
 )
 
 type checkpointRuntimeStatusAgent struct {

@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/stratummc/stratum/internal/agent"
-	"github.com/stratummc/stratum/internal/repository/filesystem"
+	"github.com/stratummc/stratum/internal/storage/filesystem"
 )
 
 type commandRuntime struct {

@@ -24,7 +24,7 @@ Checkpoints do **not** currently:
 
 ## Service Layer
 
-Checkpoint metadata orchestration is handled by `internal/service/checkpointsvc`.
+Checkpoint metadata orchestration is handled by `internal/checkpoint/service`.
 
 The service layer:
 

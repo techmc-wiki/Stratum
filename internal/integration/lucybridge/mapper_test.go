@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stratummc/stratum/internal/domain/artifact"
-	"github.com/stratummc/stratum/internal/domain/environment"
+	"github.com/stratummc/stratum/internal/artifact"
+	"github.com/stratummc/stratum/internal/environment"
 )
 
 func TestEnvironmentToSpecGTMC117(t *testing.T) {

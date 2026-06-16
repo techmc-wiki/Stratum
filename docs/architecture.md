@@ -84,7 +84,7 @@ boundaries. StratumMC does not auto-create or seed Environments.
 
 ## Session lifecycle service
 
-`internal/service/sessionsvc` coordinates control-plane lifecycle operations. It
+`internal/session/service` coordinates control-plane lifecycle operations. It
 implements prepare, start, stop, restart, freeze, unfreeze, crash marking,
 archive, and delete without launching a JVM. Compound operations use only the
 explicit domain transitions; for example, starting a new session advances
@@ -131,7 +131,7 @@ the selected session workspace.
 
 ## Metadata repositories
 
-The current durable repository is in `internal/repository/filesystem`. It stores
+The current durable repository is in `internal/storage/filesystem`. It stores
 one atomic JSON file per project, room, session, checkpoint, artifact,
 environment, and resource policy. Audit events use append-only JSONL. The root
 is configurable and defaults to `.stratum/data` in the CLI.

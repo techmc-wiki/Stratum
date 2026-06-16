@@ -16,30 +16,30 @@ import (
 	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/agent/httptransport"
 	"github.com/stratummc/stratum/internal/agent/local"
-	"github.com/stratummc/stratum/internal/domain/artifact"
-	"github.com/stratummc/stratum/internal/domain/artifactapply"
-	"github.com/stratummc/stratum/internal/domain/artifactstaging"
-	"github.com/stratummc/stratum/internal/domain/audit"
-	"github.com/stratummc/stratum/internal/domain/checkpoint"
-	"github.com/stratummc/stratum/internal/domain/environment"
-	"github.com/stratummc/stratum/internal/domain/operation"
-	"github.com/stratummc/stratum/internal/domain/project"
-	"github.com/stratummc/stratum/internal/domain/resourcepolicy"
-	"github.com/stratummc/stratum/internal/domain/room"
-	"github.com/stratummc/stratum/internal/domain/runtimeobservation"
-	"github.com/stratummc/stratum/internal/domain/session"
-	stratumerrors "github.com/stratummc/stratum/internal/errors"
-	"github.com/stratummc/stratum/internal/repository/artifactblob"
-	"github.com/stratummc/stratum/internal/repository/filesystem"
-	"github.com/stratummc/stratum/internal/service/artifactapplysvc"
-	"github.com/stratummc/stratum/internal/service/artifactstagingsvc"
-	"github.com/stratummc/stratum/internal/service/artifactsvc"
-	"github.com/stratummc/stratum/internal/service/checkpointsvc"
-	"github.com/stratummc/stratum/internal/service/observationsvc"
-	"github.com/stratummc/stratum/internal/service/reconcilesvc"
-	"github.com/stratummc/stratum/internal/service/roomsvc"
-	"github.com/stratummc/stratum/internal/service/sessionsvc"
-	"github.com/stratummc/stratum/internal/util"
+	"github.com/stratummc/stratum/internal/artifact"
+	artifactapply "github.com/stratummc/stratum/internal/artifact/apply"
+	artifactapplysvc "github.com/stratummc/stratum/internal/artifact/applyservice"
+	artifactsvc "github.com/stratummc/stratum/internal/artifact/service"
+	artifactstaging "github.com/stratummc/stratum/internal/artifact/staging"
+	artifactstagingsvc "github.com/stratummc/stratum/internal/artifact/stagingservice"
+	"github.com/stratummc/stratum/internal/audit"
+	"github.com/stratummc/stratum/internal/checkpoint"
+	checkpointsvc "github.com/stratummc/stratum/internal/checkpoint/service"
+	"github.com/stratummc/stratum/internal/environment"
+	"github.com/stratummc/stratum/internal/idgen"
+	observationsvc "github.com/stratummc/stratum/internal/observation/service"
+	"github.com/stratummc/stratum/internal/operation"
+	"github.com/stratummc/stratum/internal/project"
+	reconcilesvc "github.com/stratummc/stratum/internal/reconcile/service"
+	"github.com/stratummc/stratum/internal/resourcepolicy"
+	"github.com/stratummc/stratum/internal/room"
+	roomsvc "github.com/stratummc/stratum/internal/room/service"
+	runtimeobservation "github.com/stratummc/stratum/internal/runtime/observation"
+	"github.com/stratummc/stratum/internal/session"
+	sessionsvc "github.com/stratummc/stratum/internal/session/service"
+	"github.com/stratummc/stratum/internal/storage/artifactblob"
+	"github.com/stratummc/stratum/internal/storage/filesystem"
+	stratumerrors "github.com/stratummc/stratum/internal/stratumerr"
 )
 
 const defaultDataDirectory = ".stratum/data"
@@ -1326,7 +1326,7 @@ func materializeArtifactStaging(ctx context.Context, store *filesystem.Store, bl
 	if err != nil {
 		return reportError(stderr, "agent materialize artifact", err)
 	}
-	auditID, err := util.NewID("audit")
+	auditID, err := idgen.NewID("audit")
 	if err != nil {
 		return reportError(stderr, "create materialization audit", err)
 	}
@@ -1806,7 +1806,7 @@ func createEnvironment(ctx context.Context, store *filesystem.Store, args []stri
 		fmt.Fprintf(stderr, "create environment error: %v\n", err)
 		return 1
 	}
-	eventID, _ := util.NewID("audit")
+	eventID, _ := idgen.NewID("audit")
 	event, _ := audit.NewEvent(eventID, "cli", "environment.created", "environment", env.ID, time.Now().UTC())
 	event.Metadata = map[string]string{"environmentId": env.ID, "name": env.Name, "minecraftVersion": env.MinecraftVersion, "loaderType": string(env.LoaderType), "serverCore": string(env.ServerCore)}
 	_ = store.AppendAuditEvent(ctx, event)
@@ -1873,7 +1873,7 @@ func importEnvironmentFile(
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	auditID, err := util.NewID("audit")
+	auditID, err := idgen.NewID("audit")
 	if err != nil {
 		return reportError(stderr, "create environment import audit id", err)
 	}
@@ -2112,7 +2112,7 @@ func updateEnvironment(ctx context.Context, store *filesystem.Store, args []stri
 		}
 		return 1
 	}
-	eventID, _ := util.NewID("audit")
+	eventID, _ := idgen.NewID("audit")
 	event, _ := audit.NewEvent(eventID, *actor, "environment.updated", "environment", env.ID, time.Now().UTC())
 	event.Metadata = map[string]string{"environmentId": env.ID, "changedFields": strings.Join(changed, ","), "previousUpdatedAt": expected.Format(time.RFC3339), "newUpdatedAt": env.UpdatedAt.Format(time.RFC3339)}
 	_ = store.AppendAuditEvent(ctx, event)
