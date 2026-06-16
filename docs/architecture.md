@@ -143,9 +143,9 @@ Checkpoint consistency levels are explicit:
 * `metadata_only`: metadata and runtime-status only
 * `stopped`: runtime stopped before snapshot
 * `best_effort`: commands such as `save-all` used before copying
-* `command_quiesced`: command-level quiescence such as `save-off`, `save-all`, and `save-on`
-* `plugin_backup`: backup produced by an MCDR or server-side backup plugin
-* `mc_bridge_prepared`: Minecraft-side bridge confirmed a prepared checkpoint state
+* `command_quiesced`: Agent sends `save-off`, `save-all flush` to MCDR stdin (or Minecraft console), parses stdout for confirmation, snapshots world, sends `save-on`. **MCDR acts as command transport**. Does not guarantee full internal consistency (mod state, async tasks).
+* `plugin_backup`: Agent sends plugin command (e.g., `!!backup create`) to MCDR stdin, waits for plugin to write backup metadata, verifies backup integrity. **MCDR plugin performs backup**. Consistency depends on plugin quality.
+* `mc_bridge_prepared`: Agent calls MC Bridge `Prepare()` to freeze world state, snapshots, calls `Commit()`/`Abort()`. **Requires MC Bridge/Debug Mod**. Strongest consistency. MCDR may transport bridge messages but does not implement consistency itself.
 
 Current checkpoint support is metadata-oriented. Future world snapshots, restore, fork, and strong consistency require Agent-side checkpoint orchestration and possibly a Minecraft-side bridge.
 
@@ -272,26 +272,40 @@ An Agent owns a constrained session workspace and the outer runtime lifecycle on
 An Agent may manage:
 
 * runtime directories
-* trusted child processes
+* trusted child processes (including MCDR daemon)
 * containers
 * terminal stdin/stdout/stderr
+* MCDR stdin/stdout/stderr streams
 * runtime logs
 * PID and exit-code observations
 * resource observations
 * Artifact materialization
 * applied Artifact verification
 * Environment materialization
+* MCDR config and plugin materialization
 * checkpoint packing
 * bridge outbox/inbox/status manifests
 * future sandbox setup
 
-The Controller depends only on the transport-independent `AgentClient` interface. Agent-local work is divided into runtime, process, log, file, resource, container, bridge, and checkpoint-worker interfaces.
+**Agent owns MCDR daemon supervision.** When a RuntimeProfile specifies MCDR execution, the Agent:
 
-An unexpected child exit updates only Agent-local observations. It does not directly transition authoritative Session metadata. A later reconciliation phase must compare Agent observations with Controller state through explicit Operations and audit events.
+1. Creates MCDR runtime layout (`{sessionRoot}/mcdr/`)
+2. Writes `config.yml` from Environment-specified MCDR config
+3. Installs MCDR plugins from Artifact staging
+4. Spawns MCDR as a child process with captured stdin/stdout/stderr
+5. Writes commands to MCDR stdin on Controller request
+6. Observes MCDR stdout for log patterns, readiness, and command feedback
+7. Observes MCDR stderr for daemon errors
+8. Detects MCDR crash or unexpected exit
+9. Executes graceful stop sequence (stdin command → SIGTERM → SIGKILL)
+
+The Controller depends only on the transport-independent `AgentClient` interface. Agent-local work is divided into runtime, process, log, file, resource, container, bridge, and checkpoint-worker interfaces. MCDR supervision is implemented inside `agent/mcdr/supervisor.go`.
+
+An unexpected child exit (including MCDR crash) updates only Agent-local observations. It does not directly transition authoritative Session metadata. A later reconciliation phase must compare Agent observations with Controller state through explicit Operations and audit events.
 
 For local multi-process development, `internal/agent/httptransport` exposes the Agent through an HTTP API. HTTP carries intent and observations only; lifecycle decisions and repository writes remain in the Controller.
 
-See `docs/agent.md`.
+See `docs/agent.md` and `docs/mcdr.md`.
 
 ## RuntimeProfile
 
@@ -301,15 +315,56 @@ RuntimeProfile selection is part of the Agent protocol. The Controller may reque
 
 Known or planned RuntimeProfile families include:
 
-* `dummy-process`
-* `terminal`
-* `mcdr-docker-managed`
-* `minecraft-direct`
-* `external-runtime`
+* `dummy-process` — in-process Go goroutine with no OS process (test/dev only)
+* `terminal` — direct `exec.Cmd` OS process (simple servers, direct Java)
+* `mcdr-python` — Python-based MCDR daemon wrapper
+* `mcdr-docker` — MCDR inside Docker container
+* `minecraft-direct` — direct Java server without MCDR
+* `external-runtime` — Agent-managed but externally defined execution
 
-Only the built-in `dummy-process` profile is registered by default. Trusted deployment wiring may register terminal or container-backed profiles. Controller requests can select only a profile ID; they cannot supply arbitrary commands, environment variables, or shell strings.
+### MCDR profile example
 
-See `runtime.md`.
+A typical MCDR RuntimeProfile (`mcdr-python-1.17`) would define:
+
+```yaml
+id: mcdr-python-1.17
+type: mcdr-python
+command: python3
+args: ["-m", "mcdreforged"]
+workdir: "{sessionRoot}/mcdr"
+env:
+  MCDR_CONFIG: "{sessionRoot}/mcdr/config.yml"
+  PYTHONUNBUFFERED: "1"
+readinessCheck:
+  type: log-pattern
+  pattern: "MCDR started"
+  timeout: 60s
+healthCheck:
+  type: process-alive
+  maxSilentSeconds: 300
+gracefulStop:
+  - type: stdin-command
+    command: "!!MCDR stop"
+    timeout: 30s
+  - type: signal
+    signal: SIGTERM
+    timeout: 10s
+  - type: signal
+    signal: SIGKILL
+```
+
+The Agent uses this profile to:
+
+1. Materialize MCDR config and plugins
+2. Launch `python3 -m mcdreforged` with captured I/O
+3. Wait for readiness log pattern
+4. Expose stdin for command sending
+5. Parse stdout/stderr for log forwarding and observation
+6. Execute graceful stop sequence on shutdown
+
+Only the built-in `dummy-process` profile is registered by default. Trusted deployment wiring may register terminal or MCDR profiles. Controller requests can select only a profile ID; they cannot supply arbitrary commands, environment variables, or shell strings.
+
+See `docs/runtime.md` and `docs/mcdr.md`.
 
 ## Container Runtime
 
@@ -331,24 +386,87 @@ Docker or another backend may implement this layer. MCDR must not own the contai
 
 ## MCDR Integration
 
-MCDR Integration is a daemon and plugin transport layer, not a clean embedded core API.
+MCDR is a daemon wrapper and plugin transport managed by the Agent as a supervised child process.
 
-The Agent may run MCDR as a trusted child process or inside an Agent-managed container. MCDR may then manage Minecraft console and plugin behavior internally. Stratum should interact with it through constrained daemon IO and plugin bridge contracts.
+### Core principle
 
-MCDR Integration may support:
+**Stratum Agent owns the MCDR daemon lifecycle. MCDR does not own the Stratum lifecycle.**
 
-* daemon start/stop through RuntimeProfile
-* stdin/stdout/stderr/log access
-* console command sending
-* plugin command relay
-* request ID correlation
-* plugin event feedback
-* backup plugin triggering
-* PrimeBackup-like workflows
+The Controller never calls MCDR directly. MCDR is started, stopped, and restarted by the Agent through a trusted RuntimeProfile. The Agent captures MCDR's stdin/stdout/stderr streams and observes its process state.
 
-MCDR is not the top-level Stratum lifecycle controller. The Controller must not use MCDR directly for primary start, stop, restart, checkpoint, or restore behavior.
+### Runtime model
 
-MCDR also does not prove strong world-state consistency. Strong checkpoint preparation belongs to the MC Bridge / Debug Mod layer.
+MCDR runs as one of:
+
+1. **OS process** — `python3 -m mcdreforged` launched by Agent via `exec.Cmd` or equivalent
+2. **Container child** — future Docker/Podman container managed by Agent's ContainerRuntime
+
+The Agent creates the MCDR runtime directory structure, writes `config.yml`, installs plugins, and materializes Environment-specified MCDR configuration before launching the daemon.
+
+### I/O stream ownership
+
+The Agent owns:
+
+* **stdin** — write-only pipe to MCDR. Used to send console commands (`save-all`, `stop`, etc.) and plugin commands.
+* **stdout** — read-only stream. Contains MCDR console output, Minecraft server logs, and plugin messages. Agent may buffer, forward to Controller observations, or stream to external log collectors.
+* **stderr** — read-only stream. Contains MCDR daemon errors and Python exceptions. Agent logs these separately.
+
+MCDR stdin is **not** exposed to end users. All commands go through Agent → MCDR stdin, never Controller → MCDR.
+
+### Lifecycle integration
+
+MCDR daemon lifecycle is controlled by the Agent through RuntimeProfile execution:
+
+1. **Start** — Agent materializes MCDR config, installs plugins, spawns `python3 -m mcdreforged`, captures streams
+2. **Stop** — Agent sends `!!MCDR stop` or `stop` to stdin, waits for graceful exit with timeout, force-kills if needed
+3. **Restart** — Agent stops MCDR, waits for exit, starts fresh process
+4. **Crash** — Agent observes unexpected exit code, records crash in runtime observation, does NOT auto-restart without Controller Operation
+
+### Command sending
+
+The Agent exposes `SendCommand(ctx, sessionID, command string)` to the Controller. Internally:
+
+```text
+Controller Operation → Agent.SendCommand(sessionID, "save-all flush")
+    → Agent writes "save-all flush\n" to MCDR stdin
+        → MCDR relays to Minecraft console
+            → Agent observes stdout for success/failure log patterns
+                → Agent returns success/error to Controller
+```
+
+Command sending is synchronous with timeout. The Agent may parse MCDR/Minecraft log output to detect command completion.
+
+### Plugin integration
+
+MCDR plugins (e.g., PrimeBackup, custom checkpoint plugins) can be used for **advisory backup workflows**, but they do not replace Stratum's authoritative checkpoint metadata or Agent-side world snapshot logic.
+
+Plugin-triggered backups should:
+
+1. Be invoked via `SendCommand(ctx, sessionID, "!!backup create <reason>")`
+2. Write backup metadata to a known path inside the session runtime
+3. Return a reference that the Agent can verify and register with the Controller
+
+Plugins must not directly mutate Controller metadata, create Controller Operations, or bypass Agent supervision.
+
+### What MCDR does NOT do
+
+1. **MCDR does not prove strong world-state consistency.** `save-off` + `save-all flush` commands are advisory. Strong consistency requires the MC Bridge / Debug Mod layer.
+2. **MCDR does not own checkpoint orchestration.** Checkpoint Operations originate from the Controller, coordinate through the Agent, and may optionally invoke MCDR plugin hooks.
+3. **MCDR is not the primary start/stop mechanism.** The Agent's RuntimeProcess/ContainerRuntime is the source of truth for process state.
+4. **MCDR does not replace the Agent.** MCDR is a child. The Agent supervises it.
+
+### MCDR as a RuntimeProfile
+
+MCDR execution is defined by a RuntimeProfile (e.g., `mcdr-python-1.17` or `mcdr-docker-managed`). The profile specifies:
+
+* Command: `python3 -m mcdreforged`
+* Working directory: `{sessionRoot}/mcdr`
+* Environment variables: `MCDR_CONFIG={sessionRoot}/mcdr/config.yml`
+* Readiness check: parse stdout for `MCDR started` log line
+* Health check: process running + no recent stderr output
+* Graceful stop: send `!!MCDR stop\n` to stdin, wait 30s, SIGTERM, wait 10s, SIGKILL
+
+See `docs/mcdr.md` and `docs/runtime.md` for implementation details.
 
 ## MC Bridge
 
@@ -369,21 +487,39 @@ The MC Bridge should be modeled separately from MCDR. MCDR may carry messages to
 
 ## Checkpoint Orchestrator
 
-Checkpoint orchestration coordinates Controller metadata, Agent runtime execution, optional MCDR plugin backups, optional MC Bridge consistency, and storage references.
+Checkpoint orchestration coordinates Controller metadata, Agent runtime execution, optional MCDR command quiescence, optional MC Bridge consistency, and storage references.
 
 A future strong checkpoint flow may look like:
 
 ```text
-Controller creates checkpoint Operation
-    -> Agent selects consistency mode
-        -> MC Bridge prepare if required
-            -> Agent or plugin snapshots world data
-                -> Agent verifies snapshot
-                    -> MC Bridge commit or abort
-                        -> Controller records Checkpoint metadata and audit
+Controller creates checkpoint Operation (with requested consistency level)
+    → Agent selects achievable consistency mode based on RuntimeProfile
+        → If level >= command_quiesced: Agent sends save-off/save-all to MCDR stdin
+            → Agent parses MCDR stdout for command completion
+        → If level >= mc_bridge_prepared: Agent calls MC Bridge.Prepare()
+            → MC Bridge freezes world state, returns PrepareToken
+        → Agent or MCDR plugin snapshots world data
+            → Agent verifies snapshot integrity
+        → If MC Bridge was prepared: Agent calls MC Bridge.Commit(token) or Abort(token)
+        → If MCDR command quiescence was used: Agent sends save-on to MCDR stdin
+    → Agent returns snapshot reference and achieved consistency level
+        → Controller records Checkpoint metadata with achieved level and audit
 ```
 
-The current implementation records metadata and may include Agent runtime-status snapshots. It does not yet claim to protect world data.
+**MCDR's role in checkpoints:**
+
+MCDR participates through:
+
+1. **Command quiescence** (consistency level `command_quiesced`) — Agent sends `save-off`, `save-all flush` to MCDR stdin, waits for stdout confirmation, snapshots world, sends `save-on`. This is advisory; it does not guarantee full consistency.
+2. **Plugin hooks** (consistency level `plugin_backup`) — Agent sends `!!backup create` or similar plugin command to MCDR stdin. MCDR plugin performs backup internally. Agent verifies backup metadata file written by plugin.
+
+MCDR does **not**:
+
+* Decide when to create checkpoints (Controller decides)
+* Directly call Agent APIs (Agent calls MCDR via stdin)
+* Guarantee strong consistency (MC Bridge is required for that)
+
+The current implementation records metadata and may include Agent runtime-status snapshots. It does not yet claim to protect world data. Real checkpoint packing requires Agent-side world snapshot orchestration and storage backend integration.
 
 ## Managers and services
 
