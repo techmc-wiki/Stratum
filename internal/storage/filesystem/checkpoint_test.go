@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stratummc/stratum/internal/checkpoint"
+	"github.com/stratummc/stratum/internal/checkpoint/consistency"
 	stratumerrors "github.com/stratummc/stratum/internal/stratumerr"
 )
 
@@ -13,7 +14,7 @@ func TestCheckpointMetadataOnlyCreate(t *testing.T) {
 	ctx := context.Background()
 	cp := checkpoint.Checkpoint{
 		ID: "cp-test", SourceSessionID: "s-1", CreatorID: "u-1",
-		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		EnvironmentID: "env-1", ProjectID: "p-1", RoomID: "r-1",
 		CreatedAt: testTime,
 	}
@@ -34,7 +35,7 @@ func TestCheckpointDuplicateIDFails(t *testing.T) {
 	ctx := context.Background()
 	cp := checkpoint.Checkpoint{
 		ID: "cp-dup", SourceSessionID: "s-1", CreatorID: "u-1",
-		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		EnvironmentID: "env-1", CreatedAt: testTime,
 	}
 	_ = store.CreateCheckpoint(ctx, cp)
@@ -49,7 +50,7 @@ func TestCheckpointPersistsAfterReload(t *testing.T) {
 	ctx := context.Background()
 	cp := checkpoint.Checkpoint{
 		ID: "cp-persist", SourceSessionID: "s-1", CreatorID: "u-1",
-		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		EnvironmentID: "env-1", CreatedAt: testTime,
 	}
 	if err := store1.CreateCheckpoint(ctx, cp); err != nil {
@@ -82,7 +83,7 @@ func TestCheckpointMissingSessionFails(t *testing.T) {
 	ctx := context.Background()
 	cp := checkpoint.Checkpoint{
 		ID: "cp-no-session", CreatorID: "u-1",
-		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		EnvironmentID: "env-1", CreatedAt: testTime,
 	}
 	if err := store.CreateCheckpoint(ctx, cp); err == nil {
@@ -95,7 +96,7 @@ func TestCheckpointMissingCreatorFails(t *testing.T) {
 	ctx := context.Background()
 	cp := checkpoint.Checkpoint{
 		ID: "cp-no-creator", SourceSessionID: "s-1",
-		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		EnvironmentID: "env-1", CreatedAt: testTime,
 	}
 	if err := store.CreateCheckpoint(ctx, cp); err == nil {
@@ -108,7 +109,7 @@ func TestCheckpointMissingEnvironmentIDFails(t *testing.T) {
 	ctx := context.Background()
 	cp := checkpoint.Checkpoint{
 		ID: "cp-no-env", SourceSessionID: "s-1", CreatorID: "u-1",
-		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		CreatedAt: testTime,
 	}
 	if err := store.CreateCheckpoint(ctx, cp); err == nil {
@@ -121,7 +122,7 @@ func TestCheckpointUnsafeIDFails(t *testing.T) {
 	ctx := context.Background()
 	cp := checkpoint.Checkpoint{
 		ID: "../unsafe", SourceSessionID: "s-1", CreatorID: "u-1",
-		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		EnvironmentID: "env-1", CreatedAt: testTime,
 	}
 	if err := store.CreateCheckpoint(ctx, cp); err == nil {
@@ -146,17 +147,17 @@ func TestListCheckpointsBySessionReturnsOnlyMatching(t *testing.T) {
 	ctx := context.Background()
 	cp1 := checkpoint.Checkpoint{
 		ID: "cp-1", SourceSessionID: "s-1", CreatorID: "u-1",
-		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		EnvironmentID: "env-1", CreatedAt: testTime,
 	}
 	cp2 := checkpoint.Checkpoint{
 		ID: "cp-2", SourceSessionID: "s-2", CreatorID: "u-1",
-		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		EnvironmentID: "env-1", CreatedAt: testTime,
 	}
 	cp3 := checkpoint.Checkpoint{
 		ID: "cp-3", SourceSessionID: "s-1", CreatorID: "u-1",
-		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		EnvironmentID: "env-1", CreatedAt: testTime,
 	}
 	_ = store.CreateCheckpoint(ctx, cp1)
@@ -181,7 +182,7 @@ func TestListCheckpointsBySessionEmptyResult(t *testing.T) {
 	ctx := context.Background()
 	cp := checkpoint.Checkpoint{
 		ID: "cp-1", SourceSessionID: "s-1", CreatorID: "u-1",
-		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		EnvironmentID: "env-1", CreatedAt: testTime,
 	}
 	_ = store.CreateCheckpoint(ctx, cp)
@@ -200,12 +201,12 @@ func TestListCheckpointsBySessionAfterReload(t *testing.T) {
 	ctx := context.Background()
 	cp1 := checkpoint.Checkpoint{
 		ID: "cp-1", SourceSessionID: "s-1", CreatorID: "u-1",
-		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		EnvironmentID: "env-1", CreatedAt: testTime,
 	}
 	cp2 := checkpoint.Checkpoint{
 		ID: "cp-2", SourceSessionID: "s-1", CreatorID: "u-1",
-		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		EnvironmentID: "env-1", CreatedAt: testTime,
 	}
 	_ = store1.CreateCheckpoint(ctx, cp1)
@@ -237,7 +238,7 @@ func TestCheckpointRuntimeStatusSnapshotPersistsAfterReload(t *testing.T) {
 	}
 	cp := checkpoint.Checkpoint{
 		ID: "cp-runtime-status", SourceSessionID: "s-1", CreatorID: "u-1",
-		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		EnvironmentID: "env-1", CreatedAt: testTime,
 		RuntimeStatusSnapshot: &checkpoint.RuntimeStatusSnapshot{
 			CapturedAt: testTime, SessionID: "s-1", EnvironmentManifestExists: true,

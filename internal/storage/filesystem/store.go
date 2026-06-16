@@ -776,8 +776,11 @@ func validateCheckpoint(op string, value checkpoint.Checkpoint) error {
 	if err := validateID(op, value.ID); err != nil {
 		return err
 	}
-	if value.SourceSessionID == "" || value.CreatorID == "" || value.Kind == "" || value.Status == "" || value.CreatedAt.IsZero() {
-		return validationError(op, "checkpoint requires source session, creator, kind, status, and creation time")
+	if value.SourceSessionID == "" || value.CreatorID == "" || value.Kind == "" || value.Status == "" || value.ConsistencyLevel == "" || value.CreatedAt.IsZero() {
+		return validationError(op, "checkpoint requires source session, creator, kind, status, consistency level, and creation time")
+	}
+	if err := value.ConsistencyLevel.Validate(); err != nil {
+		return validationError(op, err.Error())
 	}
 	if value.Status == checkpoint.StatusMetadataOnly && value.EnvironmentID == "" {
 		return validationError(op, "metadata-only checkpoint requires environment id")

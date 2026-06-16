@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stratummc/stratum/internal/checkpoint"
+	"github.com/stratummc/stratum/internal/checkpoint/consistency"
 )
 
 var testTime = time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)
@@ -15,17 +16,17 @@ func TestMemoryListCheckpointsBySessionReturnsOnlyMatching(t *testing.T) {
 	ctx := context.Background()
 	cp1 := checkpoint.Checkpoint{
 		ID: "cp-1", SourceSessionID: "s-1", CreatorID: "u-1",
-		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		EnvironmentID: "env-1", CreatedAt: testTime,
 	}
 	cp2 := checkpoint.Checkpoint{
 		ID: "cp-2", SourceSessionID: "s-2", CreatorID: "u-1",
-		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		EnvironmentID: "env-1", CreatedAt: testTime,
 	}
 	cp3 := checkpoint.Checkpoint{
 		ID: "cp-3", SourceSessionID: "s-1", CreatorID: "u-1",
-		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		EnvironmentID: "env-1", CreatedAt: testTime,
 	}
 	store.Checkpoints[cp1.ID] = cp1
@@ -50,7 +51,7 @@ func TestMemoryListCheckpointsBySessionEmptyResult(t *testing.T) {
 	ctx := context.Background()
 	cp := checkpoint.Checkpoint{
 		ID: "cp-1", SourceSessionID: "s-1", CreatorID: "u-1",
-		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		EnvironmentID: "env-1", CreatedAt: testTime,
 	}
 	store.Checkpoints[cp.ID] = cp

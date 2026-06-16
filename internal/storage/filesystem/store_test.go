@@ -12,6 +12,7 @@ import (
 	artifactstaging "github.com/stratummc/stratum/internal/artifact/staging"
 	"github.com/stratummc/stratum/internal/audit"
 	"github.com/stratummc/stratum/internal/checkpoint"
+	"github.com/stratummc/stratum/internal/checkpoint/consistency"
 	"github.com/stratummc/stratum/internal/project"
 	runtimeobservation "github.com/stratummc/stratum/internal/runtime/observation"
 	"github.com/stratummc/stratum/internal/session"
@@ -76,7 +77,7 @@ func TestCheckpointAndArtifactPersistence(t *testing.T) {
 	store := newTestStore(t, filepath.Join(t.TempDir(), "data"))
 	cp := checkpoint.Checkpoint{
 		ID: "checkpoint-1", ProjectID: "project-1", RoomID: "room-1", SourceSessionID: "session-1",
-		CreatorID: "user-1", Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+		CreatorID: "user-1", Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
 		EnvironmentID: "environment-1", RuntimeProfileID: "profile-1", CreatedAt: testTime,
 	}
 	if err := store.CreateCheckpoint(ctx, cp); err != nil {
