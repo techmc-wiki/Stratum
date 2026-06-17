@@ -3,6 +3,7 @@ package local
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -417,5 +418,63 @@ func (a *ProcessAgent) CreateWorldSnapshot(ctx context.Context, request agent.Wo
 		SizeBytes:   result.SizeBytes,
 		SHA256:      result.SHA256,
 		CreatedAt:   result.CreatedAt,
+	}, nil
+}
+
+func (a *ProcessAgent) RestoreWorldSnapshot(ctx context.Context, request agent.WorldCheckpointRestoreRequest) (agent.WorldCheckpointRestoreResult, error) {
+	if strings.TrimSpace(request.SnapshotRef) == "" {
+		return agent.WorldCheckpointRestoreResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationRestoreWorldSnapshot, Message: "snapshot ref is required"}
+	}
+	agentID, _, relativePath, err := worldcheckpoint.ParseAgentLocalSnapshotRef(request.SnapshotRef)
+	if err != nil {
+		return agent.WorldCheckpointRestoreResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationRestoreWorldSnapshot, Message: err.Error()}
+	}
+	if agentID != a.id {
+		return agent.WorldCheckpointRestoreResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationRestoreWorldSnapshot, Message: "snapshot ref belongs to agent " + agentID + ", not " + a.id}
+	}
+	worldRel := strings.TrimSpace(request.WorldDirRel)
+	if worldRel == "" {
+		worldRel = "world_restored"
+	}
+	if filepath.IsAbs(worldRel) || strings.Contains(worldRel, "..") || worldRel == "." {
+		return agent.WorldCheckpointRestoreResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationRestoreWorldSnapshot, Message: "world dir relative path must be safe"}
+	}
+	snapshotPath := filepath.Join(a.supervisor.RuntimeRoot(), filepath.FromSlash(relativePath))
+	snapshotPath, err = filepath.Abs(filepath.Clean(snapshotPath))
+	if err != nil {
+		return agent.WorldCheckpointRestoreResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationRestoreWorldSnapshot, Message: err.Error()}
+	}
+	if _, err := os.Stat(snapshotPath); err != nil {
+		return agent.WorldCheckpointRestoreResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationRestoreWorldSnapshot, Message: "snapshot not found: " + err.Error()}
+	}
+	sessionLayout, err := agentprocess.NewSessionRuntimeLayout(a.supervisor.RuntimeRoot(), request.SessionID)
+	if err != nil {
+		return agent.WorldCheckpointRestoreResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationRestoreWorldSnapshot, Message: err.Error()}
+	}
+	worker, err := worldcheckpoint.NewWorker(a.supervisor.RuntimeRoot())
+	if err != nil {
+		return agent.WorldCheckpointRestoreResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationRestoreWorldSnapshot, Message: err.Error()}
+	}
+	restoreResult, err := worker.Restore(ctx, worldcheckpoint.RestoreParams{
+		SessionRoot:  sessionLayout.SessionRoot,
+		WorldDirRel:  worldRel,
+		SnapshotPath: snapshotPath,
+	})
+	if err != nil {
+		return agent.WorldCheckpointRestoreResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationRestoreWorldSnapshot, Message: err.Error()}
+	}
+	restoredAt := time.Now().UTC()
+	restoredRef, err := worldcheckpoint.BuildAgentLocalSnapshotRef(a.id, request.SessionID, restoreResult.RestoredDir, a.supervisor.RuntimeRoot())
+	if err != nil {
+		return agent.WorldCheckpointRestoreResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationRestoreWorldSnapshot, Message: err.Error()}
+	}
+	return agent.WorldCheckpointRestoreResult{
+		SessionID:   request.SessionID,
+		RestoredRef: restoredRef,
+		LocalPath:   restoreResult.RestoredDir,
+		EntryCount:  restoreResult.EntryCount,
+		SizeBytes:   restoreResult.SizeBytes,
+		RestoredDir: restoreResult.RestoredDir,
+		RestoredAt:  restoredAt,
 	}, nil
 }

@@ -110,3 +110,49 @@ func TestFakeSendCommand(t *testing.T) {
 		t.Fatalf("failure err=%v", err)
 	}
 }
+
+func TestFakeRestoreWorldSnapshot(t *testing.T) {
+	ctx := context.Background()
+	fake := NewFake()
+	req := agent.WorldCheckpointRestoreRequest{
+		SessionID:   "session-1",
+		SnapshotRef: "agent-local://local/sessions/session-1/checkpoints/world.zip",
+		WorldDirRel: "world_restored",
+	}
+	result, err := fake.RestoreWorldSnapshot(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.SessionID != "session-1" {
+		t.Fatalf("session id: %q", result.SessionID)
+	}
+	if !strings.Contains(result.RestoredRef, "agent-local://fake") {
+		t.Fatalf("restored ref: %q", result.RestoredRef)
+	}
+	if result.EntryCount != 42 {
+		t.Fatalf("entry count: %d", result.EntryCount)
+	}
+
+	failing := NewFake()
+	failing.SetFailure(agent.OperationRestoreWorldSnapshot, "injected restore failure")
+	_, err = failing.RestoreWorldSnapshot(ctx, req)
+	if err == nil || !strings.Contains(err.Error(), "injected restore failure") {
+		t.Fatalf("failure err=%v", err)
+	}
+}
+
+func TestFakeRestoreWorldSnapshotDefaultWorldDir(t *testing.T) {
+	ctx := context.Background()
+	fake := NewFake()
+	req := agent.WorldCheckpointRestoreRequest{
+		SessionID:   "session-1",
+		SnapshotRef: "agent-local://local/sessions/session-1/checkpoints/world.zip",
+	}
+	result, err := fake.RestoreWorldSnapshot(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.RestoredRef, "world_restored") {
+		t.Fatalf("restored ref: %q", result.RestoredRef)
+	}
+}

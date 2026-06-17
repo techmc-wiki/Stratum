@@ -66,6 +66,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/sessions/{id}/mcdr-config-stub", s.inspectMCDRConfigStub)
 	s.mux.HandleFunc("POST /v1/sessions/{id}/send-command", s.sendCommand)
 	s.mux.HandleFunc("POST /v1/sessions/{id}/world-snapshot", s.createWorldSnapshot)
+	s.mux.HandleFunc("POST /v1/sessions/{id}/world-restore", s.restoreWorldSnapshot)
 }
 
 func (s *Server) verifyMaterializedArtifacts(w http.ResponseWriter, r *http.Request) {
@@ -530,6 +531,20 @@ func (s *Server) createWorldSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, WorldCheckpointResponse{SessionID: result.SessionID, SnapshotRef: result.SnapshotRef, SizeBytes: result.SizeBytes, SHA256: result.SHA256, CreatedAt: result.CreatedAt, RequestID: requestID(r)})
+}
+
+func (s *Server) restoreWorldSnapshot(w http.ResponseWriter, r *http.Request) {
+	var body WorldCheckpointRestoreRequest
+	if err := decodeJSON(r, &body); err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "restore-world-snapshot", err)
+		return
+	}
+	result, err := s.client.RestoreWorldSnapshot(r.Context(), agent.WorldCheckpointRestoreRequest{SessionID: r.PathValue("id"), SnapshotRef: body.SnapshotRef, WorldDirRel: body.WorldDirRel})
+	if err != nil {
+		s.writeError(w, r, http.StatusBadGateway, "restore-world-snapshot", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, WorldCheckpointRestoreResponse{SessionID: result.SessionID, RestoredRef: result.RestoredRef, EntryCount: result.EntryCount, SizeBytes: result.SizeBytes, RestoredAt: result.RestoredAt, RequestID: requestID(r)})
 }
 
 func newRequestID() string {

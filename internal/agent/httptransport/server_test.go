@@ -252,3 +252,43 @@ func TestServerCreateWorldSnapshot(t *testing.T) {
 		t.Fatalf("result=%+v", result)
 	}
 }
+
+func TestServerRestoreWorldSnapshot(t *testing.T) {
+	fake := local.NewFake()
+	server := httptest.NewServer(NewServer(fake, "", nil).Handler())
+	defer server.Close()
+
+	body := strings.NewReader(`{"snapshotRef":"agent-local://local/sessions/session-1/checkpoints/world.zip","worldDirRel":"world_restored"}`)
+	response, err := http.Post(server.URL+"/v1/sessions/session-1/world-restore", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d", response.StatusCode)
+	}
+	var result WorldCheckpointRestoreResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if result.RestoredRef == "" || result.SessionID != "session-1" {
+		t.Fatalf("result=%+v", result)
+	}
+}
+
+func TestServerRestoreWorldSnapshotFailure(t *testing.T) {
+	fake := local.NewFake()
+	fake.SetFailure(agent.OperationRestoreWorldSnapshot, "planned restore failure")
+	server := httptest.NewServer(NewServer(fake, "", nil).Handler())
+	defer server.Close()
+
+	body := strings.NewReader(`{"snapshotRef":"agent-local://local/sessions/session-1/checkpoints/world.zip"}`)
+	response, err := http.Post(server.URL+"/v1/sessions/session-1/world-restore", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status=%d", response.StatusCode)
+	}
+}

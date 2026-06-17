@@ -3,6 +3,7 @@ package local
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -338,7 +339,7 @@ func (f *Fake) SendCommand(_ context.Context, sessionID, command string) (agent.
 }
 
 func (f *Fake) CreateWorldSnapshot(_ context.Context, request agent.WorldCheckpointRequest) (agent.WorldCheckpointResult, error) {
-	if err := f.record("create-world-snapshot"); err != nil {
+	if err := f.record(agent.OperationCreateWorldSnapshot); err != nil {
 		return agent.WorldCheckpointResult{}, err
 	}
 	return agent.WorldCheckpointResult{
@@ -347,5 +348,23 @@ func (f *Fake) CreateWorldSnapshot(_ context.Context, request agent.WorldCheckpo
 		SizeBytes:   1024,
 		SHA256:      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 		CreatedAt:   f.now(),
+	}, nil
+}
+
+func (f *Fake) RestoreWorldSnapshot(_ context.Context, request agent.WorldCheckpointRestoreRequest) (agent.WorldCheckpointRestoreResult, error) {
+	if err := f.record(agent.OperationRestoreWorldSnapshot); err != nil {
+		return agent.WorldCheckpointRestoreResult{}, err
+	}
+	worldRel := strings.TrimSpace(request.WorldDirRel)
+	if worldRel == "" {
+		worldRel = "world_restored"
+	}
+	restoredRef := "agent-local://fake/sessions/" + request.SessionID + "/work/" + worldRel
+	return agent.WorldCheckpointRestoreResult{
+		SessionID:   request.SessionID,
+		RestoredRef: restoredRef,
+		EntryCount:  42,
+		SizeBytes:   2048,
+		RestoredAt:  f.now(),
 	}, nil
 }

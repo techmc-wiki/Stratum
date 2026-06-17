@@ -499,3 +499,13 @@ func (c *Client) CreateWorldSnapshot(ctx context.Context, request agent.WorldChe
 	}
 	return agent.WorldCheckpointResult{SessionID: response.SessionID, SnapshotRef: response.SnapshotRef, SizeBytes: response.SizeBytes, SHA256: response.SHA256, CreatedAt: response.CreatedAt}, nil
 }
+
+func (c *Client) RestoreWorldSnapshot(ctx context.Context, request agent.WorldCheckpointRestoreRequest) (agent.WorldCheckpointRestoreResult, error) {
+	var response WorldCheckpointRestoreResponse
+	body := WorldCheckpointRestoreRequest{SnapshotRef: request.SnapshotRef, WorldDirRel: request.WorldDirRel}
+	path := "/v1/sessions/" + url.PathEscape(request.SessionID) + "/world-restore"
+	if err := c.do(ctx, http.MethodPost, path, body, &response); err != nil {
+		return agent.WorldCheckpointRestoreResult{}, err
+	}
+	return agent.WorldCheckpointRestoreResult{SessionID: response.SessionID, RestoredRef: response.RestoredRef, EntryCount: response.EntryCount, SizeBytes: response.SizeBytes, RestoredAt: response.RestoredAt}, nil
+}

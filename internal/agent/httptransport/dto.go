@@ -526,3 +526,17 @@ type WorldCheckpointResponse struct {
 	CreatedAt   time.Time `json:"createdAt"`
 	RequestID   string    `json:"requestId"`
 }
+
+type WorldCheckpointRestoreRequest struct {
+	SnapshotRef string `json:"snapshotRef"`
+	WorldDirRel string `json:"worldDirRel"`
+}
+
+type WorldCheckpointRestoreResponse struct {
+	SessionID   string    `json:"sessionId"`
+	RestoredRef string    `json:"restoredRef"`
+	EntryCount  int       `json:"entryCount"`
+	SizeBytes   int64     `json:"sizeBytes"`
+	RestoredAt  time.Time `json:"restoredAt"`
+	RequestID   string    `json:"requestId"`
+}

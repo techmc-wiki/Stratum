@@ -53,6 +53,8 @@ const (
 	OperationGetSessionRuntimeStatus Operation = "get-session-runtime-status"
 	OperationSessionReadyForStart    Operation = "session-ready-for-start"
 	OperationSendCommand             Operation = "send-command"
+	OperationCreateWorldSnapshot     Operation = "create-world-snapshot"
+	OperationRestoreWorldSnapshot    Operation = "restore-world-snapshot"
 )
 
 const MaxArtifactPayloadBytes = 64 << 20
@@ -81,6 +83,22 @@ type WorldCheckpointResult struct {
 	SizeBytes   int64     `json:"sizeBytes"`
 	SHA256      string    `json:"sha256"`
 	CreatedAt   time.Time `json:"createdAt"`
+}
+
+type WorldCheckpointRestoreRequest struct {
+	SessionID   string `json:"sessionId"`
+	SnapshotRef string `json:"snapshotRef"`
+	WorldDirRel string `json:"worldDirRel"`
+}
+
+type WorldCheckpointRestoreResult struct {
+	SessionID   string    `json:"sessionId"`
+	RestoredRef string    `json:"restoredRef"`
+	LocalPath   string    `json:"-"`
+	EntryCount  int       `json:"entryCount"`
+	SizeBytes   int64     `json:"sizeBytes"`
+	RestoredDir string    `json:"-"`
+	RestoredAt  time.Time `json:"restoredAt"`
 }
 
 type ArtifactMaterializationRequest struct {
@@ -484,6 +502,7 @@ type AgentClient interface {
 	InspectMCDRConfigStub(context.Context, string) (MCDRConfigStubInspection, error)
 	SendCommand(context.Context, string, string) (CommandResult, error)
 	CreateWorldSnapshot(context.Context, WorldCheckpointRequest) (WorldCheckpointResult, error)
+	RestoreWorldSnapshot(context.Context, WorldCheckpointRestoreRequest) (WorldCheckpointRestoreResult, error)
 }
 
 type RuntimeAgent interface {

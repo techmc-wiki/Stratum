@@ -209,3 +209,101 @@ func TestProcessAgentCreateWorldSnapshotMissingWorldDir(t *testing.T) {
 		t.Fatal("expected error for missing world dir")
 	}
 }
+
+func TestProcessAgentRestoreWorldSnapshot(t *testing.T) {
+	root := t.TempDir()
+	runtime, err := NewProcessAgentWithRegistryAndRoot(DefaultAgentID, runtimeprofile.Builtins(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionRoot := filepath.Join(root, "sessions", "session-1")
+	workDir := filepath.Join(sessionRoot, "work")
+	worldDir := filepath.Join(workDir, "world")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "level.dat"), []byte("original"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snapResult, err := runtime.CreateWorldSnapshot(context.Background(), agent.WorldCheckpointRequest{SessionID: "session-1"})
+	if err != nil {
+		t.Fatalf("CreateWorldSnapshot: %v", err)
+	}
+
+	restoreResult, err := runtime.RestoreWorldSnapshot(context.Background(), agent.WorldCheckpointRestoreRequest{
+		SessionID:   "session-1",
+		SnapshotRef: snapResult.SnapshotRef,
+		WorldDirRel: "world_restored",
+	})
+	if err != nil {
+		t.Fatalf("RestoreWorldSnapshot: %v", err)
+	}
+	if restoreResult.SessionID != "session-1" {
+		t.Fatalf("session id: %q", restoreResult.SessionID)
+	}
+	if restoreResult.EntryCount != 1 {
+		t.Fatalf("entry count: %d", restoreResult.EntryCount)
+	}
+	if !strings.HasPrefix(restoreResult.RestoredRef, "agent-local://") {
+		t.Fatalf("restored ref: %q", restoreResult.RestoredRef)
+	}
+	if !strings.Contains(restoreResult.RestoredRef, "world_restored") {
+		t.Fatalf("restored ref should reference world_restored: %q", restoreResult.RestoredRef)
+	}
+	restoredPath := filepath.Join(workDir, "world_restored", "level.dat")
+	data, err := os.ReadFile(restoredPath)
+	if err != nil {
+		t.Fatalf("read restored level.dat: %v", err)
+	}
+	if string(data) != "original" {
+		t.Fatalf("restored data: %q", string(data))
+	}
+}
+
+func TestProcessAgentRestoreRejectsMismatchedAgentID(t *testing.T) {
+	root := t.TempDir()
+	runtime, err := NewProcessAgentWithRegistryAndRoot("agent-99", runtimeprofile.Builtins(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = runtime.RestoreWorldSnapshot(context.Background(), agent.WorldCheckpointRestoreRequest{
+		SessionID:   "session-1",
+		SnapshotRef: "agent-local://agent-other/sessions/session-1/checkpoints/world.zip",
+		WorldDirRel: "world_restored",
+	})
+	if err == nil || !strings.Contains(err.Error(), "belongs to agent") {
+		t.Fatalf("expected agent mismatch rejection: %v", err)
+	}
+}
+
+func TestProcessAgentRestoreRejectsMissingSnapshotRef(t *testing.T) {
+	root := t.TempDir()
+	runtime, err := NewProcessAgentWithRegistryAndRoot(DefaultAgentID, runtimeprofile.Builtins(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = runtime.RestoreWorldSnapshot(context.Background(), agent.WorldCheckpointRestoreRequest{
+		SessionID:   "session-1",
+		SnapshotRef: "",
+		WorldDirRel: "world_restored",
+	})
+	if err == nil || !strings.Contains(err.Error(), "required") {
+		t.Fatalf("expected required rejection: %v", err)
+	}
+}
+
+func TestProcessAgentRestoreRejectsWorldDirEscape(t *testing.T) {
+	root := t.TempDir()
+	runtime, err := NewProcessAgentWithRegistryAndRoot(DefaultAgentID, runtimeprofile.Builtins(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = runtime.RestoreWorldSnapshot(context.Background(), agent.WorldCheckpointRestoreRequest{
+		SessionID:   "session-1",
+		SnapshotRef: "agent-local://local/sessions/session-1/checkpoints/world.zip",
+		WorldDirRel: "../escape",
+	})
+	if err == nil || !strings.Contains(err.Error(), "safe") {
+		t.Fatalf("expected safe rejection: %v", err)
+	}
+}

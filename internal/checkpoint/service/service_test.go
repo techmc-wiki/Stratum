@@ -224,6 +224,16 @@ func (m *mockAgent) CreateWorldSnapshot(ctx context.Context, request agent.World
 	}, nil
 }
 
+func (m *mockAgent) RestoreWorldSnapshot(ctx context.Context, request agent.WorldCheckpointRestoreRequest) (agent.WorldCheckpointRestoreResult, error) {
+	return agent.WorldCheckpointRestoreResult{
+		SessionID:   request.SessionID,
+		RestoredRef: "agent-local://mock/sessions/" + request.SessionID + "/work/world_restored",
+		EntryCount:  5,
+		SizeBytes:   4096,
+		RestoredAt:  testTime,
+	}, nil
+}
+
 var _ agent.AgentClient = (*mockAgent)(nil)
 
 var testTime = time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)

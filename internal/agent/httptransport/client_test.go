@@ -233,3 +233,35 @@ func TestClientCreateWorldSnapshot(t *testing.T) {
 		t.Fatalf("result=%+v", result)
 	}
 }
+
+func TestClientRestoreWorldSnapshot(t *testing.T) {
+	fake := local.NewFake()
+	server := httptest.NewServer(NewServer(fake, "", nil).Handler())
+	defer server.Close()
+	client := newTestClient(t, server.URL, "")
+	result, err := client.RestoreWorldSnapshot(context.Background(), agent.WorldCheckpointRestoreRequest{
+		SessionID:   "session-1",
+		SnapshotRef: "agent-local://local/sessions/session-1/checkpoints/world.zip",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RestoredRef == "" || result.SessionID != "session-1" {
+		t.Fatalf("result=%+v", result)
+	}
+}
+
+func TestClientRestoreWorldSnapshotFailure(t *testing.T) {
+	fake := local.NewFake()
+	fake.SetFailure(agent.OperationRestoreWorldSnapshot, "planned restore failure")
+	server := httptest.NewServer(NewServer(fake, "", nil).Handler())
+	defer server.Close()
+	client := newTestClient(t, server.URL, "")
+	_, err := client.RestoreWorldSnapshot(context.Background(), agent.WorldCheckpointRestoreRequest{
+		SessionID:   "session-1",
+		SnapshotRef: "agent-local://local/sessions/session-1/checkpoints/world.zip",
+	})
+	if err == nil || !strings.Contains(err.Error(), "planned restore failure") {
+		t.Fatalf("err=%v", err)
+	}
+}
