@@ -75,11 +75,12 @@ type WorldCheckpointRequest struct {
 }
 
 type WorldCheckpointResult struct {
-	SessionID   string
-	SnapshotRef string
-	SizeBytes   int64
-	SHA256      string
-	CreatedAt   time.Time
+	SessionID   string    `json:"sessionId"`
+	SnapshotRef string    `json:"snapshotRef"`
+	LocalPath   string    `json:"-"`
+	SizeBytes   int64     `json:"sizeBytes"`
+	SHA256      string    `json:"sha256"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 
 type ArtifactMaterializationRequest struct {

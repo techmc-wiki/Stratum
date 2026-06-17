@@ -177,13 +177,13 @@ func TestCreateForkFromCheckpoint(t *testing.T) {
 	svc := newTestService(repo)
 
 	fork, err := svc.CreateFork(context.Background(), ForkOptions{
-		SourceType: SourceTypeCheckpoint,
-		SourceID:   "cp-1",
-		ProjectID:  "project-1",
-		RoomID:     "room-1",
+		SourceType:         SourceTypeCheckpoint,
+		SourceID:           "cp-1",
+		ProjectID:          "project-1",
+		RoomID:             "room-1",
 		SourceCheckpointID: "cp-1",
-		CreatorID:  "user-fork",
-		Reason:     "forking from checkpoint",
+		CreatorID:          "user-fork",
+		Reason:             "forking from checkpoint",
 	})
 	if err != nil {
 		t.Fatal(err)

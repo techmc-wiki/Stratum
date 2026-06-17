@@ -343,7 +343,7 @@ func (f *Fake) CreateWorldSnapshot(_ context.Context, request agent.WorldCheckpo
 	}
 	return agent.WorldCheckpointResult{
 		SessionID:   request.SessionID,
-		SnapshotRef: "fake://snapshots/" + request.SessionID + "/world.zip",
+		SnapshotRef: "agent-local://local/sessions/" + request.SessionID + "/checkpoints/world.zip",
 		SizeBytes:   1024,
 		SHA256:      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 		CreatedAt:   f.now(),

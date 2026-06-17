@@ -406,9 +406,14 @@ func (a *ProcessAgent) CreateWorldSnapshot(ctx context.Context, request agent.Wo
 	if err != nil {
 		return agent.WorldCheckpointResult{}, agent.Error{AgentID: a.id, Operation: "create-world-snapshot", Message: err.Error()}
 	}
+	ref, err := worldcheckpoint.BuildAgentLocalSnapshotRef(a.id, request.SessionID, result.SnapshotRef, a.supervisor.RuntimeRoot())
+	if err != nil {
+		return agent.WorldCheckpointResult{}, agent.Error{AgentID: a.id, Operation: "create-world-snapshot", Message: err.Error()}
+	}
 	return agent.WorldCheckpointResult{
 		SessionID:   request.SessionID,
-		SnapshotRef: result.SnapshotRef,
+		SnapshotRef: ref,
+		LocalPath:   result.SnapshotRef,
 		SizeBytes:   result.SizeBytes,
 		SHA256:      result.SHA256,
 		CreatedAt:   result.CreatedAt,

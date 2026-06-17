@@ -217,7 +217,7 @@ func (m *mockAgent) CreateWorldSnapshot(ctx context.Context, request agent.World
 	}
 	return agent.WorldCheckpointResult{
 		SessionID:   request.SessionID,
-		SnapshotRef: "mock://snapshots/" + request.SessionID + "/world.zip",
+		SnapshotRef: "agent-local://mock/sessions/" + request.SessionID + "/checkpoints/world.zip",
 		SizeBytes:   2048,
 		SHA256:      "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
 		CreatedAt:   testTime,

@@ -167,6 +167,21 @@ func TestProcessAgentCreateWorldSnapshot(t *testing.T) {
 	if result.SnapshotRef == "" || result.SizeBytes <= 0 || result.SHA256 == "" {
 		t.Fatalf("result=%+v", result)
 	}
+	if !strings.HasPrefix(result.SnapshotRef, "agent-local://") {
+		t.Fatalf("SnapshotRef should be agent-local:// ref, got %q", result.SnapshotRef)
+	}
+	if filepath.IsAbs(result.SnapshotRef) {
+		t.Fatalf("SnapshotRef must not be an absolute path: %q", result.SnapshotRef)
+	}
+	if result.LocalPath == "" {
+		t.Fatalf("LocalPath should be set for diagnostics")
+	}
+	if !filepath.IsAbs(result.LocalPath) {
+		t.Fatalf("LocalPath should be an absolute path: %q", result.LocalPath)
+	}
+	if _, err := os.Stat(result.LocalPath); err != nil {
+		t.Fatalf("LocalPath file not found: %v", err)
+	}
 }
 
 func TestProcessAgentCreateWorldSnapshotRejectsEscape(t *testing.T) {
