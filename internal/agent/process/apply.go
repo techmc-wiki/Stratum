@@ -256,6 +256,8 @@ func mapTargetRoot(root string) string {
 		return "work/datapacks"
 	case "plugins":
 		return "work/plugins"
+	case "mcdr_plugins":
+		return "work/mcdr/plugins"
 	case "schematics":
 		return "work/schematics"
 	case "worlds":
@@ -277,6 +279,8 @@ func mapTargetRootForExecution(root, workDir string) string {
 		return filepath.Join(workDir, "datapacks")
 	case "plugins":
 		return filepath.Join(workDir, "plugins")
+	case "mcdr_plugins":
+		return filepath.Join(workDir, "mcdr", "plugins")
 	case "schematics":
 		return filepath.Join(workDir, "schematics")
 	case "worlds":

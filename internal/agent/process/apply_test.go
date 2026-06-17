@@ -2,9 +2,12 @@ package process
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -509,4 +512,185 @@ func TestVerifyAllAppliedArtifactsEmpty(t *testing.T) {
 	if result.Total != 0 {
 		t.Errorf("total = %d, want 0", result.Total)
 	}
+}
+
+func TestExecuteArtifactApplyMCDRPluginToMCDRPluginsDir(t *testing.T) {
+	root := t.TempDir()
+	layout, _ := NewSessionRuntimeLayout(root, "session-mcdr-apply")
+	_ = os.MkdirAll(layout.ArtifactsDir, 0o755)
+	staging := layout.Staging()
+	payload := []byte("mcdr plugin payload")
+	hash := sha256hex(payload)
+	if err := staging.WriteArtifactManifest([]StagedRuntimeItem{{
+		ID: "item-1", StagingPlanID: "plan-1", ArtifactID: "artifact-1",
+		Name: "test_plugin.py", Path: "test_plugin.py", Kind: "artifact",
+		PayloadHash: hash, PayloadSize: int64(len(payload)), CreatedAt: time.Now(),
+	}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout.ArtifactsDir, "test_plugin.py"), payload, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	req := agent.ArtifactApplyExecuteRequest{
+		ApplyPlanID: "apply-mcdr-1", SessionID: "session-mcdr-apply",
+		StagingPlanID: "plan-1", ArtifactID: "artifact-1",
+		TargetRoot: "mcdr_plugins", TargetRelativePath: "test_plugin.py",
+		ExpectedHash: hash, ExpectedSize: int64(len(payload)),
+	}
+	result, err := ExecuteArtifactApply(context.Background(), root, req, time.Now())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != "applied" {
+		t.Fatalf("status = %q, want applied, issues = %v", result.Status, result.Issues)
+	}
+	expectedPath := filepath.Join(layout.WorkDir, "mcdr", "plugins", "test_plugin.py")
+	if result.TargetPath != expectedPath {
+		t.Fatalf("target = %q, want %q", result.TargetPath, expectedPath)
+	}
+	if _, err := os.Stat(expectedPath); err != nil {
+		t.Fatalf("mcdr plugin not at expected path: %v", err)
+	}
+	wrongPath := filepath.Join(layout.WorkDir, "plugins", "test_plugin.py")
+	if _, err := os.Stat(wrongPath); err == nil {
+		t.Error("mcdr_plugin target root should not write to work/plugins")
+	}
+	copied, _ := os.ReadFile(expectedPath)
+	if string(copied) != string(payload) {
+		t.Errorf("copied content mismatch")
+	}
+}
+
+func TestDryRunArtifactApplyMCDRPluginResolvesMCDRPluginsDir(t *testing.T) {
+	root := t.TempDir()
+	layout, _ := NewSessionRuntimeLayout(root, "session-mcdr-dryrun")
+	staging := layout.Staging()
+	payload := []byte("mcdr plugin")
+	hash := sha256hex(payload)
+	if err := staging.WriteArtifactManifest([]StagedRuntimeItem{{
+		ID: "item-1", StagingPlanID: "plan-1", ArtifactID: "artifact-1",
+		Name: "plugin.py", Path: "plugin.py", Kind: "artifact",
+		PayloadHash: hash, PayloadSize: int64(len(payload)), CreatedAt: time.Now(),
+	}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout.ArtifactsDir, "plugin.py"), payload, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	req := agent.ArtifactApplyDryRunRequest{
+		ApplyPlanID: "apply-mcdr-dr-1", SessionID: "session-mcdr-dryrun",
+		StagingPlanID: "plan-1", ArtifactID: "artifact-1",
+		TargetRoot: "mcdr_plugins", TargetRelativePath: "plugin.py",
+	}
+	result, err := DryRunArtifactApply(context.Background(), root, req, time.Now())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != "ready" {
+		t.Fatalf("status = %q, want ready, issues = %v", result.Status, result.Issues)
+	}
+	if !strings.Contains(result.PlannedTargetRuntimeRelativePath, "mcdr") || !strings.Contains(result.PlannedTargetRuntimeRelativePath, "plugins") {
+		t.Fatalf("planned target = %q, want path containing mcdr and plugins", result.PlannedTargetRuntimeRelativePath)
+	}
+}
+
+func TestMapTargetRootMCDRPluginsDoesNotConflictWithOrdinaryPlugins(t *testing.T) {
+	root := t.TempDir()
+	layout, _ := NewSessionRuntimeLayout(root, "session-mixed")
+	_ = os.MkdirAll(layout.ArtifactsDir, 0o755)
+	staging := layout.Staging()
+	payload := []byte("regular plugin")
+	hash := sha256hex(payload)
+	if err := staging.WriteArtifactManifest([]StagedRuntimeItem{{
+		ID: "item-1", StagingPlanID: "plan-1", ArtifactID: "artifact-1",
+		Name: "regular.jar", Path: "regular.jar", Kind: "artifact",
+		PayloadHash: hash, PayloadSize: int64(len(payload)), CreatedAt: time.Now(),
+	}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout.ArtifactsDir, "regular.jar"), payload, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	mcdrPayload := []byte("mcdr plugin")
+	mcdrHash := sha256hex(mcdrPayload)
+	// apply regular plugin to "plugins" (work/plugins)
+	regReq := agent.ArtifactApplyExecuteRequest{
+		ApplyPlanID: "apply-regular", SessionID: "session-mixed",
+		StagingPlanID: "plan-1", ArtifactID: "artifact-1",
+		TargetRoot: "plugins", TargetRelativePath: "regular.jar",
+		ExpectedHash: hash, ExpectedSize: int64(len(payload)),
+	}
+	regResult, err := ExecuteArtifactApply(context.Background(), root, regReq, time.Now())
+	if err != nil || regResult.Status != "applied" {
+		t.Fatalf("regular plugin apply failed: err=%v status=%s issues=%v", err, regResult.Status, regResult.Issues)
+	}
+	if _, err := os.Stat(filepath.Join(layout.WorkDir, "plugins", "regular.jar")); err != nil {
+		t.Fatalf("regular plugin not at work/plugins: %v", err)
+	}
+
+	// apply mcdr plugin separately with staging plan for mcdr
+	if err := staging.WriteArtifactManifest([]StagedRuntimeItem{{
+		ID: "item-mcdr", StagingPlanID: "plan-mcdr", ArtifactID: "artifact-mcdr",
+		Name: "mcdr_plugin.py", Path: "mcdr_plugin.py", Kind: "artifact",
+		PayloadHash: mcdrHash, PayloadSize: int64(len(mcdrPayload)), CreatedAt: time.Now(),
+	}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout.ArtifactsDir, "mcdr_plugin.py"), mcdrPayload, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	mcdrReq := agent.ArtifactApplyExecuteRequest{
+		ApplyPlanID: "apply-mcdr", SessionID: "session-mixed",
+		StagingPlanID: "plan-mcdr", ArtifactID: "artifact-mcdr",
+		TargetRoot: "mcdr_plugins", TargetRelativePath: "mcdr_plugin.py",
+		ExpectedHash: mcdrHash, ExpectedSize: int64(len(mcdrPayload)),
+	}
+	mcdrResult, err := ExecuteArtifactApply(context.Background(), root, mcdrReq, time.Now())
+	if err != nil || mcdrResult.Status != "applied" {
+		t.Fatalf("mcdr plugin apply failed: err=%v status=%s issues=%v", err, mcdrResult.Status, mcdrResult.Issues)
+	}
+	mcdrExpected := filepath.Join(layout.WorkDir, "mcdr", "plugins", "mcdr_plugin.py")
+	if _, err := os.Stat(mcdrExpected); err != nil {
+		t.Fatalf("mcdr plugin not at expected path: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(layout.WorkDir, "plugins", "mcdr_plugin.py")); err == nil {
+		t.Error("mcdr plugin leaked into work/plugins")
+	}
+}
+
+func TestExecuteArtifactApplyMCDRPluginRejectsPathTraversal(t *testing.T) {
+	root := t.TempDir()
+	layout, _ := NewSessionRuntimeLayout(root, "session-mcdr-traversal")
+	_ = os.MkdirAll(layout.ArtifactsDir, 0o755)
+	staging := layout.Staging()
+	payload := []byte("bad plugin")
+	hash := sha256hex(payload)
+	if err := staging.WriteArtifactManifest([]StagedRuntimeItem{{
+		ID: "item-1", StagingPlanID: "plan-1", ArtifactID: "artifact-1",
+		Name: "plugin.py", Path: "plugin.py", Kind: "artifact",
+		PayloadHash: hash, PayloadSize: int64(len(payload)), CreatedAt: time.Now(),
+	}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout.ArtifactsDir, "plugin.py"), payload, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	req := agent.ArtifactApplyExecuteRequest{
+		ApplyPlanID: "apply-traversal", SessionID: "session-mcdr-traversal",
+		StagingPlanID: "plan-1", ArtifactID: "artifact-1",
+		TargetRoot: "mcdr_plugins", TargetRelativePath: "../escape.py",
+		ExpectedHash: hash,
+	}
+	result, err := ExecuteArtifactApply(context.Background(), root, req, time.Now())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status == "applied" {
+		t.Error("path traversal should be rejected for mcdr_plugins target root")
+	}
+}
+
+func sha256hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }

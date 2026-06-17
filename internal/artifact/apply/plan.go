@@ -19,13 +19,14 @@ const (
 )
 
 const (
-	TargetRootMods       TargetRoot = "mods"
-	TargetRootConfig     TargetRoot = "config"
-	TargetRootDatapacks  TargetRoot = "datapacks"
-	TargetRootPlugins    TargetRoot = "plugins"
-	TargetRootSchematics TargetRoot = "schematics"
-	TargetRootWorlds     TargetRoot = "worlds"
-	TargetRootCustom     TargetRoot = "custom"
+	TargetRootMods        TargetRoot = "mods"
+	TargetRootConfig      TargetRoot = "config"
+	TargetRootDatapacks   TargetRoot = "datapacks"
+	TargetRootPlugins     TargetRoot = "plugins"
+	TargetRootMCDRPlugins TargetRoot = "mcdr_plugins"
+	TargetRootSchematics  TargetRoot = "schematics"
+	TargetRootWorlds      TargetRoot = "worlds"
+	TargetRootCustom      TargetRoot = "custom"
 )
 
 const (

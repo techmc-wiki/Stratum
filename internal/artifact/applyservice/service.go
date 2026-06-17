@@ -182,7 +182,7 @@ func mapRoot(k artifactapply.Kind) artifactapply.TargetRoot {
 	case artifactapply.KindDatapack:
 		return artifactapply.TargetRootDatapacks
 	case artifactapply.KindMCDRPlugin:
-		return artifactapply.TargetRootPlugins
+		return artifactapply.TargetRootMCDRPlugins
 	case artifactapply.KindSchematic:
 		return artifactapply.TargetRootSchematics
 	case artifactapply.KindWorldArchive:
