@@ -211,6 +211,19 @@ func (m *mockAgent) SendCommand(ctx context.Context, sessionID, command string) 
 	return agent.CommandResult{AgentID: "mock", Status: "sent", Message: "ok"}, nil
 }
 
+func (m *mockAgent) CreateWorldSnapshot(ctx context.Context, request agent.WorldCheckpointRequest) (agent.WorldCheckpointResult, error) {
+	if m.failAt == 3 {
+		return agent.WorldCheckpointResult{}, fmt.Errorf("mock snapshot failure")
+	}
+	return agent.WorldCheckpointResult{
+		SessionID:   request.SessionID,
+		SnapshotRef: "mock://snapshots/" + request.SessionID + "/world.zip",
+		SizeBytes:   2048,
+		SHA256:      "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+		CreatedAt:   testTime,
+	}, nil
+}
+
 var _ agent.AgentClient = (*mockAgent)(nil)
 
 var testTime = time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)
@@ -249,7 +262,7 @@ func TestCreateMetadataOnlyCheckpoint(t *testing.T) {
 	}
 }
 
-func TestCreateCommandQuiescedRunsSequenceAndMarksWorldSnapshotFalse(t *testing.T) {
+func TestCreateCommandQuiescedRunsSequenceAndCreatesWorldSnapshot(t *testing.T) {
 	agent := &mockAgent{}
 	repo := &mockRepo{
 		sessions: map[string]session.Session{
@@ -269,14 +282,14 @@ func TestCreateCommandQuiescedRunsSequenceAndMarksWorldSnapshotFalse(t *testing.
 	if cp.ConsistencyLevel != consistency.LevelCommandQuiesced {
 		t.Fatalf("consistency level = %s", cp.ConsistencyLevel)
 	}
-	if cp.ConsistencyMetadata["worldSnapshot"] != "false" {
+	if cp.ConsistencyMetadata["worldSnapshot"] != "true" {
 		t.Fatalf("worldSnapshot = %q", cp.ConsistencyMetadata["worldSnapshot"])
 	}
 	if cp.ConsistencyMetadata["testKey"] != "testValue" {
 		t.Fatalf("user metadata not preserved: %v", cp.ConsistencyMetadata)
 	}
-	if cp.Status != checkpoint.StatusMetadataOnly {
-		t.Fatalf("status = %s, want metadata_only", cp.Status)
+	if cp.WorldStateRef == "" {
+		t.Fatal("WorldStateRef should be set")
 	}
 	expectedCommands := []string{"save-off", "save-all flush", "save-on"}
 	for i, want := range expectedCommands {
@@ -285,8 +298,11 @@ func TestCreateCommandQuiescedRunsSequenceAndMarksWorldSnapshotFalse(t *testing.
 		}
 	}
 	event := repo.auditEvents[0]
-	if event.Metadata["worldSnapshot"] != "false" || event.Metadata["commandQuiesced"] != "true" {
+	if event.Metadata["worldSnapshot"] != "true" || event.Metadata["commandQuiesced"] != "true" {
 		t.Fatalf("audit metadata: %+v", event.Metadata)
+	}
+	if event.Metadata["snapshotSHA256"] == "" || event.Metadata["snapshotSizeBytes"] == "" {
+		t.Fatalf("audit missing snapshot fields: %+v", event.Metadata)
 	}
 }
 
@@ -329,6 +345,28 @@ func TestCreateCommandQuiescedSaveOnAlwaysExecutes(t *testing.T) {
 	}
 	if len(agent.commands) < 2 || agent.commands[1] != "save-on" {
 		t.Fatalf("save-on must execute even on save-off failure: commands = %v", agent.commands)
+	}
+}
+
+func TestCreateCommandQuiescedSnapshotFailureStillExecutesSaveOnAndNoCheckpoint(t *testing.T) {
+	agent := &mockAgent{failAt: 3}
+	repo := &mockRepo{
+		sessions:    map[string]session.Session{"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1", RuntimeProfileID: "mcdr-python-1.17"}},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	_, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-snap-fail", SessionID: "s-1", ActorID: "actor-1",
+		ConsistencyLevel: consistency.LevelCommandQuiesced,
+		AgentClient:      agent,
+	})
+	if err == nil || !strings.Contains(err.Error(), "snapshot") {
+		t.Fatalf("expected snapshot failure, got %v", err)
+	}
+	if len(agent.commands) < 3 || agent.commands[2] != "save-on" {
+		t.Fatalf("save-on must execute on snapshot failure: commands = %v", agent.commands)
+	}
+	if len(repo.checkpoints) != 0 {
+		t.Fatal("no checkpoint should be created on snapshot failure")
 	}
 }
 
@@ -607,48 +645,6 @@ func TestCreateCommandQuiescedRejectsAgentWithoutSendCommand(t *testing.T) {
 	}
 }
 
-func TestCreateCommandQuiescedSaveOnFailureIsAudited(t *testing.T) {
-	agent := &mockAgent{failAt: 3}
-	repo := &mockRepo{
-		sessions:    map[string]session.Session{"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1", RuntimeProfileID: "mcdr-python-1.17"}},
-		checkpoints: map[string]checkpoint.Checkpoint{},
-	}
-	cp, err := Create(context.Background(), repo, CreateRequest{
-		ID: "cp-saveon-fail", SessionID: "s-1", ActorID: "actor-1",
-		ConsistencyLevel: consistency.LevelCommandQuiesced,
-		AgentClient:      agent,
-	})
-	if err != nil {
-		t.Fatalf("expected success with saveOn error in audit, got %v", err)
-	}
-	if cp.ConsistencyMetadata["worldSnapshot"] != "false" {
-		t.Fatalf("worldSnapshot = %q", cp.ConsistencyMetadata["worldSnapshot"])
-	}
-	if !strings.Contains(cp.ConsistencyMetadata["saveOnError"], "failure") {
-		t.Fatalf("saveOnError not captured in consistencyMetadata: %v", cp.ConsistencyMetadata)
-	}
-	stored, loadErr := repo.GetCheckpoint(context.Background(), cp.ID)
-	if loadErr != nil {
-		t.Fatal(loadErr)
-	}
-	if stored.ConsistencyMetadata["saveOnError"] == "" {
-		t.Fatal("stored checkpoint is missing saveOnError")
-	}
-	if stored.ConsistencyMetadata["worldSnapshot"] != "false" {
-		t.Fatal("stored checkpoint missing worldSnapshot")
-	}
-	foundSaveOn := false
-	for _, event := range repo.auditEvents {
-		if event.Action == "checkpoint.created" && event.Metadata["saveOnError"] != "" {
-			foundSaveOn = true
-			break
-		}
-	}
-	if !foundSaveOn {
-		t.Fatal("audit event should contain saveOnError")
-	}
-}
-
 func TestCreateMetadataOnlyAuditAppendFailureReturnsError(t *testing.T) {
 	repo := &mockRepo{
 		sessions:    map[string]session.Session{"s-1": {ID: "s-1", ProjectID: "p-1", EnvironmentID: "env-1"}},
@@ -679,76 +675,5 @@ func TestCreateCommandQuiescedRequiresRuntimeProfileOrEnvironment(t *testing.T) 
 	})
 	if err == nil || !strings.Contains(err.Error(), "environment or runtime") {
 		t.Fatalf("expected runtime profile or environment required, got %v", err)
-	}
-}
-
-func TestCreateCommandQuiescedSaveOnAndUpdateCheckpointFailureReturnsError(t *testing.T) {
-	agent := &mockAgent{failAt: 3}
-	repo := &mockRepo{
-		sessions:    map[string]session.Session{"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1", RuntimeProfileID: "mcdr-python-1.17"}},
-		checkpoints: map[string]checkpoint.Checkpoint{},
-		updateErr:   fmt.Errorf("update storage failure"),
-	}
-	cp, err := Create(context.Background(), repo, CreateRequest{
-		ID: "cp-update-fail", SessionID: "s-1", ActorID: "actor-1",
-		ConsistencyLevel: consistency.LevelCommandQuiesced,
-		AgentClient:      agent,
-	})
-	if err == nil {
-		t.Fatal("expected error when save-on and update checkpoint both fail")
-	}
-	errMsg := err.Error()
-	if !strings.Contains(errMsg, "save-on") || !strings.Contains(errMsg, "update checkpoint") {
-		t.Fatalf("error must mention save-on and update checkpoint: %s", errMsg)
-	}
-	if len(repo.checkpoints) != 1 {
-		t.Fatal("checkpoint should still be created")
-	}
-	if repo.checkpoints["cp-update-fail"].ID != "cp-update-fail" {
-		t.Fatal("checkpoint should be persisted")
-	}
-	cpID := cp.ID
-	if cpID != "cp-update-fail" {
-		t.Fatalf("returned cp ID = %q", cpID)
-	}
-	foundSaveOn := false
-	foundUpdate := false
-	for _, event := range repo.auditEvents {
-		if event.Action == "checkpoint.created" {
-			if event.Metadata["saveOnError"] != "" {
-				foundSaveOn = true
-			}
-			if event.Metadata["updateCheckpointError"] != "" {
-				foundUpdate = true
-			}
-		}
-	}
-	if !foundSaveOn || !foundUpdate {
-		t.Fatalf("audit must contain saveOnError and updateCheckpointError: events=%+v", repo.auditEvents)
-	}
-}
-
-func TestCreateCommandQuiescedSaveOnUpdateAndAuditAllFailReturnsError(t *testing.T) {
-	agent := &mockAgent{failAt: 3}
-	repo := &mockRepo{
-		sessions:    map[string]session.Session{"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1", RuntimeProfileID: "mcdr-python-1.17"}},
-		checkpoints: map[string]checkpoint.Checkpoint{},
-		updateErr:   fmt.Errorf("update storage failure"),
-		auditErr:    fmt.Errorf("audit storage failure"),
-	}
-	_, err := Create(context.Background(), repo, CreateRequest{
-		ID: "cp-triple-fail", SessionID: "s-1", ActorID: "actor-1",
-		ConsistencyLevel: consistency.LevelCommandQuiesced,
-		AgentClient:      agent,
-	})
-	if err == nil {
-		t.Fatal("expected error when all three fail")
-	}
-	errMsg := err.Error()
-	if !strings.Contains(errMsg, "save-on") || !strings.Contains(errMsg, "update checkpoint") || !strings.Contains(errMsg, "audit append failed") {
-		t.Fatalf("error must mention save-on, update checkpoint, and audit: %s", errMsg)
-	}
-	if len(repo.checkpoints) != 1 {
-		t.Fatal("checkpoint should still be created")
 	}
 }

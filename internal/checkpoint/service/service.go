@@ -107,7 +107,6 @@ func validateCommandQuiesced(ctx context.Context, req CreateRequest, sess sessio
 
 func createCommandQuiesced(ctx context.Context, repo Repository, req CreateRequest, sess session.Session) (checkpoint.Checkpoint, error) {
 	consistencyMetadata := mergeMetadata(req.ConsistencyMetadata)
-	consistencyMetadata["worldSnapshot"] = "false"
 
 	saveOnRequired := true
 	defer func() {
@@ -126,8 +125,18 @@ func createCommandQuiesced(ctx context.Context, repo Repository, req CreateReque
 		return checkpoint.Checkpoint{}, fmt.Errorf("save-all flush command failed: %w", err)
 	}
 
+	snapResult, snapErr := req.AgentClient.CreateWorldSnapshot(ctx, agent.WorldCheckpointRequest{SessionID: req.SessionID})
+	if snapErr != nil {
+		return checkpoint.Checkpoint{}, fmt.Errorf("world snapshot failed: %w", snapErr)
+	}
+
+	consistencyMetadata["worldSnapshot"] = "true"
+	consistencyMetadata["snapshotSizeBytes"] = fmt.Sprintf("%d", snapResult.SizeBytes)
+	consistencyMetadata["snapshotSHA256"] = snapResult.SHA256
+
 	params := buildCheckpointParams(req, sess, consistency.LevelCommandQuiesced)
 	params.ConsistencyMetadata = consistencyMetadata
+	params.WorldStateRef = snapResult.SnapshotRef
 	cp, err := checkpoint.New(params)
 	if err != nil {
 		return checkpoint.Checkpoint{}, err
@@ -143,8 +152,10 @@ func createCommandQuiesced(ctx context.Context, repo Repository, req CreateReque
 		cp.ConsistencyMetadata = consistencyMetadata
 		updateErr := repo.UpdateCheckpoint(ctx, cp)
 		event := buildAuditEvent(req, cp)
-		event.Metadata["worldSnapshot"] = "false"
+		event.Metadata["worldSnapshot"] = "true"
 		event.Metadata["commandQuiesced"] = "true"
+		event.Metadata["snapshotSizeBytes"] = consistencyMetadata["snapshotSizeBytes"]
+		event.Metadata["snapshotSHA256"] = consistencyMetadata["snapshotSHA256"]
 		event.Metadata["saveOnError"] = saveOnErr.Error()
 		if updateErr != nil {
 			event.Metadata["updateCheckpointError"] = updateErr.Error()
@@ -164,8 +175,10 @@ func createCommandQuiesced(ctx context.Context, repo Repository, req CreateReque
 	}
 
 	event := buildAuditEvent(req, cp)
-	event.Metadata["worldSnapshot"] = "false"
+	event.Metadata["worldSnapshot"] = "true"
 	event.Metadata["commandQuiesced"] = "true"
+	event.Metadata["snapshotSizeBytes"] = consistencyMetadata["snapshotSizeBytes"]
+	event.Metadata["snapshotSHA256"] = consistencyMetadata["snapshotSHA256"]
 	if err := repo.AppendAuditEvent(ctx, event); err != nil {
 		return cp, fmt.Errorf("checkpoint created but audit append failed: %w", err)
 	}
