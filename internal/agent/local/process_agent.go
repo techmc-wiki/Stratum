@@ -107,6 +107,17 @@ func (a *ProcessAgent) StartSession(ctx context.Context, request agent.SessionRe
 }
 
 func (a *ProcessAgent) StopSession(ctx context.Context, request agent.SessionRequest) (agent.OperationResult, error) {
+	current := a.supervisor.InspectProcess(request.SessionID)
+	if current.RuntimeType == string(runtimeprofile.TypeMCDRPython) {
+		state, stopErr := a.mcdr.Stop(ctx, request.SessionID)
+		if stopErr != nil {
+			return agent.OperationResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationStop, Message: stopErr.Error()}
+		}
+		a.mu.Lock()
+		a.frozen[request.SessionID] = false
+		a.mu.Unlock()
+		return a.result("runtime " + string(state.Status)), nil
+	}
 	model, err := a.supervisor.StopProcess(ctx, request.SessionID)
 	if err != nil {
 		return agent.OperationResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationStop, Message: err.Error()}

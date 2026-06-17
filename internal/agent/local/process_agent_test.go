@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/agent/process"
@@ -81,5 +82,67 @@ func TestProcessAgentCreatesRuntimeLayout(t *testing.T) {
 	}
 	if info, err := os.Stat(status.WorkDir); err != nil || !info.IsDir() {
 		t.Fatalf("work dir info=%+v err=%v", info, err)
+	}
+}
+
+func TestProcessAgentMCDRStopSessionIsIdempotent(t *testing.T) {
+	root := t.TempDir()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := runtimeprofile.Profile{
+		ID:                  "mcdr-agent-test",
+		Name:                "MCDR agent test",
+		RuntimeType:         runtimeprofile.TypeMCDRPython,
+		CommandArgv:         []string{executable, "-test.run=TestProcessAgentMCDRHelperProcess", "--"},
+		WorkingDir:          ".",
+		Env:                 map[string]string{"STRATUM_PROCESS_AGENT_MCDR_HELPER": "1"},
+		StopStrategy:        runtimeprofile.StopStdin,
+		StopStdinCommand:    "stop",
+		GracefulStopTimeout: time.Second,
+		ForceKillTimeout:    time.Second,
+		LogMode:             runtimeprofile.LogMemory,
+		Enabled:             true,
+	}
+	registry, err := runtimeprofile.NewRegistry(runtimeprofile.DummyProcess(), profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := NewProcessAgentWithRegistryAndRoot(DefaultAgentID, registry, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := agent.SessionRequest{SessionID: "session-mcdr-stop", RuntimeProfileID: profile.ID}
+	if _, err := runtime.StartSession(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	status, err := runtime.InspectSession(context.Background(), request.SessionID)
+	if err != nil || status.RuntimeType != string(runtimeprofile.TypeMCDRPython) || !status.Running {
+		t.Fatalf("status=%+v err=%v", status, err)
+	}
+	first, err := runtime.StopSession(context.Background(), request)
+	if err != nil || first.Message != "runtime stopped" {
+		t.Fatalf("first stop=%+v err=%v", first, err)
+	}
+	second, err := runtime.StopSession(context.Background(), request)
+	if err != nil || second.Message != "runtime stopped" {
+		t.Fatalf("second stop=%+v err=%v", second, err)
+	}
+}
+
+func TestProcessAgentMCDRHelperProcess(t *testing.T) {
+	if os.Getenv("STRATUM_PROCESS_AGENT_MCDR_HELPER") != "1" {
+		return
+	}
+	buf := make([]byte, 256)
+	for {
+		n, err := os.Stdin.Read(buf)
+		if err != nil {
+			os.Exit(0)
+		}
+		if strings.TrimSpace(string(buf[:n])) == "stop" {
+			os.Exit(0)
+		}
 	}
 }
