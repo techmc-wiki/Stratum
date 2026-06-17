@@ -21,6 +21,7 @@ type mockRepo struct {
 	auditEvents []audit.Event
 	createErr   error
 	auditErr    error
+	updateErr   error
 }
 
 func (m *mockRepo) GetSession(ctx context.Context, id string) (session.Session, error) {
@@ -39,6 +40,9 @@ func (m *mockRepo) CreateCheckpoint(ctx context.Context, cp checkpoint.Checkpoin
 }
 
 func (m *mockRepo) UpdateCheckpoint(ctx context.Context, cp checkpoint.Checkpoint) error {
+	if m.updateErr != nil {
+		return m.updateErr
+	}
 	m.checkpoints[cp.ID] = cp
 	return nil
 }
@@ -675,5 +679,76 @@ func TestCreateCommandQuiescedRequiresRuntimeProfileOrEnvironment(t *testing.T) 
 	})
 	if err == nil || !strings.Contains(err.Error(), "environment or runtime") {
 		t.Fatalf("expected runtime profile or environment required, got %v", err)
+	}
+}
+
+func TestCreateCommandQuiescedSaveOnAndUpdateCheckpointFailureReturnsError(t *testing.T) {
+	agent := &mockAgent{failAt: 3}
+	repo := &mockRepo{
+		sessions:    map[string]session.Session{"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1", RuntimeProfileID: "mcdr-python-1.17"}},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+		updateErr:   fmt.Errorf("update storage failure"),
+	}
+	cp, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-update-fail", SessionID: "s-1", ActorID: "actor-1",
+		ConsistencyLevel: consistency.LevelCommandQuiesced,
+		AgentClient:      agent,
+	})
+	if err == nil {
+		t.Fatal("expected error when save-on and update checkpoint both fail")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "save-on") || !strings.Contains(errMsg, "update checkpoint") {
+		t.Fatalf("error must mention save-on and update checkpoint: %s", errMsg)
+	}
+	if len(repo.checkpoints) != 1 {
+		t.Fatal("checkpoint should still be created")
+	}
+	if repo.checkpoints["cp-update-fail"].ID != "cp-update-fail" {
+		t.Fatal("checkpoint should be persisted")
+	}
+	cpID := cp.ID
+	if cpID != "cp-update-fail" {
+		t.Fatalf("returned cp ID = %q", cpID)
+	}
+	foundSaveOn := false
+	foundUpdate := false
+	for _, event := range repo.auditEvents {
+		if event.Action == "checkpoint.created" {
+			if event.Metadata["saveOnError"] != "" {
+				foundSaveOn = true
+			}
+			if event.Metadata["updateCheckpointError"] != "" {
+				foundUpdate = true
+			}
+		}
+	}
+	if !foundSaveOn || !foundUpdate {
+		t.Fatalf("audit must contain saveOnError and updateCheckpointError: events=%+v", repo.auditEvents)
+	}
+}
+
+func TestCreateCommandQuiescedSaveOnUpdateAndAuditAllFailReturnsError(t *testing.T) {
+	agent := &mockAgent{failAt: 3}
+	repo := &mockRepo{
+		sessions:    map[string]session.Session{"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1", RuntimeProfileID: "mcdr-python-1.17"}},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+		updateErr:   fmt.Errorf("update storage failure"),
+		auditErr:    fmt.Errorf("audit storage failure"),
+	}
+	_, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-triple-fail", SessionID: "s-1", ActorID: "actor-1",
+		ConsistencyLevel: consistency.LevelCommandQuiesced,
+		AgentClient:      agent,
+	})
+	if err == nil {
+		t.Fatal("expected error when all three fail")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "save-on") || !strings.Contains(errMsg, "update checkpoint") || !strings.Contains(errMsg, "audit append failed") {
+		t.Fatalf("error must mention save-on, update checkpoint, and audit: %s", errMsg)
+	}
+	if len(repo.checkpoints) != 1 {
+		t.Fatal("checkpoint should still be created")
 	}
 }

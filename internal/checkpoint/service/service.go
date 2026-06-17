@@ -141,17 +141,31 @@ func createCommandQuiesced(ctx context.Context, repo Repository, req CreateReque
 	if saveOnErr != nil {
 		consistencyMetadata["saveOnError"] = saveOnErr.Error()
 		cp.ConsistencyMetadata = consistencyMetadata
-		if updateErr := repo.UpdateCheckpoint(ctx, cp); updateErr != nil {
-			// stored checkpoint may not reflect saveOnError; audit carries it
+		updateErr := repo.UpdateCheckpoint(ctx, cp)
+		event := buildAuditEvent(req, cp)
+		event.Metadata["worldSnapshot"] = "false"
+		event.Metadata["commandQuiesced"] = "true"
+		event.Metadata["saveOnError"] = saveOnErr.Error()
+		if updateErr != nil {
+			event.Metadata["updateCheckpointError"] = updateErr.Error()
 		}
+		auditErr := repo.AppendAuditEvent(ctx, event)
+		if updateErr != nil {
+			errMsg := fmt.Sprintf("save-on failed (%v) and update checkpoint failed (%v)", saveOnErr, updateErr)
+			if auditErr != nil {
+				errMsg = fmt.Sprintf("%s; audit append failed: %v", errMsg, auditErr)
+			}
+			return cp, fmt.Errorf("%s", errMsg)
+		}
+		if auditErr != nil {
+			return cp, fmt.Errorf("save-on failed (%v) but persisted; audit append failed: %w", saveOnErr, auditErr)
+		}
+		return cp, nil
 	}
 
 	event := buildAuditEvent(req, cp)
 	event.Metadata["worldSnapshot"] = "false"
 	event.Metadata["commandQuiesced"] = "true"
-	if saveOnErr != nil {
-		event.Metadata["saveOnError"] = saveOnErr.Error()
-	}
 	if err := repo.AppendAuditEvent(ctx, event); err != nil {
 		return cp, fmt.Errorf("checkpoint created but audit append failed: %w", err)
 	}
