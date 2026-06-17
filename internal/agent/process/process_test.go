@@ -335,3 +335,37 @@ func containsLog(lines []string, text string) bool {
 	}
 	return false
 }
+
+func TestWaitForLogFindsPattern(t *testing.T) {
+	supervisor, profile := terminalTestSupervisor(t, "stdin")
+	if _, err := supervisor.StartProcess(context.Background(), "wait-readiness", profile); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.WaitForLog("wait-readiness", "helper-ready", 3*time.Second); err != nil {
+		t.Fatalf("WaitForLog: %v", err)
+	}
+	supervisor.StopProcess(context.Background(), "wait-readiness")
+}
+
+func TestWaitForLogTimeout(t *testing.T) {
+	supervisor, profile := terminalTestSupervisor(t, "long")
+	if _, err := supervisor.StartProcess(context.Background(), "wait-timeout", profile); err != nil {
+		t.Fatal(err)
+	}
+	err := supervisor.WaitForLog("wait-timeout", "never-appearing-pattern-XYZ", 100*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected timeout, got %v", err)
+	}
+	supervisor.StopProcess(context.Background(), "wait-timeout")
+}
+
+func TestWaitForLogDetectsExit(t *testing.T) {
+	supervisor, profile := terminalTestSupervisor(t, "exit")
+	if _, err := supervisor.StartProcess(context.Background(), "wait-exit", profile); err != nil {
+		t.Fatal(err)
+	}
+	err := supervisor.WaitForLog("wait-exit", "helper-ready", 3*time.Second)
+	if err == nil || !strings.Contains(err.Error(), "exited before readiness") {
+		t.Fatalf("expected exit detection, got %v", err)
+	}
+}

@@ -433,6 +433,42 @@ func (s *Supervisor) SendCommand(sessionID, command string) error {
 	return nil
 }
 
+func (s *Supervisor) WaitForLog(sessionID, pattern string, timeout time.Duration) error {
+	if strings.TrimSpace(pattern) == "" {
+		return errors.New("pattern is required")
+	}
+	if timeout <= 0 {
+		return errors.New("timeout must be positive")
+	}
+	deadline := time.Now().Add(timeout)
+	tickInterval := 50 * time.Millisecond
+	if timeout < tickInterval {
+		tickInterval = timeout / 4
+		if tickInterval < time.Millisecond {
+			tickInterval = time.Millisecond
+		}
+	}
+	for {
+		model := s.InspectProcess(sessionID)
+		if model.Status == StatusCrashed || model.Status == StatusExited {
+			return fmt.Errorf("process exited before readiness pattern: status=%s exitCode=%v", model.Status, model.ExitCode)
+		}
+		if model.Status == StatusStopped {
+			return fmt.Errorf("process stopped before readiness pattern")
+		}
+		logs := s.CollectLogs(sessionID, 0)
+		for _, line := range logs {
+			if strings.Contains(line, pattern) {
+				return nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("readiness pattern %q not found within %v", pattern, timeout)
+		}
+		time.Sleep(tickInterval)
+	}
+}
+
 func (s *Supervisor) IsRunning(sessionID string) bool {
 	return s.InspectProcess(sessionID).Status == StatusRunning
 }

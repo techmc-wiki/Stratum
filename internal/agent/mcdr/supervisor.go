@@ -75,6 +75,13 @@ func (s *Supervisor) Start(ctx context.Context, sessionID string, profile runtim
 		return RuntimeState{}, err
 	}
 
+	if profile.ReadinessCheck != nil && profile.ReadinessCheck.Type == runtimeprofile.ReadinessLogPattern {
+		if err := s.processSupervisor.WaitForLog(sessionID, profile.ReadinessCheck.Pattern, profile.ReadinessCheck.Timeout); err != nil {
+			s.processSupervisor.StopProcess(ctx, sessionID)
+			return RuntimeState{}, fmt.Errorf("MCDR readiness check failed: %w", err)
+		}
+	}
+
 	return s.runtimeState(model), nil
 }
 

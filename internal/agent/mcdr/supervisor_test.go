@@ -185,21 +185,28 @@ func TestMCDRHelperProcess(t *testing.T) {
 	}
 	switch os.Getenv("STRATUM_MCDR_MODE") {
 	case "stdin":
-	}
-	os.Stdout.WriteString("helper-ready\n")
-	os.Stderr.WriteString("helper-stderr\n")
-	buf := make([]byte, 256)
-	for {
-		n, err := os.Stdin.Read(buf)
-		if err != nil {
-			os.Exit(0)
+		os.Stdout.WriteString("helper-ready\n")
+		os.Stderr.WriteString("helper-stderr\n")
+		buf := make([]byte, 256)
+		for {
+			n, err := os.Stdin.Read(buf)
+			if err != nil {
+				os.Exit(0)
+			}
+			if strings.TrimSpace(string(buf[:n])) == "stop" {
+				os.Stdout.WriteString("helper-stopped\n")
+				os.Exit(0)
+			}
 		}
-		input := string(buf[:n])
-		input = strings.TrimSpace(input)
-		if input == "stop" {
-			os.Stdout.WriteString("helper-stopped\n")
-			os.Exit(0)
-		}
+	case "long":
+		time.Sleep(30 * time.Second)
+		os.Exit(0)
+	case "exit":
+		os.Exit(7)
+	case "exit-zero":
+		os.Exit(0)
+	default:
+		os.Exit(0)
 	}
 }
 
@@ -294,5 +301,72 @@ func TestMCDRSupervisorStartConfigWriteFailsDoesNotStartProcess(t *testing.T) {
 	}
 	if ms.IsRunning("mcdr-fail-config") {
 		t.Fatal("process should not start when config write fails")
+	}
+}
+
+func TestMCDRSupervisorStartWithReadinessCheckSuccess(t *testing.T) {
+	root := t.TempDir()
+	ps, err := agentprocess.NewSupervisorWithRoot("agent-test", root, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms := NewSupervisor(ps)
+	profile := mcdrTestProfile(t, "stdin")
+	profile.ReadinessCheck = &runtimeprofile.ReadinessCheckConfig{
+		Type:    runtimeprofile.ReadinessLogPattern,
+		Pattern: "helper-ready",
+		Timeout: 3 * time.Second,
+	}
+	state, err := ms.Start(context.Background(), "mcdr-ready-ok", profile)
+	if err != nil {
+		t.Fatalf("Start with readiness: %v", err)
+	}
+	if state.Status != StatusRunning {
+		t.Fatalf("expected running, got %s", state.Status)
+	}
+	ms.Stop(context.Background(), "mcdr-ready-ok")
+}
+
+func TestMCDRSupervisorStartWithReadinessCheckTimeout(t *testing.T) {
+	root := t.TempDir()
+	ps, err := agentprocess.NewSupervisorWithRoot("agent-test", root, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms := NewSupervisor(ps)
+	profile := mcdrTestProfile(t, "long")
+	profile.ReadinessCheck = &runtimeprofile.ReadinessCheckConfig{
+		Type:    runtimeprofile.ReadinessLogPattern,
+		Pattern: "helper-ready",
+		Timeout: 200 * time.Millisecond,
+	}
+	_, err = ms.Start(context.Background(), "mcdr-ready-timeout", profile)
+	if err == nil || !strings.Contains(err.Error(), "readiness") {
+		t.Fatalf("expected readiness timeout, got %v", err)
+	}
+	if ms.IsRunning("mcdr-ready-timeout") {
+		t.Fatal("process should be stopped after readiness timeout")
+	}
+}
+
+func TestMCDRSupervisorStartWithReadinessCheckExit(t *testing.T) {
+	root := t.TempDir()
+	ps, err := agentprocess.NewSupervisorWithRoot("agent-test", root, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms := NewSupervisor(ps)
+	profile := mcdrTestProfile(t, "exit")
+	profile.ReadinessCheck = &runtimeprofile.ReadinessCheckConfig{
+		Type:    runtimeprofile.ReadinessLogPattern,
+		Pattern: "helper-ready",
+		Timeout: 3 * time.Second,
+	}
+	_, err = ms.Start(context.Background(), "mcdr-ready-exit", profile)
+	if err == nil || !strings.Contains(err.Error(), "readiness") {
+		t.Fatalf("expected readiness exit detection, got %v", err)
+	}
+	if ms.IsRunning("mcdr-ready-exit") {
+		t.Fatal("process should not be running after crash during readiness")
 	}
 }
