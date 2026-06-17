@@ -38,6 +38,9 @@ func newSessionsCommand() *cobra.Command {
 	cmd.AddCommand(agentCommand("mcdr-config-stub", "Inspect MCDR config stubs", func(ctx context.Context, runtime *commandRuntime, args []string) int {
 		return sessionsMCDRConfigStub(ctx, runtime.agentClient, args, runtime.stdout, runtime.stderr)
 	}))
+	cmd.AddCommand(agentCommand("send-command", "Send a command to session runtime stdin", func(ctx context.Context, runtime *commandRuntime, args []string) int {
+		return sessionSendCommand(ctx, runtime.agentClient, args, runtime.stdout, runtime.stderr)
+	}))
 	for _, lifecycleAction := range []string{"prepare", "start", "stop", "restart", "freeze", "unfreeze", "mark-crashed", "archive", "delete"} {
 		cmd.AddCommand(sessionLifecycleCommand(lifecycleAction))
 	}

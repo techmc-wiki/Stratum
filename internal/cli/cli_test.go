@@ -1820,3 +1820,60 @@ func TestEnvironmentWithUnsafeRuntimeProfileIDFails(t *testing.T) {
 		t.Fatalf("code=%d stderr=%q", code, stderr.String())
 	}
 }
+
+func TestCLISendCommandSuccess(t *testing.T) {
+	server := httptest.NewServer(httptransport.NewServer(local.NewFake(), "", nil).Handler())
+	defer server.Close()
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	_ = ensureTestEnvironment(dataDirectory)
+	base := []string{"--data-dir", dataDirectory, "--agent-url", server.URL}
+	commands := [][]string{
+		{"projects", "create", "--id", "project-1", "--name", "Project"},
+		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room", "--environment", "env-test"},
+		{"sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
+		{"sessions", "start", "--id", "session-1", "--actor", "actor-1"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(append(append([]string{}, base...), command...), &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code := Run(append(append([]string{}, base...), "sessions", "send-command", "--session", "session-1", "--command", "save-all"), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("send-command: code=%d stderr=%q", code, stderr.String())
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "status=sent") || !strings.Contains(output, "session-1") || !strings.Contains(output, "agent=") {
+		t.Fatalf("send-command output = %q", output)
+	}
+}
+
+func TestCLISendCommandRejectsEmptyCommand(t *testing.T) {
+	server := httptest.NewServer(httptransport.NewServer(local.NewFake(), "", nil).Handler())
+	defer server.Close()
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	base := []string{"--data-dir", dataDirectory, "--agent-url", server.URL}
+	code := Run(append(append([]string{}, base...), "sessions", "send-command", "--session", "session-1", "--command", ""), &stdout, &stderr)
+	if code == 0 || !strings.Contains(strings.ToLower(stderr.String()), "required") {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+}
+
+func TestCLISendCommandRejectsMissingSession(t *testing.T) {
+	server := httptest.NewServer(httptransport.NewServer(local.NewFake(), "", nil).Handler())
+	defer server.Close()
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	base := []string{"--data-dir", dataDirectory, "--agent-url", server.URL}
+	code := Run(append(append([]string{}, base...), "sessions", "send-command", "--command", "save-all"), &stdout, &stderr)
+	if code == 0 || !strings.Contains(stderr.String(), "required") {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+}
