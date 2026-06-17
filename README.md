@@ -23,10 +23,10 @@ The control plane is split into three components:
 - **Agent** — owns runtime process lifecycle (start, stop, restart, logs, resource observation) and exposes runtime profiles
 - **CLI** — `stratum` command-line tool for managing projects, rooms, sessions, and operations
 
-MCDR and Lucy are optional future integrations:
+MCDR and Lucy are integrated:
 
 - **MCDR** may run as a child RuntimeProfile under Agent supervision for in-game command bridging
-- **Lucy** provides non-intrusive dependency manifests and lock files; it does **not** manage JVM processes or session scheduling
+- **Lucy** (embedded as submodule in `tools/lucy/`) provides non-intrusive dependency manifests and lock files; it does **not** manage JVM processes or session scheduling
 
 See [docs/architecture.md](docs/architecture.md) for design boundaries and [docs/runtime.md](docs/runtime.md) for Agent ownership rules.
 
@@ -43,8 +43,8 @@ This is an MVP skeleton. It implements:
 It does **not** yet implement:
 
 - Actual Minecraft server launching
-- MCDR integration
-- Lucy integration
+- MCDR integration beyond interfaces
+- Full Lucy CLI integration in Agent workflows
 - 1.12 or latest environments (only 1.17 Fabric + MCDR + Carpet stubs)
 - Web UI
 - Production container orchestration
@@ -53,13 +53,33 @@ The HTTP Agent supervises only the built-in Go dummy runtime. It does not launch
 
 ## Quick Start
 
-### 1. Run tests
+### 0. Clone with submodules
+
+```bash
+git clone --recurse-submodules https://github.com/stratummc/stratum.git
+# Or if already cloned:
+git submodule update --init --recursive
+```
+
+### 1. Build
+
+```bash
+# Install task runner if needed
+go install github.com/go-task/task/v3/cmd/task@latest
+
+# Build all components
+task build
+
+# Binaries will be in dist/local/
+```
+
+### 2. Run tests
 
 ```bash
 go test ./...
 ```
 
-### 2. Create a project and room
+### 3. Create a project and room
 
 ```bash
 go run ./cmd/stratum --data-dir .stratum/data projects create --id demo --name "Demo Project"
@@ -67,7 +87,7 @@ go run ./cmd/stratum --data-dir .stratum/data rooms create --id demo-room --proj
 go run ./cmd/stratum --data-dir .stratum/data sessions create --id demo-session --project demo --room demo-room
 ```
 
-### 3. Start the HTTP Agent
+### 4. Start the HTTP Agent
 
 ```powershell
 # Terminal 1
@@ -86,6 +106,7 @@ For shared-token authentication, add matching `--token` and `--agent-token` flag
 
 ## Documentation
 
+- [docs/lucy-integration.md](docs/lucy-integration.md) — Lucy dependency management integration
 - [docs/architecture.md](docs/architecture.md) — component boundaries and ownership rules
 - [docs/runtime.md](docs/runtime.md) — Agent runtime supervision and profiles
 - [docs/operations.md](docs/operations.md) — durable operation lifecycle and correlation

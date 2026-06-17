@@ -1,0 +1,3 @@
+[submodule "tools/lucy"]
+	path = tools/lucy
+	url = https://github.com/mclucy/lucy.git

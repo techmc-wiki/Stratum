@@ -39,6 +39,7 @@ tasks:
       - go build -trimpath -o {{.LOCAL_BIN_DIR}}/stratum ./cmd/stratum
       - go build -trimpath -o {{.LOCAL_BIN_DIR}}/stratum-agent ./cmd/stratum-agent
       - go build -trimpath -o {{.LOCAL_BIN_DIR}}/stratum-controller ./cmd/stratum-controller
+      - go build -trimpath -o {{.LOCAL_BIN_DIR}}/lucy ./cmd/lucy
 
   build:linux-amd64:
     desc: Build Linux amd64 binaries into dist/linux-amd64
@@ -51,6 +52,7 @@ tasks:
       - go build -trimpath -o {{.LINUX_AMD64_DIR}}/stratum ./cmd/stratum
       - go build -trimpath -o {{.LINUX_AMD64_DIR}}/stratum-agent ./cmd/stratum-agent
       - go build -trimpath -o {{.LINUX_AMD64_DIR}}/stratum-controller ./cmd/stratum-controller
+      - go build -trimpath -o {{.LINUX_AMD64_DIR}}/lucy ./cmd/lucy
 
   ci:
     desc: Run the same vet, test, and Linux amd64 build sequence as GitHub Actions
