@@ -20,6 +20,7 @@ type mockRepo struct {
 	checkpoints map[string]checkpoint.Checkpoint
 	auditEvents []audit.Event
 	createErr   error
+	auditErr    error
 }
 
 func (m *mockRepo) GetSession(ctx context.Context, id string) (session.Session, error) {
@@ -33,6 +34,11 @@ func (m *mockRepo) CreateCheckpoint(ctx context.Context, cp checkpoint.Checkpoin
 	if m.createErr != nil {
 		return m.createErr
 	}
+	m.checkpoints[cp.ID] = cp
+	return nil
+}
+
+func (m *mockRepo) UpdateCheckpoint(ctx context.Context, cp checkpoint.Checkpoint) error {
 	m.checkpoints[cp.ID] = cp
 	return nil
 }
@@ -60,17 +66,29 @@ func (m *mockRepo) ListCheckpointsBySession(ctx context.Context, sessionID strin
 }
 
 func (m *mockRepo) AppendAuditEvent(ctx context.Context, event audit.Event) error {
+	if m.auditErr != nil {
+		return m.auditErr
+	}
 	m.auditEvents = append(m.auditEvents, event)
 	return nil
 }
 
 type mockAgent struct {
-	commands []string
-	failAt   int
+	commands     []string
+	failAt       int
+	capabilities []string
+	infoErr      error
 }
 
 func (m *mockAgent) Info(context.Context) (agent.AgentInfo, error) {
-	return agent.AgentInfo{ID: "mock"}, nil
+	if m.infoErr != nil {
+		return agent.AgentInfo{}, m.infoErr
+	}
+	caps := m.capabilities
+	if caps == nil {
+		caps = []string{"prepare", "start", "stop", "send-command"}
+	}
+	return agent.AgentInfo{ID: "mock", Capabilities: caps}, nil
 }
 
 func (m *mockAgent) RuntimeProfiles(context.Context) ([]runtimeprofile.Profile, error) {
@@ -563,5 +581,99 @@ func TestListBySessionReturnsOnlyMatching(t *testing.T) {
 		if cp.SourceSessionID != "s-1" {
 			t.Fatalf("wrong session: %+v", cp)
 		}
+	}
+}
+
+func TestCreateCommandQuiescedRejectsAgentWithoutSendCommand(t *testing.T) {
+	agent := &mockAgent{capabilities: []string{"prepare", "start", "stop"}}
+	repo := &mockRepo{
+		sessions:    map[string]session.Session{"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1", RuntimeProfileID: "mcdr-python-1.17"}},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	_, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-nosend", SessionID: "s-1", ActorID: "actor-1",
+		ConsistencyLevel: consistency.LevelCommandQuiesced,
+		AgentClient:      agent,
+	})
+	if err == nil || !strings.Contains(err.Error(), "send-command") {
+		t.Fatalf("expected send-command rejection, got %v", err)
+	}
+	if len(repo.checkpoints) != 0 {
+		t.Fatal("no checkpoint should be created")
+	}
+}
+
+func TestCreateCommandQuiescedSaveOnFailureIsAudited(t *testing.T) {
+	agent := &mockAgent{failAt: 3}
+	repo := &mockRepo{
+		sessions:    map[string]session.Session{"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1", RuntimeProfileID: "mcdr-python-1.17"}},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	cp, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-saveon-fail", SessionID: "s-1", ActorID: "actor-1",
+		ConsistencyLevel: consistency.LevelCommandQuiesced,
+		AgentClient:      agent,
+	})
+	if err != nil {
+		t.Fatalf("expected success with saveOn error in audit, got %v", err)
+	}
+	if cp.ConsistencyMetadata["worldSnapshot"] != "false" {
+		t.Fatalf("worldSnapshot = %q", cp.ConsistencyMetadata["worldSnapshot"])
+	}
+	if !strings.Contains(cp.ConsistencyMetadata["saveOnError"], "failure") {
+		t.Fatalf("saveOnError not captured in consistencyMetadata: %v", cp.ConsistencyMetadata)
+	}
+	stored, loadErr := repo.GetCheckpoint(context.Background(), cp.ID)
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if stored.ConsistencyMetadata["saveOnError"] == "" {
+		t.Fatal("stored checkpoint is missing saveOnError")
+	}
+	if stored.ConsistencyMetadata["worldSnapshot"] != "false" {
+		t.Fatal("stored checkpoint missing worldSnapshot")
+	}
+	foundSaveOn := false
+	for _, event := range repo.auditEvents {
+		if event.Action == "checkpoint.created" && event.Metadata["saveOnError"] != "" {
+			foundSaveOn = true
+			break
+		}
+	}
+	if !foundSaveOn {
+		t.Fatal("audit event should contain saveOnError")
+	}
+}
+
+func TestCreateMetadataOnlyAuditAppendFailureReturnsError(t *testing.T) {
+	repo := &mockRepo{
+		sessions:    map[string]session.Session{"s-1": {ID: "s-1", ProjectID: "p-1", EnvironmentID: "env-1"}},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+		auditErr:    fmt.Errorf("audit storage failure"),
+	}
+	_, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-audit-fail", SessionID: "s-1", ActorID: "actor-1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "audit append failed") {
+		t.Fatalf("expected audit append error, got %v", err)
+	}
+	if len(repo.checkpoints) != 1 {
+		t.Fatal("checkpoint should still be persisted")
+	}
+}
+
+func TestCreateCommandQuiescedRequiresRuntimeProfileOrEnvironment(t *testing.T) {
+	agent := &mockAgent{}
+	repo := &mockRepo{
+		sessions:    map[string]session.Session{"s-no-profile": {ID: "s-no-profile", ProjectID: "p-1", RoomID: "r-1"}},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	_, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-noprofile", SessionID: "s-no-profile", ActorID: "actor-1",
+		ConsistencyLevel: consistency.LevelCommandQuiesced,
+		AgentClient:      agent,
+	})
+	if err == nil || !strings.Contains(err.Error(), "environment or runtime") {
+		t.Fatalf("expected runtime profile or environment required, got %v", err)
 	}
 }

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/stratummc/stratum/internal/agent"
@@ -31,6 +32,7 @@ type SessionReader interface {
 type Repository interface {
 	SessionReader
 	CreateCheckpoint(ctx context.Context, cp checkpoint.Checkpoint) error
+	UpdateCheckpoint(ctx context.Context, cp checkpoint.Checkpoint) error
 	GetCheckpoint(ctx context.Context, id string) (checkpoint.Checkpoint, error)
 	ListCheckpoints(ctx context.Context) ([]checkpoint.Checkpoint, error)
 	ListCheckpointsBySession(ctx context.Context, sessionID string) ([]checkpoint.Checkpoint, error)
@@ -55,8 +57,8 @@ func Create(ctx context.Context, repo Repository, req CreateRequest) (checkpoint
 	switch consistencyLevel {
 	case consistency.LevelMetadataOnly:
 	case consistency.LevelCommandQuiesced:
-		if req.AgentClient == nil {
-			return checkpoint.Checkpoint{}, fmt.Errorf("checkpoint consistency level %q requires an agent client", consistencyLevel)
+		if err := validateCommandQuiesced(ctx, req, sess); err != nil {
+			return checkpoint.Checkpoint{}, err
 		}
 		return createCommandQuiesced(ctx, repo, req, sess)
 	default:
@@ -69,8 +71,38 @@ func Create(ctx context.Context, repo Repository, req CreateRequest) (checkpoint
 	if err := repo.CreateCheckpoint(ctx, cp); err != nil {
 		return checkpoint.Checkpoint{}, err
 	}
-	_ = repo.AppendAuditEvent(ctx, buildAuditEvent(req, cp))
+	if err := repo.AppendAuditEvent(ctx, buildAuditEvent(req, cp)); err != nil {
+		return cp, fmt.Errorf("checkpoint created but audit append failed: %w", err)
+	}
 	return cp, nil
+}
+
+func validateCommandQuiesced(ctx context.Context, req CreateRequest, sess session.Session) error {
+	if req.AgentClient == nil {
+		return fmt.Errorf("checkpoint consistency level %q requires an agent client", req.ConsistencyLevel)
+	}
+	if strings.TrimSpace(sess.RuntimeProfileID) == "" {
+		if sess.EnvironmentID == "" {
+			return fmt.Errorf("session %q does not have an environment or runtime profile", sess.ID)
+		}
+		// TODO: if Environment stores a RuntimeProfileID field, use it to determine stdin-command capability.
+		// Currently the signal is EnvironmentID presence; we fall back to agent capabilities.
+	}
+	info, err := req.AgentClient.Info(ctx)
+	if err != nil {
+		return fmt.Errorf("check agent info: %w", err)
+	}
+	hasSendCommand := false
+	for _, cap := range info.Capabilities {
+		if cap == string(agent.OperationSendCommand) {
+			hasSendCommand = true
+			break
+		}
+	}
+	if !hasSendCommand {
+		return fmt.Errorf("agent %q does not support send-command; command_quiesced requires send-command capability", info.ID)
+	}
+	return nil
 }
 
 func createCommandQuiesced(ctx context.Context, repo Repository, req CreateRequest, sess session.Session) (checkpoint.Checkpoint, error) {
@@ -105,18 +137,30 @@ func createCommandQuiesced(ctx context.Context, repo Repository, req CreateReque
 	}
 
 	saveOnRequired = false
-	if _, err := req.AgentClient.SendCommand(ctx, req.SessionID, "save-on"); err != nil {
-		consistencyMetadata["saveOnError"] = err.Error()
-	}
-	if len(consistencyMetadata) > 0 {
+	saveOnErr := saveOnWithError(ctx, req.AgentClient, req.SessionID)
+	if saveOnErr != nil {
+		consistencyMetadata["saveOnError"] = saveOnErr.Error()
 		cp.ConsistencyMetadata = consistencyMetadata
+		if updateErr := repo.UpdateCheckpoint(ctx, cp); updateErr != nil {
+			// stored checkpoint may not reflect saveOnError; audit carries it
+		}
 	}
 
 	event := buildAuditEvent(req, cp)
 	event.Metadata["worldSnapshot"] = "false"
 	event.Metadata["commandQuiesced"] = "true"
-	_ = repo.AppendAuditEvent(ctx, event)
+	if saveOnErr != nil {
+		event.Metadata["saveOnError"] = saveOnErr.Error()
+	}
+	if err := repo.AppendAuditEvent(ctx, event); err != nil {
+		return cp, fmt.Errorf("checkpoint created but audit append failed: %w", err)
+	}
 	return cp, nil
+}
+
+func saveOnWithError(ctx context.Context, agentClient agent.AgentClient, sessionID string) error {
+	_, err := agentClient.SendCommand(ctx, sessionID, "save-on")
+	return err
 }
 
 func buildCheckpointParams(req CreateRequest, sess session.Session, level consistency.Level) checkpoint.CreateParams {
