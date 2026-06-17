@@ -336,3 +336,16 @@ func (f *Fake) SendCommand(_ context.Context, sessionID, command string) (agent.
 	}
 	return agent.CommandResult{AgentID: f.id, Status: "sent", Message: "command sent"}, nil
 }
+
+func (f *Fake) CreateWorldSnapshot(_ context.Context, request agent.WorldCheckpointRequest) (agent.WorldCheckpointResult, error) {
+	if err := f.record("create-world-snapshot"); err != nil {
+		return agent.WorldCheckpointResult{}, err
+	}
+	return agent.WorldCheckpointResult{
+		SessionID:   request.SessionID,
+		SnapshotRef: "fake://snapshots/" + request.SessionID + "/world.zip",
+		SizeBytes:   1024,
+		SHA256:      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		CreatedAt:   f.now(),
+	}, nil
+}

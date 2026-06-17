@@ -3,6 +3,8 @@ package local
 import (
 	"context"
 	"errors"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/stratummc/stratum/internal/agent/mcdr"
 	agentprocess "github.com/stratummc/stratum/internal/agent/process"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
+	"github.com/stratummc/stratum/internal/agent/worldcheckpoint"
 )
 
 type ProcessAgent struct {
@@ -377,4 +380,37 @@ func (a *ProcessAgent) SendCommand(ctx context.Context, sessionID, command strin
 		return agent.CommandResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationSendCommand, Message: err.Error()}
 	}
 	return agent.CommandResult{AgentID: a.id, Status: "sent", Message: "command sent"}, nil
+}
+
+func (a *ProcessAgent) CreateWorldSnapshot(ctx context.Context, request agent.WorldCheckpointRequest) (agent.WorldCheckpointResult, error) {
+	worldRel := strings.TrimSpace(request.WorldDirRel)
+	if worldRel == "" {
+		worldRel = "world"
+	}
+	if filepath.IsAbs(worldRel) || strings.Contains(worldRel, "..") || worldRel == "." {
+		return agent.WorldCheckpointResult{}, agent.Error{AgentID: a.id, Operation: "create-world-snapshot", Message: "world dir relative path must be safe"}
+	}
+	sessionLayout, err := agentprocess.NewSessionRuntimeLayout(a.supervisor.RuntimeRoot(), request.SessionID)
+	if err != nil {
+		return agent.WorldCheckpointResult{}, agent.Error{AgentID: a.id, Operation: "create-world-snapshot", Message: err.Error()}
+	}
+	worldDir := filepath.Join(sessionLayout.WorkDir, filepath.FromSlash(worldRel))
+	worker, err := worldcheckpoint.NewWorker(a.supervisor.RuntimeRoot())
+	if err != nil {
+		return agent.WorldCheckpointResult{}, agent.Error{AgentID: a.id, Operation: "create-world-snapshot", Message: err.Error()}
+	}
+	result, err := worker.Create(ctx, worldcheckpoint.CreateParams{
+		SessionRoot: sessionLayout.SessionRoot,
+		WorldDir:    worldDir,
+	})
+	if err != nil {
+		return agent.WorldCheckpointResult{}, agent.Error{AgentID: a.id, Operation: "create-world-snapshot", Message: err.Error()}
+	}
+	return agent.WorldCheckpointResult{
+		SessionID:   request.SessionID,
+		SnapshotRef: result.SnapshotRef,
+		SizeBytes:   result.SizeBytes,
+		SHA256:      result.SHA256,
+		CreatedAt:   result.CreatedAt,
+	}, nil
 }

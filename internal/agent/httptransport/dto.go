@@ -513,3 +513,16 @@ type SendCommandResponse struct {
 	Message   string `json:"message"`
 	RequestID string `json:"requestId"`
 }
+
+type WorldCheckpointRequest struct {
+	WorldDirRel string `json:"worldDirRel"`
+}
+
+type WorldCheckpointResponse struct {
+	SessionID   string    `json:"sessionId"`
+	SnapshotRef string    `json:"snapshotRef"`
+	SizeBytes   int64     `json:"sizeBytes"`
+	SHA256      string    `json:"sha256"`
+	CreatedAt   time.Time `json:"createdAt"`
+	RequestID   string    `json:"requestId"`
+}

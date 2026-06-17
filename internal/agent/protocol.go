@@ -69,6 +69,19 @@ type CheckpointRequest struct {
 	CheckpointID string
 }
 
+type WorldCheckpointRequest struct {
+	SessionID   string
+	WorldDirRel string
+}
+
+type WorldCheckpointResult struct {
+	SessionID   string
+	SnapshotRef string
+	SizeBytes   int64
+	SHA256      string
+	CreatedAt   time.Time
+}
+
 type ArtifactMaterializationRequest struct {
 	SessionID        string
 	ArtifactID       string
@@ -469,6 +482,7 @@ type AgentClient interface {
 	SessionReadyForStart(context.Context, string) (SessionStartReadiness, error)
 	InspectMCDRConfigStub(context.Context, string) (MCDRConfigStubInspection, error)
 	SendCommand(context.Context, string, string) (CommandResult, error)
+	CreateWorldSnapshot(context.Context, WorldCheckpointRequest) (WorldCheckpointResult, error)
 }
 
 type RuntimeAgent interface {

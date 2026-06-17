@@ -146,3 +146,51 @@ func TestProcessAgentMCDRHelperProcess(t *testing.T) {
 		}
 	}
 }
+
+func TestProcessAgentCreateWorldSnapshot(t *testing.T) {
+	root := t.TempDir()
+	runtime, err := NewProcessAgentWithRegistryAndRoot(DefaultAgentID, runtimeprofile.Builtins(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worldDir := filepath.Join(root, "sessions", "session-1", "work", "world")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "level.dat"), []byte("data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := runtime.CreateWorldSnapshot(context.Background(), agent.WorldCheckpointRequest{SessionID: "session-1"})
+	if err != nil {
+		t.Fatalf("CreateWorldSnapshot: %v", err)
+	}
+	if result.SnapshotRef == "" || result.SizeBytes <= 0 || result.SHA256 == "" {
+		t.Fatalf("result=%+v", result)
+	}
+}
+
+func TestProcessAgentCreateWorldSnapshotRejectsEscape(t *testing.T) {
+	root := t.TempDir()
+	runtime, err := NewProcessAgentWithRegistryAndRoot(DefaultAgentID, runtimeprofile.Builtins(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{"../escape", "C:/escape"} {
+		_, err := runtime.CreateWorldSnapshot(context.Background(), agent.WorldCheckpointRequest{SessionID: "session-1", WorldDirRel: dir})
+		if err == nil || !strings.Contains(err.Error(), "safe") {
+			t.Fatalf("dir=%q err=%v", dir, err)
+		}
+	}
+}
+
+func TestProcessAgentCreateWorldSnapshotMissingWorldDir(t *testing.T) {
+	root := t.TempDir()
+	runtime, err := NewProcessAgentWithRegistryAndRoot(DefaultAgentID, runtimeprofile.Builtins(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = runtime.CreateWorldSnapshot(context.Background(), agent.WorldCheckpointRequest{SessionID: "session-1"})
+	if err == nil {
+		t.Fatal("expected error for missing world dir")
+	}
+}

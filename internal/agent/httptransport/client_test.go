@@ -219,3 +219,17 @@ func newTestClient(t *testing.T, rawURL, token string) *Client {
 	}
 	return client
 }
+
+func TestClientCreateWorldSnapshot(t *testing.T) {
+	fake := local.NewFake()
+	server := httptest.NewServer(NewServer(fake, "", nil).Handler())
+	defer server.Close()
+	client := newTestClient(t, server.URL, "")
+	result, err := client.CreateWorldSnapshot(context.Background(), agent.WorldCheckpointRequest{SessionID: "session-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.SnapshotRef == "" || result.SessionID != "session-1" {
+		t.Fatalf("result=%+v", result)
+	}
+}

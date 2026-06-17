@@ -489,3 +489,13 @@ func (c *Client) SendCommand(ctx context.Context, sessionID, command string) (ag
 	}
 	return agent.CommandResult{AgentID: response.AgentID, Status: response.Status, Message: response.Message}, nil
 }
+
+func (c *Client) CreateWorldSnapshot(ctx context.Context, request agent.WorldCheckpointRequest) (agent.WorldCheckpointResult, error) {
+	var response WorldCheckpointResponse
+	body := WorldCheckpointRequest{WorldDirRel: request.WorldDirRel}
+	path := "/v1/sessions/" + url.PathEscape(request.SessionID) + "/world-snapshot"
+	if err := c.do(ctx, http.MethodPost, path, body, &response); err != nil {
+		return agent.WorldCheckpointResult{}, err
+	}
+	return agent.WorldCheckpointResult{SessionID: response.SessionID, SnapshotRef: response.SnapshotRef, SizeBytes: response.SizeBytes, SHA256: response.SHA256, CreatedAt: response.CreatedAt}, nil
+}

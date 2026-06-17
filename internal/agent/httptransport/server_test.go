@@ -229,3 +229,26 @@ func TestServerSendCommand(t *testing.T) {
 		t.Fatalf("err=%s", errResp.Error)
 	}
 }
+
+func TestServerCreateWorldSnapshot(t *testing.T) {
+	fake := local.NewFake()
+	server := httptest.NewServer(NewServer(fake, "", nil).Handler())
+	defer server.Close()
+
+	body := strings.NewReader(`{"worldDirRel":"world"}`)
+	response, err := http.Post(server.URL+"/v1/sessions/session-1/world-snapshot", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d", response.StatusCode)
+	}
+	var result WorldCheckpointResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if result.SnapshotRef == "" || result.SHA256 == "" || result.SessionID != "session-1" {
+		t.Fatalf("result=%+v", result)
+	}
+}
