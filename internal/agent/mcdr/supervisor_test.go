@@ -3,6 +3,7 @@ package mcdr
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -221,4 +222,77 @@ func containsLog(lines []string, text string) bool {
 		}
 	}
 	return false
+}
+
+func TestMCDRSupervisorStartWritesConfigYML(t *testing.T) {
+	root := t.TempDir()
+	ps, err := agentprocess.NewSupervisorWithRoot("agent-test", root, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms := NewSupervisor(ps)
+	profile := mcdrTestProfile(t, "stdin")
+	state, err := ms.Start(context.Background(), "mcdr-config-test", profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Status != StatusRunning {
+		t.Fatalf("expected running, got %s", state.Status)
+	}
+	sessionLayout, err := agentprocess.NewSessionRuntimeLayout(root, "mcdr-config-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mcdrLayout, err := sessionLayout.MCDR()
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(mcdrLayout.MCDRConfigDir, configYMLName)
+	payload, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("config.yml not written: %v", err)
+	}
+	content := string(payload)
+	if !strings.Contains(content, "working_directory") || !strings.Contains(content, "plugin_directories") {
+		t.Fatalf("config.yml missing expected keys: %s", content)
+	}
+	ms.Stop(context.Background(), "mcdr-config-test")
+}
+
+func TestMCDRSupervisorStartConfigWriteFailsDoesNotStartProcess(t *testing.T) {
+	root := t.TempDir()
+	ps, err := agentprocess.NewSupervisorWithRoot("agent-test", root, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms := NewSupervisor(ps)
+	profile := mcdrTestProfile(t, "stdin")
+	sessionLayout, err := agentprocess.NewSessionRuntimeLayout(root, "mcdr-fail-config")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mcdrLayout, err := sessionLayout.MCDR()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mcdrLayout.Create(); err != nil {
+		t.Fatal(err)
+	}
+	if err := mcdrLayout.WriteManifest(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(mcdrLayout.MCDRConfigDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(mcdrLayout.MCDRConfigDir, configYMLName)
+	if err := os.WriteFile(configPath, []byte{}, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	state, err := ms.Start(context.Background(), "mcdr-fail-config", profile)
+	if err == nil || !strings.Contains(err.Error(), "config.yml") {
+		t.Fatalf("expected config write failure, got state=%+v err=%v", state, err)
+	}
+	if ms.IsRunning("mcdr-fail-config") {
+		t.Fatal("process should not start when config write fails")
+	}
 }

@@ -66,6 +66,10 @@ func (s *Supervisor) Start(ctx context.Context, sessionID string, profile runtim
 		return RuntimeState{}, fmt.Errorf("write MCDR layout manifest: %w", err)
 	}
 
+	if _, err := WriteRuntimeConfig(mcdrLayout, RuntimeConfig{}); err != nil {
+		return RuntimeState{}, fmt.Errorf("write MCDR config.yml: %w", err)
+	}
+
 	model, err := s.processSupervisor.StartProcess(ctx, sessionID, profile)
 	if err != nil {
 		return RuntimeState{}, err
