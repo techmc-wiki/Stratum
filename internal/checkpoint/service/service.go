@@ -266,3 +266,99 @@ func List(ctx context.Context, repo Repository) ([]checkpoint.Checkpoint, error)
 func ListBySession(ctx context.Context, repo Repository, sessionID string) ([]checkpoint.Checkpoint, error) {
 	return repo.ListCheckpointsBySession(ctx, sessionID)
 }
+
+type RestoreRequest struct {
+	CheckpointID    string
+	TargetSessionID string
+	WorldDirRel     string
+	ActorID         string
+	Notes           string
+	AgentClient     agent.AgentClient
+}
+
+func Restore(ctx context.Context, repo Repository, req RestoreRequest) (checkpoint.Checkpoint, error) {
+	if strings.TrimSpace(req.ActorID) == "" {
+		return checkpoint.Checkpoint{}, fmt.Errorf("actor required")
+	}
+	if req.AgentClient == nil {
+		return checkpoint.Checkpoint{}, fmt.Errorf("agent client required for restore")
+	}
+	sourceCP, err := repo.GetCheckpoint(ctx, req.CheckpointID)
+	if err != nil {
+		return checkpoint.Checkpoint{}, fmt.Errorf("get source checkpoint: %w", err)
+	}
+	if sourceCP.WorldStateRef == "" {
+		return checkpoint.Checkpoint{}, fmt.Errorf("checkpoint %q has no world state", sourceCP.ID)
+	}
+	targetSession, err := repo.GetSession(ctx, req.TargetSessionID)
+	if err != nil {
+		return checkpoint.Checkpoint{}, fmt.Errorf("get target session: %w", err)
+	}
+	if targetSession.ProjectID != sourceCP.ProjectID {
+		return checkpoint.Checkpoint{}, fmt.Errorf("target session project %q does not match source checkpoint project %q", targetSession.ProjectID, sourceCP.ProjectID)
+	}
+	worldDirRel := strings.TrimSpace(req.WorldDirRel)
+	if worldDirRel == "" {
+		worldDirRel = "world_restored"
+	}
+	agentResult, err := req.AgentClient.RestoreWorldSnapshot(ctx, agent.WorldCheckpointRestoreRequest{
+		SessionID:   req.TargetSessionID,
+		SnapshotRef: sourceCP.WorldStateRef,
+		WorldDirRel: worldDirRel,
+	})
+	if err != nil {
+		return checkpoint.Checkpoint{}, fmt.Errorf("restore world snapshot: %w", err)
+	}
+	checkpointID, idErr := idgen.NewID("cp")
+	if idErr != nil {
+		return checkpoint.Checkpoint{}, fmt.Errorf("generate checkpoint id: %w", idErr)
+	}
+	notes := strings.TrimSpace(req.Notes)
+	if notes == "" {
+		notes = "Restored from checkpoint " + sourceCP.ID
+	}
+	metadata := map[string]string{
+		"restoredFromCheckpoint": sourceCP.ID,
+		"restoredEntryCount":     fmt.Sprintf("%d", agentResult.EntryCount),
+		"restoredSizeBytes":      fmt.Sprintf("%d", agentResult.SizeBytes),
+		"worldDirRel":            worldDirRel,
+	}
+	params := checkpoint.CreateParams{
+		ID:               checkpointID,
+		ProjectID:        targetSession.ProjectID,
+		RoomID:           targetSession.RoomID,
+		SourceSessionID:  req.TargetSessionID,
+		CreatorID:        req.ActorID,
+		Kind:             checkpoint.KindManual,
+		Status:           checkpoint.StatusMetadataOnly,
+		ConsistencyLevel: consistency.LevelMetadataOnly,
+		EnvironmentID:    targetSession.EnvironmentID,
+		RuntimeProfileID: targetSession.RuntimeProfileID,
+		WorldStateRef:    agentResult.RestoredRef,
+		Notes:            notes,
+		Metadata:         metadata,
+	}
+	cp, err := checkpoint.New(params)
+	if err != nil {
+		return checkpoint.Checkpoint{}, err
+	}
+	if err := repo.CreateCheckpoint(ctx, cp); err != nil {
+		return checkpoint.Checkpoint{}, fmt.Errorf("create checkpoint: %w", err)
+	}
+	auditEventID, _ := idgen.NewID("audit")
+	auditEvent, _ := audit.NewEvent(auditEventID, req.ActorID, "checkpoint.restored", "checkpoint", cp.ID, time.Now().UTC())
+	auditEvent.Metadata = map[string]string{
+		"sourceCheckpointId": sourceCP.ID,
+		"targetSessionId":    req.TargetSessionID,
+		"worldDirRel":        worldDirRel,
+		"restoredRef":        agentResult.RestoredRef,
+		"entryCount":         fmt.Sprintf("%d", agentResult.EntryCount),
+		"sizeBytes":          fmt.Sprintf("%d", agentResult.SizeBytes),
+		"checkpointId":       cp.ID,
+		"projectId":          cp.ProjectID,
+	}
+	if err := repo.AppendAuditEvent(ctx, auditEvent); err != nil {
+		return cp, fmt.Errorf("checkpoint restored but audit append failed: %w", err)
+	}
+	return cp, nil
+}

@@ -687,3 +687,229 @@ func TestCreateCommandQuiescedRequiresRuntimeProfileOrEnvironment(t *testing.T) 
 		t.Fatalf("expected runtime profile or environment required, got %v", err)
 	}
 }
+
+func TestRestoreCreatesNewCheckpoint(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-source": {ID: "s-source", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+			"s-target": {ID: "s-target", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{
+			"cp-source": {
+				ID: "cp-source", ProjectID: "p-1", SourceSessionID: "s-source", CreatorID: "creator-1",
+				Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+				ConsistencyLevel: consistency.LevelCommandQuiesced, EnvironmentID: "env-1",
+				WorldStateRef: "agent-local://mock/sessions/s-source/checkpoints/world.zip",
+			},
+		},
+	}
+	ctx := context.Background()
+	agent := &mockAgent{}
+	cp, err := Restore(ctx, repo, RestoreRequest{
+		CheckpointID:    "cp-source",
+		TargetSessionID: "s-target",
+		ActorID:         "actor-1",
+		AgentClient:     agent,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.SourceSessionID != "s-target" {
+		t.Fatalf("SourceSessionID = %q, want s-target", cp.SourceSessionID)
+	}
+	if cp.Metadata["restoredFromCheckpoint"] != "cp-source" {
+		t.Fatalf("Metadata[restoredFromCheckpoint] = %q", cp.Metadata["restoredFromCheckpoint"])
+	}
+	if cp.WorldStateRef != "agent-local://mock/sessions/s-target/work/world_restored" {
+		t.Fatalf("WorldStateRef = %q", cp.WorldStateRef)
+	}
+	if cp.ConsistencyLevel != consistency.LevelMetadataOnly {
+		t.Fatalf("ConsistencyLevel = %q", cp.ConsistencyLevel)
+	}
+	if len(repo.auditEvents) != 1 || repo.auditEvents[0].Action != "checkpoint.restored" {
+		t.Fatalf("audit events: %+v", repo.auditEvents)
+	}
+	auditMeta := repo.auditEvents[0].Metadata
+	if auditMeta["sourceCheckpointId"] != "cp-source" || auditMeta["targetSessionId"] != "s-target" {
+		t.Fatalf("audit metadata: %+v", auditMeta)
+	}
+	if auditMeta["worldDirRel"] != "world_restored" {
+		t.Fatalf("worldDirRel = %q", auditMeta["worldDirRel"])
+	}
+}
+
+func TestRestoreRejectsCheckpointWithoutWorldState(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-target": {ID: "s-target", ProjectID: "p-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{
+			"cp-no-world": {
+				ID: "cp-no-world", ProjectID: "p-1", SourceSessionID: "s-source", CreatorID: "creator-1",
+				Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+				ConsistencyLevel: consistency.LevelMetadataOnly, EnvironmentID: "env-1",
+			},
+		},
+	}
+	agent := &mockAgent{}
+	_, err := Restore(context.Background(), repo, RestoreRequest{
+		CheckpointID:    "cp-no-world",
+		TargetSessionID: "s-target",
+		ActorID:         "actor-1",
+		AgentClient:     agent,
+	})
+	if err == nil || !strings.Contains(err.Error(), "no world state") {
+		t.Fatalf("expected no world state error, got %v", err)
+	}
+}
+
+func TestRestoreRejectsTargetSessionInDifferentProject(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-target": {ID: "s-target", ProjectID: "p-other", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{
+			"cp-source": {
+				ID: "cp-source", ProjectID: "p-1", SourceSessionID: "s-source", CreatorID: "creator-1",
+				Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+				ConsistencyLevel: consistency.LevelCommandQuiesced, EnvironmentID: "env-1",
+				WorldStateRef: "agent-local://mock/sessions/s-source/checkpoints/world.zip",
+			},
+		},
+	}
+	agent := &mockAgent{}
+	_, err := Restore(context.Background(), repo, RestoreRequest{
+		CheckpointID:    "cp-source",
+		TargetSessionID: "s-target",
+		ActorID:         "actor-1",
+		AgentClient:     agent,
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("expected project mismatch error, got %v", err)
+	}
+}
+
+func TestRestoreRequiresActorAndAgentClient(t *testing.T) {
+	repo := &mockRepo{
+		sessions:    map[string]session.Session{},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	_, err := Restore(context.Background(), repo, RestoreRequest{
+		CheckpointID:    "cp-source",
+		TargetSessionID: "s-target",
+		ActorID:         "",
+		AgentClient:     &mockAgent{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "actor required") {
+		t.Fatalf("expected actor required, got %v", err)
+	}
+	_, err = Restore(context.Background(), repo, RestoreRequest{
+		CheckpointID:    "cp-source",
+		TargetSessionID: "s-target",
+		ActorID:         "actor-1",
+		AgentClient:     nil,
+	})
+	if err == nil || !strings.Contains(err.Error(), "agent client required") {
+		t.Fatalf("expected agent client required, got %v", err)
+	}
+}
+
+func TestRestoreDefaultsWorldDirRelToWorldRestored(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-source": {ID: "s-source", ProjectID: "p-1", EnvironmentID: "env-1"},
+			"s-target": {ID: "s-target", ProjectID: "p-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{
+			"cp-source": {
+				ID: "cp-source", ProjectID: "p-1", SourceSessionID: "s-source", CreatorID: "creator-1",
+				Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+				ConsistencyLevel: consistency.LevelCommandQuiesced, EnvironmentID: "env-1",
+				WorldStateRef: "agent-local://mock/sessions/s-source/checkpoints/world.zip",
+			},
+		},
+	}
+	agent := &mockAgent{}
+	cp, err := Restore(context.Background(), repo, RestoreRequest{
+		CheckpointID:    "cp-source",
+		TargetSessionID: "s-target",
+		ActorID:         "actor-1",
+		AgentClient:     agent,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.Metadata["worldDirRel"] != "world_restored" {
+		t.Fatalf("worldDirRel = %q, want world_restored", cp.Metadata["worldDirRel"])
+	}
+}
+
+func TestRestoreAuditAppendFailureReturnsError(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-source": {ID: "s-source", ProjectID: "p-1", EnvironmentID: "env-1"},
+			"s-target": {ID: "s-target", ProjectID: "p-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{
+			"cp-source": {
+				ID: "cp-source", ProjectID: "p-1", SourceSessionID: "s-source", CreatorID: "creator-1",
+				Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+				ConsistencyLevel: consistency.LevelCommandQuiesced, EnvironmentID: "env-1",
+				WorldStateRef: "agent-local://mock/sessions/s-source/checkpoints/world.zip",
+			},
+		},
+		auditErr: fmt.Errorf("audit storage failure"),
+	}
+	agent := &mockAgent{}
+	cp, err := Restore(context.Background(), repo, RestoreRequest{
+		CheckpointID:    "cp-source",
+		TargetSessionID: "s-target",
+		ActorID:         "actor-1",
+		AgentClient:     agent,
+	})
+	if err == nil || !strings.Contains(err.Error(), "audit append failed") {
+		t.Fatalf("expected audit append error, got %v", err)
+	}
+	if cp.ID == "" {
+		t.Fatal("checkpoint should still be persisted")
+	}
+	if len(repo.checkpoints) != 2 {
+		t.Fatalf("expected source and new checkpoint, got %d", len(repo.checkpoints))
+	}
+}
+
+func TestRestoreGeneratesCheckpointIDWhenEmpty(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-source": {ID: "s-source", ProjectID: "p-1", EnvironmentID: "env-1"},
+			"s-target": {ID: "s-target", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{
+			"cp-source": {
+				ID: "cp-source", ProjectID: "p-1", SourceSessionID: "s-source", CreatorID: "creator-1",
+				Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+				ConsistencyLevel: consistency.LevelCommandQuiesced, EnvironmentID: "env-1",
+				WorldStateRef: "agent-local://mock/sessions/s-source/checkpoints/world.zip",
+			},
+		},
+	}
+	agent := &mockAgent{}
+	cp, err := Restore(context.Background(), repo, RestoreRequest{
+		CheckpointID:    "cp-source",
+		TargetSessionID: "s-target",
+		ActorID:         "actor-1",
+		AgentClient:     agent,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(cp.ID, "cp_") {
+		t.Fatalf("generated checkpoint ID = %q", cp.ID)
+	}
+	if cp.ID == "cp-source" {
+		t.Fatalf("new checkpoint ID should differ from source ID, got %q", cp.ID)
+	}
+	if cp.SourceSessionID != "s-target" {
+		t.Fatalf("SourceSessionID = %q", cp.SourceSessionID)
+	}
+}

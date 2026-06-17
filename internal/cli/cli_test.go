@@ -584,6 +584,73 @@ func TestCheckpointCreateRejectsUnorchestratedConsistencyLevel(t *testing.T) {
 	}
 }
 
+func TestCLIRestoreCheckpointFromCommandQuiesced(t *testing.T) {
+	server := httptest.NewServer(httptransport.NewServer(local.NewFake(), "", nil).Handler())
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	_ = ensureTestEnvironment(dataDirectory)
+	base := []string{"--data-dir", dataDirectory, "--agent-url", server.URL}
+	commands := [][]string{
+		{"projects", "create", "--id", "project-1", "--name", "Project"},
+		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room", "--environment", "env-test"},
+		{"sessions", "create", "--id", "session-source", "--project", "project-1", "--room", "room-1"},
+		{"sessions", "create", "--id", "session-target", "--project", "project-1", "--room", "room-1"},
+		{"sessions", "start", "--id", "session-source", "--actor", "actor-1"},
+		{"sessions", "start", "--id", "session-target", "--actor", "actor-1"},
+		{"checkpoints", "create", "--id", "checkpoint-source", "--session", "session-source", "--actor", "actor-1", "--consistency-level", "command_quiesced"},
+		{"checkpoints", "restore", "--checkpoint", "checkpoint-source", "--target-session", "session-target", "--actor", "actor-1"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(append(append([]string{}, base...), command...), &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+	if !strings.Contains(stdout.String(), "World state restored:") || !strings.Contains(stdout.String(), "target=session-target") {
+		t.Fatalf("restore stdout=%q", stdout.String())
+	}
+
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoints, err := store.ListCheckpointsBySession(context.Background(), "session-target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checkpoints) != 1 {
+		t.Fatalf("target checkpoints=%+v", checkpoints)
+	}
+	restored := checkpoints[0]
+	if !strings.Contains(restored.WorldStateRef, "session-target") {
+		t.Fatalf("WorldStateRef = %q", restored.WorldStateRef)
+	}
+	if restored.SourceSessionID != "session-target" {
+		t.Fatalf("SourceSessionID = %q", restored.SourceSessionID)
+	}
+}
+
+func TestCLIRestoreCheckpointRejectsMissingFlags(t *testing.T) {
+	server := httptest.NewServer(httptransport.NewServer(local.NewFake(), "", nil).Handler())
+	defer server.Close()
+
+	base := []string{"--data-dir", filepath.Join(t.TempDir(), "data"), "--agent-url", server.URL, "checkpoints", "restore"}
+	for _, args := range [][]string{
+		{"--target-session", "session-target", "--actor", "actor-1"},
+		{"--checkpoint", "checkpoint-source", "--actor", "actor-1"},
+		{"--checkpoint", "checkpoint-source", "--target-session", "session-target"},
+	} {
+		var stdout, stderr bytes.Buffer
+		code := Run(append(append([]string{}, base...), args...), &stdout, &stderr)
+		if code != 2 || !strings.Contains(stderr.String(), "--checkpoint, --target-session, and --actor are required") {
+			t.Fatalf("args=%v code=%d stderr=%q", args, code, stderr.String())
+		}
+	}
+}
+
 func TestCLIArtifactCreateCannotApproveOrStageWithoutPayload(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")

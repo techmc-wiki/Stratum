@@ -135,6 +135,35 @@ func inspectCheckpoint(ctx context.Context, store *filesystem.Store, args []stri
 	return 0
 }
 
+func restoreCheckpoint(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("checkpoints restore", stderr)
+	checkpointID := flags.String("checkpoint", "", "")
+	targetSessionID := flags.String("target-session", "", "")
+	worldDir := flags.String("world-dir", "world_restored", "")
+	actor := flags.String("actor", "", "")
+	notes := flags.String("notes", "", "")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *checkpointID == "" || *targetSessionID == "" || *actor == "" {
+		fmt.Fprintln(stderr, "--checkpoint, --target-session, and --actor are required")
+		return 2
+	}
+	cp, err := checkpointsvc.Restore(ctx, store, checkpointsvc.RestoreRequest{
+		CheckpointID:    *checkpointID,
+		TargetSessionID: *targetSessionID,
+		WorldDirRel:     *worldDir,
+		ActorID:         *actor,
+		Notes:           *notes,
+		AgentClient:     agentClient,
+	})
+	if err != nil {
+		return reportError(stderr, "checkpoint restore", err)
+	}
+	fmt.Fprintf(stdout, "World state restored: checkpoint=%s target=%s restoredRef=%s\n", cp.ID, *targetSessionID, cp.WorldStateRef)
+	return 0
+}
+
 func checkpointRuntimeStatusSnapshot(status agent.SessionRuntimeStatus) checkpoint.RuntimeStatusSnapshot {
 	snapshot := checkpoint.RuntimeStatusSnapshot{
 		CapturedAt:        status.CheckedAt,
