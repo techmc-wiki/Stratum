@@ -571,7 +571,7 @@ func TestCheckpointCreateRejectsUnorchestratedConsistencyLevel(t *testing.T) {
 	stdout.Reset()
 	stderr.Reset()
 	code := Run([]string{"--data-dir", dataDirectory, "checkpoints", "create", "--id", "checkpoint-1", "--session", "session-1", "--actor", "test-actor", "--consistency-level", "best_effort"}, &stdout, &stderr)
-	if code != 2 || !strings.Contains(stderr.String(), "checkpoint orchestration is not implemented") {
+	if code != 2 || !strings.Contains(stderr.String(), "unsupported") {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 

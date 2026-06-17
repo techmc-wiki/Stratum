@@ -3,9 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/stratummc/stratum/internal/agent"
+	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
 	"github.com/stratummc/stratum/internal/audit"
 	"github.com/stratummc/stratum/internal/checkpoint"
 	"github.com/stratummc/stratum/internal/checkpoint/consistency"
@@ -61,6 +64,133 @@ func (m *mockRepo) AppendAuditEvent(ctx context.Context, event audit.Event) erro
 	return nil
 }
 
+type mockAgent struct {
+	commands []string
+	failAt   int
+}
+
+func (m *mockAgent) Info(context.Context) (agent.AgentInfo, error) {
+	return agent.AgentInfo{ID: "mock"}, nil
+}
+
+func (m *mockAgent) RuntimeProfiles(context.Context) ([]runtimeprofile.Profile, error) {
+	return nil, nil
+}
+
+func (m *mockAgent) PrepareSession(context.Context, agent.SessionRequest) (agent.OperationResult, error) {
+	return agent.OperationResult{}, nil
+}
+
+func (m *mockAgent) StartSession(context.Context, agent.SessionRequest) (agent.OperationResult, error) {
+	return agent.OperationResult{}, nil
+}
+
+func (m *mockAgent) StopSession(context.Context, agent.SessionRequest) (agent.OperationResult, error) {
+	return agent.OperationResult{}, nil
+}
+
+func (m *mockAgent) RestartSession(context.Context, agent.SessionRequest) (agent.OperationResult, error) {
+	return agent.OperationResult{}, nil
+}
+
+func (m *mockAgent) FreezeSession(context.Context, agent.SessionRequest) (agent.OperationResult, error) {
+	return agent.OperationResult{}, nil
+}
+
+func (m *mockAgent) UnfreezeSession(context.Context, agent.SessionRequest) (agent.OperationResult, error) {
+	return agent.OperationResult{}, nil
+}
+
+func (m *mockAgent) InspectSession(context.Context, string) (agent.SessionStatus, error) {
+	return agent.SessionStatus{}, nil
+}
+
+func (m *mockAgent) CollectLogs(context.Context, string) (agent.LogBatch, error) {
+	return agent.LogBatch{}, nil
+}
+
+func (m *mockAgent) ReportResources(context.Context) (agent.ResourceReport, error) {
+	return agent.ResourceReport{}, nil
+}
+
+func (m *mockAgent) CreateCheckpointStub(context.Context, agent.CheckpointRequest) (agent.OperationResult, error) {
+	return agent.OperationResult{}, nil
+}
+
+func (m *mockAgent) RestoreCheckpointStub(context.Context, agent.CheckpointRequest) (agent.OperationResult, error) {
+	return agent.OperationResult{}, nil
+}
+
+func (m *mockAgent) MaterializeArtifact(context.Context, agent.ArtifactMaterializationRequest) (agent.ArtifactMaterializationResult, error) {
+	return agent.ArtifactMaterializationResult{}, nil
+}
+
+func (m *mockAgent) InspectMaterializedArtifacts(context.Context, string) (agent.MaterializedArtifacts, error) {
+	return agent.MaterializedArtifacts{}, nil
+}
+
+func (m *mockAgent) InspectMaterializedArtifact(context.Context, string, string) (agent.MaterializedArtifact, error) {
+	return agent.MaterializedArtifact{}, nil
+}
+
+func (m *mockAgent) VerifyMaterializedArtifact(context.Context, string, string) (agent.MaterializedArtifactVerification, error) {
+	return agent.MaterializedArtifactVerification{}, nil
+}
+
+func (m *mockAgent) VerifyMaterializedArtifacts(context.Context, string) (agent.MaterializedArtifactsVerification, error) {
+	return agent.MaterializedArtifactsVerification{}, nil
+}
+
+func (m *mockAgent) DryRunArtifactApply(context.Context, agent.ArtifactApplyDryRunRequest) (agent.ArtifactApplyDryRunResult, error) {
+	return agent.ArtifactApplyDryRunResult{}, nil
+}
+
+func (m *mockAgent) ExecuteArtifactApply(context.Context, agent.ArtifactApplyExecuteRequest) (agent.ArtifactApplyExecuteResult, error) {
+	return agent.ArtifactApplyExecuteResult{}, nil
+}
+
+func (m *mockAgent) ListAppliedArtifacts(context.Context, string) (agent.AppliedArtifactsResponse, error) {
+	return agent.AppliedArtifactsResponse{}, nil
+}
+
+func (m *mockAgent) InspectAppliedArtifact(context.Context, string, string) (agent.AppliedArtifactRecord, error) {
+	return agent.AppliedArtifactRecord{}, nil
+}
+
+func (m *mockAgent) VerifyAppliedArtifact(context.Context, string, string) (agent.AppliedArtifactVerification, error) {
+	return agent.AppliedArtifactVerification{}, nil
+}
+
+func (m *mockAgent) VerifyAllAppliedArtifacts(context.Context, string) (agent.BatchAppliedArtifactVerification, error) {
+	return agent.BatchAppliedArtifactVerification{}, nil
+}
+
+func (m *mockAgent) MaterializeEnvironment(context.Context, agent.EnvironmentMaterializationRequest) (agent.EnvironmentMaterializationResult, error) {
+	return agent.EnvironmentMaterializationResult{}, nil
+}
+
+func (m *mockAgent) GetSessionRuntimeStatus(context.Context, string) (agent.SessionRuntimeStatus, error) {
+	return agent.SessionRuntimeStatus{}, nil
+}
+
+func (m *mockAgent) SessionReadyForStart(context.Context, string) (agent.SessionStartReadiness, error) {
+	return agent.SessionStartReadiness{}, nil
+}
+
+func (m *mockAgent) InspectMCDRConfigStub(context.Context, string) (agent.MCDRConfigStubInspection, error) {
+	return agent.MCDRConfigStubInspection{}, nil
+}
+
+func (m *mockAgent) SendCommand(ctx context.Context, sessionID, command string) (agent.CommandResult, error) {
+	m.commands = append(m.commands, command)
+	if m.failAt > 0 && len(m.commands) >= m.failAt {
+		return agent.CommandResult{}, fmt.Errorf("mock send-command failure at step %d", len(m.commands))
+	}
+	return agent.CommandResult{AgentID: "mock", Status: "sent", Message: "ok"}, nil
+}
+
+var _ agent.AgentClient = (*mockAgent)(nil)
+
 var testTime = time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)
 
 func TestCreateMetadataOnlyCheckpoint(t *testing.T) {
@@ -97,7 +227,109 @@ func TestCreateMetadataOnlyCheckpoint(t *testing.T) {
 	}
 }
 
-func TestCreateRejectsNonMetadataOnlyConsistencyLevel(t *testing.T) {
+func TestCreateCommandQuiescedRunsSequenceAndMarksWorldSnapshotFalse(t *testing.T) {
+	agent := &mockAgent{}
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	cp, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-q", SessionID: "s-1", ActorID: "actor-1",
+		ConsistencyLevel:    consistency.LevelCommandQuiesced,
+		ConsistencyMetadata: map[string]string{"testKey": "testValue"},
+		AgentClient:         agent,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.ConsistencyLevel != consistency.LevelCommandQuiesced {
+		t.Fatalf("consistency level = %s", cp.ConsistencyLevel)
+	}
+	if cp.ConsistencyMetadata["worldSnapshot"] != "false" {
+		t.Fatalf("worldSnapshot = %q", cp.ConsistencyMetadata["worldSnapshot"])
+	}
+	if cp.ConsistencyMetadata["testKey"] != "testValue" {
+		t.Fatalf("user metadata not preserved: %v", cp.ConsistencyMetadata)
+	}
+	if cp.Status != checkpoint.StatusMetadataOnly {
+		t.Fatalf("status = %s, want metadata_only", cp.Status)
+	}
+	expectedCommands := []string{"save-off", "save-all flush", "save-on"}
+	for i, want := range expectedCommands {
+		if i >= len(agent.commands) || agent.commands[i] != want {
+			t.Fatalf("commands[%d] = %q, want %q; all commands = %v", i, agent.commands[min(i, len(agent.commands)-1)], want, agent.commands)
+		}
+	}
+	event := repo.auditEvents[0]
+	if event.Metadata["worldSnapshot"] != "false" || event.Metadata["commandQuiesced"] != "true" {
+		t.Fatalf("audit metadata: %+v", event.Metadata)
+	}
+}
+
+func TestCreateCommandQuiescedSaveOnExecutesEvenWhenSaveAllFails(t *testing.T) {
+	agent := &mockAgent{failAt: 2}
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	_, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-fail", SessionID: "s-1", ActorID: "actor-1",
+		ConsistencyLevel: consistency.LevelCommandQuiesced,
+		AgentClient:      agent,
+	})
+	if err == nil || !strings.Contains(err.Error(), "save-all") {
+		t.Fatalf("expected save-all failure, got %v", err)
+	}
+	if len(agent.commands) < 3 || agent.commands[2] != "save-on" {
+		t.Fatalf("save-on must execute even on failure: commands = %v", agent.commands)
+	}
+}
+
+func TestCreateCommandQuiescedSaveOnAlwaysExecutes(t *testing.T) {
+	agent := &mockAgent{failAt: 1}
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	_, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-fail2", SessionID: "s-1", ActorID: "actor-1",
+		ConsistencyLevel: consistency.LevelCommandQuiesced,
+		AgentClient:      agent,
+	})
+	if err == nil || !strings.Contains(err.Error(), "save-off") {
+		t.Fatalf("expected save-off failure, got %v", err)
+	}
+	if len(agent.commands) < 2 || agent.commands[1] != "save-on" {
+		t.Fatalf("save-on must execute even on save-off failure: commands = %v", agent.commands)
+	}
+}
+
+func TestCreateCommandQuiescedRequiresAgent(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	_, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-noagent", SessionID: "s-1", ActorID: "actor-1",
+		ConsistencyLevel: consistency.LevelCommandQuiesced,
+	})
+	if err == nil || !strings.Contains(err.Error(), "agent client") {
+		t.Fatalf("expected agent required, got %v", err)
+	}
+	if len(repo.checkpoints) != 0 || len(repo.auditEvents) != 0 {
+		t.Fatalf("writes after failure: checkpoints=%+v audits=%+v", repo.checkpoints, repo.auditEvents)
+	}
+}
+
+func TestCreateRejectsUnsupportedNonMetadataOnlyConsistencyLevel(t *testing.T) {
 	repo := &mockRepo{
 		sessions: map[string]session.Session{
 			"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
@@ -106,11 +338,11 @@ func TestCreateRejectsNonMetadataOnlyConsistencyLevel(t *testing.T) {
 	}
 	_, err := Create(context.Background(), repo, CreateRequest{
 		ID: "cp-1", SessionID: "s-1", ActorID: "actor-1",
-		ConsistencyLevel:    consistency.LevelCommandQuiesced,
-		ConsistencyMetadata: map[string]string{"command": "save-all"},
+		ConsistencyLevel:    consistency.LevelBestEffort,
+		ConsistencyMetadata: map[string]string{},
 	})
 	if err == nil {
-		t.Fatal("expected non-metadata-only consistency level to fail")
+		t.Fatal("expected unsupported consistency level to fail")
 	}
 	if len(repo.checkpoints) != 0 || len(repo.auditEvents) != 0 {
 		t.Fatalf("writes after failure: checkpoints=%+v audits=%+v", repo.checkpoints, repo.auditEvents)
