@@ -191,6 +191,81 @@ func (s *Service) DeleteWithOptions(ctx context.Context, id, actor string, optio
 	return s.coordinate(ctx, "delete", id, actor, session.StateDeleted, options, func(callCtx context.Context) error { return s.delete(callCtx, id, actor) })
 }
 
+type SendCommandOptions struct {
+	IdempotencyKey string
+	RequestID      string
+	Timeout        time.Duration
+}
+
+func (s *Service) SendCommand(ctx context.Context, id, actor, command string) (operation.Operation, error) {
+	value, _, err := s.SendCommandWithOptions(ctx, id, actor, command, SendCommandOptions{})
+	return value, err
+}
+
+func (s *Service) SendCommandWithOptions(ctx context.Context, id, actor, command string, options SendCommandOptions) (operation.Operation, bool, error) {
+	if err := validateActor(actor); err != nil {
+		return operation.Operation{}, false, err
+	}
+	if strings.TrimSpace(command) == "" {
+		return operation.Operation{}, false, stratumerrors.Error{Kind: stratumerrors.KindValidation, Operation: "sessionsvc.send-command", Message: "command is required"}
+	}
+	current, err := s.repository.GetSession(ctx, id)
+	if err != nil {
+		return operation.Operation{}, false, err
+	}
+	opValue, replay, err := s.operations.Begin(ctx, operationsvc.BeginParams{
+		RequestID:      options.RequestID,
+		IdempotencyKey: options.IdempotencyKey,
+		ActorID:        actor,
+		Action:         "send-command",
+		TargetType:     "session",
+		TargetID:       id,
+		ProjectID:      current.ProjectID,
+		SessionID:      id,
+		PreviousState:  string(current.State),
+		IntendedState:  string(current.State),
+	})
+	if err != nil {
+		return operation.Operation{}, false, err
+	}
+	if replay {
+		return opValue, true, nil
+	}
+	callCtx := agent.WithRequestID(ctx, opValue.RequestID)
+	cancel := func() {}
+	if options.Timeout > 0 {
+		callCtx, cancel = context.WithTimeout(callCtx, options.Timeout)
+	}
+	defer cancel()
+	cmdResult, sendErr := s.agent.SendCommand(callCtx, id, command)
+	completionMetadata := map[string]string{
+		"commandLength": fmt.Sprintf("%d", len(command)),
+	}
+	if sendErr == nil {
+		completionMetadata["agentId"] = cmdResult.AgentID
+		completionMetadata["agentStatus"] = cmdResult.Status
+		completed, completeErr := s.operations.Complete(ctx, opValue, operation.StatusSucceeded, string(current.State), "success", "", cmdResult.Message, completionMetadata)
+		if completeErr != nil {
+			return completed, false, completeErr
+		}
+		auditErr := s.audit(ctx, "send-command", current.ProjectID, id, actor, current.State, current.State, "success", "", map[string]string{"commandLength": completionMetadata["commandLength"]})
+		if auditErr != nil {
+			return completed, false, fmt.Errorf("send-command succeeded but audit failed: %w", auditErr)
+		}
+		return completed, false, nil
+	}
+	_, completeErr := s.operations.Complete(ctx, opValue, operation.StatusFailed, string(current.State), "failure", "send_command_failed", sendErr.Error(), completionMetadata)
+	if completeErr != nil {
+		return opValue, false, fmt.Errorf("%w; persist operation result: %v", sendErr, completeErr)
+	}
+	auditAction := "send-command"
+	auditErr := s.audit(ctx, auditAction, current.ProjectID, id, actor, current.State, current.State, "failure", sendErr.Error(), map[string]string{"commandLength": completionMetadata["commandLength"]})
+	if auditErr != nil {
+		return opValue, false, fmt.Errorf("send-command failed with audit error: %w", auditErr)
+	}
+	return opValue, false, sendErr
+}
+
 func (s *Service) coordinate(ctx context.Context, action, id, actor string, intended session.State, options OperationOptions, call func(context.Context) error) (operation.Operation, bool, error) {
 	if err := validateActor(actor); err != nil {
 		return operation.Operation{}, false, err

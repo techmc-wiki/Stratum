@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -863,5 +865,88 @@ func TestCreateSessionWithMissingEnvironment(t *testing.T) {
 	_, err = store.GetSession(ctx, "session-1")
 	if err == nil {
 		t.Error("session should not be persisted on validation failure")
+	}
+}
+
+func TestSendCommandSuccessProducesOperationAndAudit(t *testing.T) {
+	ctx, store, _, _ := newLifecycleTest(t, resourcepolicy.MVPDefault())
+	fake := local.NewFake()
+	_, _ = fake.StartSession(context.Background(), agent.SessionRequest{SessionID: "session-sc"})
+	service := New(store, resourcepolicy.MVPDefault(), fake)
+	createTestSession(t, store, testSession("session-sc", session.TypeShared, session.StateRunning))
+	opValue, _, err := service.SendCommandWithOptions(ctx, "session-sc", "actor-1", "save-all", SendCommandOptions{})
+	if err != nil {
+		t.Fatalf("SendCommand failed: %v", err)
+	}
+	if opValue.Status != operation.StatusSucceeded {
+		t.Fatalf("operation status=%s want succeeded", opValue.Status)
+	}
+	events, auditErr := store.ListAuditEvents(ctx)
+	if auditErr != nil {
+		t.Fatal(auditErr)
+	}
+	found := false
+	for _, event := range events {
+		if event.Action == "session.send-command" {
+			found = true
+			if event.ActorID != "actor-1" {
+				t.Errorf("actor = %q", event.ActorID)
+			}
+			if event.TargetID != "session-sc" {
+				t.Errorf("target = %q", event.TargetID)
+			}
+			if cl, ok := event.Metadata["commandLength"]; !ok || cl != fmt.Sprintf("%d", len("save-all")) {
+				t.Errorf("commandLength = %q", event.Metadata["commandLength"])
+			}
+			if _, ok := event.Metadata["command"]; ok {
+				t.Error("audit must not contain full command content")
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("session.send-command audit event not found")
+	}
+	sess, loadErr := store.GetSession(ctx, "session-sc")
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if sess.State != session.StateRunning {
+		t.Errorf("session state changed to %s", sess.State)
+	}
+}
+
+func TestSendCommandFailurePreservesSessionState(t *testing.T) {
+	ctx, store, _, _ := newLifecycleTest(t, resourcepolicy.MVPDefault())
+	fake := local.NewFake()
+	fake.SetFailure(agent.OperationSendCommand, "injected failure")
+	_, _ = fake.StartSession(context.Background(), agent.SessionRequest{SessionID: "session-fail"})
+	service := New(store, resourcepolicy.MVPDefault(), fake)
+	createTestSession(t, store, testSession("session-fail", session.TypeShared, session.StateRunning))
+	_, _, err := service.SendCommandWithOptions(ctx, "session-fail", "actor-1", "save-all", SendCommandOptions{})
+	if err == nil || !strings.Contains(err.Error(), "injected") {
+		t.Fatalf("expected injected failure, got %v", err)
+	}
+	sess, loadErr := store.GetSession(ctx, "session-fail")
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if sess.State != session.StateRunning {
+		t.Errorf("session state changed to %s on failure", sess.State)
+	}
+}
+
+func TestSendCommandRejectsEmptyCommand(t *testing.T) {
+	ctx, store, _, _ := newLifecycleTest(t, resourcepolicy.MVPDefault())
+	fake := local.NewFake()
+	service := New(store, resourcepolicy.MVPDefault(), fake)
+	createTestSession(t, store, testSession("session-ec", session.TypeShared, session.StateRunning))
+	_, _, err := service.SendCommandWithOptions(ctx, "session-ec", "actor-1", "", SendCommandOptions{})
+	if err == nil || !strings.Contains(err.Error(), "required") {
+		t.Fatalf("expected command required, got %v", err)
+	}
+	_, _, err = service.SendCommandWithOptions(ctx, "session-ec", "actor-1", "   ", SendCommandOptions{})
+	if err == nil || !strings.Contains(err.Error(), "required") {
+		t.Fatalf("expected whitespace-only command rejection, got %v", err)
 	}
 }
