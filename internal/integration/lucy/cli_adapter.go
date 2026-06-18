@@ -142,6 +142,20 @@ func (a *CLIAdapter) InstallPackages(ctx context.Context, req InstallPackagesReq
 	return response, nil
 }
 
+func (a *CLIAdapter) VerifyIntegrity(ctx context.Context, req IntegrityRequest) (IntegrityResult, error) {
+	if err := req.Validate(); err != nil {
+		return IntegrityResult{}, NewAdapterError(ErrorCodeValidationFailed, "invalid integrity request", err, false)
+	}
+	result, err := NewProbeService(req.ModsDir).VerifyIntegrityFromLock(ctx, req.LockPath, req.ModsDir)
+	if err != nil {
+		return IntegrityResult{}, NewAdapterError(ErrorCodeIOError, "verify lock integrity", err, false)
+	}
+	if err := result.Validate(); err != nil {
+		return IntegrityResult{}, NewAdapterError(ErrorCodeValidationFailed, "invalid integrity result", err, false)
+	}
+	return result, nil
+}
+
 func (a *CLIAdapter) run(ctx context.Context, operation string, request, response interface{}) error {
 	return a.runWithWorkingDir(ctx, operation, []string{operation, "--json"}, a.workingDir, request, response)
 }

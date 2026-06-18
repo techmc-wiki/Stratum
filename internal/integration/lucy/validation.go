@@ -285,6 +285,30 @@ func (item FailedPackage) Validate() error {
 	return nil
 }
 
+func (req IntegrityRequest) Validate() error {
+	if strings.TrimSpace(req.LockPath) == "" {
+		return errors.New("lock path is required")
+	}
+	if strings.TrimSpace(req.ModsDir) == "" {
+		return errors.New("mods dir is required")
+	}
+	return nil
+}
+
+func (result IntegrityResult) Validate() error {
+	switch result.Status {
+	case "ok", "missing_files", "hash_mismatch", "not_checked":
+	case "":
+		return errors.New("integrity status is required")
+	default:
+		return fmt.Errorf("unsupported integrity status %q", result.Status)
+	}
+	if result.Checked < 0 {
+		return errors.New("integrity checked count must be non-negative")
+	}
+	return nil
+}
+
 func validateSafeID(label, value string) error {
 	if value == "" || value == "." || value == ".." {
 		return fmt.Errorf("%s is required", label)

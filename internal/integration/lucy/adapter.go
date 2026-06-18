@@ -30,6 +30,11 @@ type PackageInstaller interface {
 	InstallPackages(context.Context, InstallPackagesRequest) (InstallPackagesResult, error)
 }
 
+// EnvironmentIntegrityVerifier checks whether a materialized environment matches its lock.
+type EnvironmentIntegrityVerifier interface {
+	VerifyIntegrity(context.Context, IntegrityRequest) (IntegrityResult, error)
+}
+
 type InstallPackagesRequest struct {
 	Packages  []LockedPackage `json:"packages"`
 	TargetDir string          `json:"target_dir"`
@@ -57,6 +62,20 @@ type FailedPackage struct {
 	Error string `json:"error"`
 }
 
+type IntegrityRequest struct {
+	LockPath string `json:"lock_path"`
+	ModsDir  string `json:"mods_dir"`
+}
+
+type IntegrityResult struct {
+	OK      bool     `json:"ok"`
+	Status  string   `json:"status"`
+	Missing []string `json:"missing"`
+	Corrupt []string `json:"corrupt"`
+	Checked int      `json:"checked"`
+	Errors  []string `json:"errors,omitempty"`
+}
+
 // Adapter is the complete Stratum-facing Lucy integration contract.
 type Adapter interface {
 	CapabilityProvider
@@ -64,4 +83,5 @@ type Adapter interface {
 	LockProvider
 	StatusProvider
 	PackageInstaller
+	EnvironmentIntegrityVerifier
 }

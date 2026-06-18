@@ -2,6 +2,7 @@ package lucy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -183,4 +184,80 @@ func (s *ProbeService) ServerInfo() (map[string]interface{}, error) {
 // Invalidate marks the cached server info as stale.
 func (s *ProbeService) Invalidate() {
 	lucyworkspace.InvalidateServerInfo()
+}
+
+// LockIntegrityResult reports whether all locked packages are present and intact.
+type LockIntegrityResult struct {
+	OK      bool     `json:"ok"`
+	Missing []string `json:"missing"`
+	Corrupt []string `json:"corrupt"`
+	Checked int      `json:"checked"`
+	Errors  []string `json:"errors,omitempty"`
+}
+
+func (s *ProbeService) VerifyLockIntegrity(ctx context.Context, lockPath string, modsDir string) (LockIntegrityResult, error) {
+	if err := ctx.Err(); err != nil {
+		return LockIntegrityResult{}, err
+	}
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		return LockIntegrityResult{}, fmt.Errorf("read lock: %w", err)
+	}
+	if _, err := fileSHA256(lockPath); err != nil {
+		return LockIntegrityResult{}, fmt.Errorf("hash lock: %w", err)
+	}
+	var lock EnvironmentLock
+	if err := json.Unmarshal(data, &lock); err != nil {
+		return LockIntegrityResult{}, fmt.Errorf("decode lock: %w", err)
+	}
+	result := LockIntegrityResult{
+		Missing: []string{},
+		Corrupt: []string{},
+		Errors:  []string{},
+	}
+	for _, pkg := range lock.Packages {
+		result.Checked++
+		path := filepath.Join(modsDir, expectedPackageFilename(pkg))
+		if _, err := os.Stat(path); err != nil {
+			if os.IsNotExist(err) {
+				result.Missing = append(result.Missing, pkg.ID)
+				continue
+			}
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", pkg.ID, err))
+			continue
+		}
+		actual, err := fileSHA256(path)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", pkg.ID, err))
+			continue
+		}
+		if normalizeHash(pkg.Hash) != "" && actual != normalizeHash(pkg.Hash) {
+			result.Corrupt = append(result.Corrupt, pkg.ID)
+		}
+	}
+	result.OK = len(result.Missing) == 0 && len(result.Corrupt) == 0 && len(result.Errors) == 0
+	return result, nil
+}
+
+func (s *ProbeService) VerifyIntegrityFromLock(ctx context.Context, lockPath, modsDir string) (IntegrityResult, error) {
+	result, err := s.VerifyLockIntegrity(ctx, lockPath, modsDir)
+	if err != nil {
+		return IntegrityResult{}, err
+	}
+	status := "ok"
+	if len(result.Missing) > 0 {
+		status = "missing_files"
+	} else if len(result.Corrupt) > 0 {
+		status = "hash_mismatch"
+	} else if len(result.Errors) > 0 {
+		status = "error"
+	}
+	return IntegrityResult{
+		OK:      result.OK,
+		Status:  status,
+		Missing: result.Missing,
+		Corrupt: result.Corrupt,
+		Checked: result.Checked,
+		Errors:  result.Errors,
+	}, nil
 }

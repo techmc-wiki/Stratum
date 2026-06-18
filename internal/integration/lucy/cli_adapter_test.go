@@ -159,6 +159,42 @@ func TestCLIAdapterInstallPackages(t *testing.T) {
 	}
 }
 
+func TestCLIAdapterVerifyIntegrity(t *testing.T) {
+	targetDir := t.TempDir()
+	workDir := t.TempDir()
+	content := []byte("mod jar")
+	hashBytes := sha256.Sum256(content)
+	hash := hex.EncodeToString(hashBytes[:])
+	if err := os.WriteFile(filepath.Join(targetDir, "carpet-1.4.83.jar"), content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(workDir, "lucy-lock.yaml")
+	lock := EnvironmentLock{
+		LockID:      "lock-1",
+		LockHash:    "lockhash",
+		GeneratedAt: time.Now().UTC(),
+		Packages: []LockedPackage{
+			{ID: "fabric/carpet", Source: "modrinth", Name: "carpet", Version: "1.4.83", Hash: hash, Size: int64(len(content))},
+		},
+		ProviderMetadata: map[string]string{},
+	}
+	data, _ := json.Marshal(lock)
+	if err := os.WriteFile(lockPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := NewCLIAdapter(CLIAdapterOptions{CommandPath: "lucy", Runner: &fakeRunner{result: CommandResult{Stdout: []byte(`{}`), ExitCode: 0}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := adapter.VerifyIntegrity(context.Background(), IntegrityRequest{LockPath: lockPath, ModsDir: targetDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.OK || result.Status != "ok" || result.Checked != 1 {
+		t.Fatalf("unexpected integrity result: %#v", result)
+	}
+}
+
 func TestCLIAdapterInvalidRequestDTOFailsBeforeRunner(t *testing.T) {
 	runner := &fakeRunner{result: CommandResult{Stdout: []byte("{}"), ExitCode: 0}}
 	adapter, err := NewCLIAdapter(CLIAdapterOptions{CommandPath: "lucy", Runner: runner})

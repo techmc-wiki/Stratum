@@ -11,6 +11,7 @@ type EmbeddedBackend interface {
 	Lock(ctx context.Context, spec EnvironmentSpec) (EnvironmentLock, error)
 	Status(ctx context.Context, spec EnvironmentSpec, lock *EnvironmentLock) (EnvironmentStatus, error)
 	Install(ctx context.Context, req InstallPackagesRequest) (InstallPackagesResult, error)
+	VerifyIntegrity(ctx context.Context, req IntegrityRequest) (IntegrityResult, error)
 }
 
 type EmbeddedAdapter struct {
@@ -96,6 +97,20 @@ func (a *EmbeddedAdapter) InstallPackages(ctx context.Context, req InstallPackag
 	result = validateInstalledHashes(req, result)
 	if err := result.Validate(); err != nil {
 		return InstallPackagesResult{}, NewAdapterError(ErrorCodeValidationFailed, "invalid backend install result", err, false)
+	}
+	return result, nil
+}
+
+func (a *EmbeddedAdapter) VerifyIntegrity(ctx context.Context, req IntegrityRequest) (IntegrityResult, error) {
+	if err := req.Validate(); err != nil {
+		return IntegrityResult{}, NewAdapterError(ErrorCodeInvalidRequest, "invalid integrity request", err, false)
+	}
+	result, err := a.backend.VerifyIntegrity(ctx, req)
+	if err != nil {
+		return IntegrityResult{}, a.classifyError(err)
+	}
+	if err := result.Validate(); err != nil {
+		return IntegrityResult{}, NewAdapterError(ErrorCodeValidationFailed, "invalid backend integrity result", err, false)
 	}
 	return result, nil
 }

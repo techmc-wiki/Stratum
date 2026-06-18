@@ -13,6 +13,8 @@ type fakeBackend struct {
 	status        EnvironmentStatus
 	installResult InstallPackagesResult
 	installErr    error
+	integrity     IntegrityResult
+	integrityErr  error
 	err           error
 }
 
@@ -37,6 +39,13 @@ func (f *fakeBackend) Install(_ context.Context, _ InstallPackagesRequest) (Inst
 		return InstallPackagesResult{}, f.installErr
 	}
 	return f.installResult, f.err
+}
+
+func (f *fakeBackend) VerifyIntegrity(_ context.Context, _ IntegrityRequest) (IntegrityResult, error) {
+	if f.integrityErr != nil {
+		return IntegrityResult{}, f.integrityErr
+	}
+	return f.integrity, f.err
 }
 
 func TestEmbeddedAdapterRequiresBackend(t *testing.T) {
@@ -157,5 +166,20 @@ func TestEmbeddedAdapterStatusValidatesSpecAndLock(t *testing.T) {
 	}
 	if !IsCode(err, ErrorCodeInvalidRequest) {
 		t.Fatalf("expected invalid_request, got %v", err)
+	}
+}
+
+func TestEmbeddedAdapterVerifyIntegrity(t *testing.T) {
+	backend := &fakeBackend{integrity: IntegrityResult{OK: true, Status: "ok", Missing: []string{}, Corrupt: []string{}, Checked: 1}}
+	adapter, err := NewEmbeddedAdapter(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := adapter.VerifyIntegrity(context.Background(), IntegrityRequest{LockPath: "lock.json", ModsDir: "mods"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.OK || result.Status != "ok" || result.Checked != 1 {
+		t.Fatalf("unexpected integrity result: %#v", result)
 	}
 }

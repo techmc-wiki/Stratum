@@ -46,3 +46,7 @@ func (NoopAdapter) CheckStatus(context.Context, StatusRequest) (EnvironmentStatu
 func (NoopAdapter) InstallPackages(context.Context, InstallPackagesRequest) (InstallPackagesResult, error) {
 	return InstallPackagesResult{Status: "not_capable"}, nil
 }
+
+func (NoopAdapter) VerifyIntegrity(context.Context, IntegrityRequest) (IntegrityResult, error) {
+	return IntegrityResult{OK: true, Status: "not_checked"}, nil
+}
