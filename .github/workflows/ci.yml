@@ -27,18 +27,23 @@ jobs:
 
       - name: Patch go.mod for CI compatibility
         run: |
-          # Temporarily downgrade go directive for CI
+          # Patch go directives to match available Go version
           sed -i 's/^go 1\.25\.8$/go 1.23/' go.mod
           sed -i 's/^go 1\.25\.8$/go 1.23/' tools/lucy/go.mod
           
+          # Regenerate go.mod and go.sum with available Go version
+          # This will fetch compatible dependency versions
+          go get -d ./...
+          go mod tidy
+          
       - name: Download dependencies
-        run: go mod download -x || true
+        run: go mod download
 
       - name: Vet
-        run: go vet -mod=mod ./...
+        run: go vet ./...
 
       - name: Test
-        run: go test -mod=mod -count=1 ./...
+        run: go test -v -count=1 ./...
 
       - name: Build Linux amd64 binaries
         env:
@@ -47,9 +52,9 @@ jobs:
           GOARCH: amd64
         run: |
           mkdir -p dist/linux-amd64
-          go build -mod=mod -trimpath -o dist/linux-amd64/stratum ./cmd/stratum
-          go build -mod=mod -trimpath -o dist/linux-amd64/stratum-agent ./cmd/stratum-agent
-          go build -mod=mod -trimpath -o dist/linux-amd64/stratum-controller ./cmd/stratum-controller
+          go build -trimpath -o dist/linux-amd64/stratum ./cmd/stratum
+          go build -trimpath -o dist/linux-amd64/stratum-agent ./cmd/stratum-agent
+          go build -trimpath -o dist/linux-amd64/stratum-controller ./cmd/stratum-controller
 
       - name: Upload Linux amd64 binaries
         uses: actions/upload-artifact@v4
