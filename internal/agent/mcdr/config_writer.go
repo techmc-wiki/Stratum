@@ -15,6 +15,7 @@ const configYMLName = "config.yml"
 
 type RuntimeConfig struct {
 	ServerWorkDir string
+	ServerJarName string
 	PluginDir     string
 	LogDir        string
 	ConfigDir     string
@@ -112,6 +113,11 @@ func renderRuntimeConfig(cfg RuntimeConfig) []byte {
 	b.WriteString("config_directory: ")
 	b.WriteString(quoteYAMLString(cfg.ConfigDir))
 	b.WriteByte('\n')
+	if cfg.ServerJarName != "" {
+		b.WriteString("start_command: java -jar ")
+		b.WriteString(quoteYAMLString(cfg.ServerJarName))
+		b.WriteString(" nogui\n")
+	}
 	return b.Bytes()
 }
 

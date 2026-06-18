@@ -644,6 +644,17 @@ func runtimeRelativePath(runtimeRoot, path string) string {
 	return rel
 }
 
+func deriveServerJarName(serverCore string) string {
+	switch serverCore {
+	case "fabric":
+		return "fabric-server-launch.jar"
+	case "vanilla":
+		return "server.jar"
+	default:
+		return ""
+	}
+}
+
 func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.EnvironmentMaterializationRequest) (agent.EnvironmentMaterializationResult, error) {
 	s.mu.RLock()
 	adapter := s.lucyAdapter
@@ -691,6 +702,10 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 	var resolvedLock *lucy.EnvironmentLock
 	var resolvedSpec *lucy.EnvironmentSpec
 	lucyMetadata := map[string]string{}
+	serverJarName := deriveServerJarName(request.ServerCore)
+	if serverJarName != "" {
+		lucyMetadata["serverJarName"] = serverJarName
+	}
 	if lucyConfigured {
 		lucyResolutionStatus = "resolved"
 		lucyManifestPath := filepath.Join(configDir, "lucy.yaml")

@@ -42,7 +42,7 @@ func NewSupervisor(processSupervisor *agentprocess.Supervisor) *Supervisor {
 	return &Supervisor{processSupervisor: processSupervisor}
 }
 
-func (s *Supervisor) Start(ctx context.Context, sessionID string, profile runtimeprofile.Profile) (RuntimeState, error) {
+func (s *Supervisor) Start(ctx context.Context, sessionID string, profile runtimeprofile.Profile, serverJarName string) (RuntimeState, error) {
 	if profile.RuntimeType != runtimeprofile.TypeMCDRPython {
 		return RuntimeState{}, fmt.Errorf("MCDR supervisor requires mcdr-python profile, got %q", profile.RuntimeType)
 	}
@@ -66,7 +66,9 @@ func (s *Supervisor) Start(ctx context.Context, sessionID string, profile runtim
 		return RuntimeState{}, fmt.Errorf("write MCDR layout manifest: %w", err)
 	}
 
-	if _, err := WriteRuntimeConfig(mcdrLayout, RuntimeConfig{}); err != nil {
+	mcdrConfig := NewRuntimeConfig(mcdrLayout)
+	mcdrConfig.ServerJarName = serverJarName
+	if _, err := WriteRuntimeConfig(mcdrLayout, mcdrConfig); err != nil {
 		return RuntimeState{}, fmt.Errorf("write MCDR config.yml: %w", err)
 	}
 
@@ -102,7 +104,7 @@ func (s *Supervisor) Stop(ctx context.Context, sessionID string) (RuntimeState, 
 	return RuntimeState{}, fmt.Errorf("session %q process cannot stop from %s", sessionID, model.Status)
 }
 
-func (s *Supervisor) Restart(ctx context.Context, sessionID string, profile runtimeprofile.Profile) (RuntimeState, error) {
+func (s *Supervisor) Restart(ctx context.Context, sessionID string, profile runtimeprofile.Profile, serverJarName string) (RuntimeState, error) {
 	if profile.RuntimeType != runtimeprofile.TypeMCDRPython {
 		return RuntimeState{}, fmt.Errorf("MCDR supervisor requires mcdr-python profile, got %q", profile.RuntimeType)
 	}
@@ -111,7 +113,7 @@ func (s *Supervisor) Restart(ctx context.Context, sessionID string, profile runt
 			return RuntimeState{}, err
 		}
 	}
-	return s.Start(ctx, sessionID, profile)
+	return s.Start(ctx, sessionID, profile, serverJarName)
 }
 
 func (s *Supervisor) SendCommand(sessionID, command string) error {
