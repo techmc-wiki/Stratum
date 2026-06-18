@@ -37,7 +37,7 @@ func (s *LockService) Write(ctx context.Context, lock *lucystate.Lock) error {
 		return err
 	}
 	svc := lucystate.NewProjectStateService(s.workDir)
-	if err := svc.Save(ctx, nil, nil, lock); err != nil {
+	if err := svc.Save(ctx, nil, lock); err != nil {
 		return fmt.Errorf("save lock: %w", err)
 	}
 	return nil

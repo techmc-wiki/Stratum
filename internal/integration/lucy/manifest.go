@@ -35,7 +35,7 @@ func (s *ManifestService) Write(ctx context.Context, manifest *lucystate.Manifes
 		return err
 	}
 	svc := lucystate.NewProjectStateService(s.workDir)
-	if err := svc.Save(ctx, nil, manifest, nil); err != nil {
+	if err := svc.Save(ctx, manifest, nil); err != nil {
 		return fmt.Errorf("save manifest: %w", err)
 	}
 	return nil
