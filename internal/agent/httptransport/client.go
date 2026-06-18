@@ -399,6 +399,7 @@ func (c *Client) GetSessionRuntimeStatus(ctx context.Context, sessionID string) 
 			ServerCore:          response.EnvironmentManifest.ServerCore,
 			RuntimeProfileID:    response.EnvironmentManifest.RuntimeProfileID,
 			MCDRRequired:        response.EnvironmentManifest.MCDRRequired,
+			LucyLockHash:        response.EnvironmentManifest.LucyLockHash,
 			ErrorMessage:        response.EnvironmentManifest.ErrorMessage,
 		}
 	}

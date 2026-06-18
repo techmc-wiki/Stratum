@@ -358,6 +358,7 @@ type EnvironmentManifestStatusDTO struct {
 	ServerCore          string `json:"serverCore,omitempty"`
 	RuntimeProfileID    string `json:"runtimeProfileId,omitempty"`
 	MCDRRequired        bool   `json:"mcdrRequired"`
+	LucyLockHash        string `json:"lucyLockHash,omitempty"`
 	ErrorMessage        string `json:"errorMessage,omitempty"`
 }
 
@@ -449,6 +450,7 @@ func sessionRuntimeStatusResponse(status agent.SessionRuntimeStatus, requestID s
 			ServerCore:          status.EnvironmentManifest.ServerCore,
 			RuntimeProfileID:    status.EnvironmentManifest.RuntimeProfileID,
 			MCDRRequired:        status.EnvironmentManifest.MCDRRequired,
+			LucyLockHash:        status.EnvironmentManifest.LucyLockHash,
 			ErrorMessage:        status.EnvironmentManifest.ErrorMessage,
 		}
 	}

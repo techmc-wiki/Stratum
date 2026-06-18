@@ -384,6 +384,7 @@ type EnvironmentManifestStatus struct {
 	ServerCore          string
 	RuntimeProfileID    string
 	MCDRRequired        bool
+	LucyLockHash        string
 	ErrorMessage        string
 }
 

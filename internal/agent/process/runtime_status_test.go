@@ -9,6 +9,7 @@ import (
 
 	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
+	"github.com/stratummc/stratum/internal/integration/lucy"
 )
 
 func TestGetSessionRuntimeStatusBeforeMaterialization(t *testing.T) {
@@ -87,6 +88,46 @@ func TestGetSessionRuntimeStatusAfterMaterialization(t *testing.T) {
 	}
 	if status.EnvironmentManifest.RuntimeProfileID != "dummy-process" {
 		t.Errorf("wrong runtime profile: got %q", status.EnvironmentManifest.RuntimeProfileID)
+	}
+}
+
+func TestGetSessionRuntimeStatusIncludesLucyLockHash(t *testing.T) {
+	tmp := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", tmp, 64*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := lucy.NewEmbeddedAdapter(&fakeBackend{
+		lock: lucy.EnvironmentLock{LockID: "lock-1", LockHash: "hash123"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervisor.SetLucyAdapter(adapter)
+	result, err := supervisor.MaterializeEnvironment(context.Background(), agent.EnvironmentMaterializationRequest{
+		SessionID:        "test-session",
+		EnvironmentID:    "env-1-17",
+		MinecraftVersion: "1.17.1",
+		JavaVersion:      "17",
+		LoaderType:       "fabric",
+		ServerCore:       "carpet",
+		ActorID:          "alice",
+	})
+	if err != nil {
+		t.Fatalf("materialize failed: %v", err)
+	}
+	if result.LucyLockHash == "" {
+		t.Fatal("materialization result LucyLockHash should be non-empty")
+	}
+	status, err := supervisor.GetSessionRuntimeStatus(context.Background(), "test-session")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status.EnvironmentManifest == nil {
+		t.Fatal("environment manifest should exist")
+	}
+	if status.EnvironmentManifest.LucyLockHash != result.LucyLockHash {
+		t.Fatalf("LucyLockHash = %q, want %q", status.EnvironmentManifest.LucyLockHash, result.LucyLockHash)
 	}
 }
 

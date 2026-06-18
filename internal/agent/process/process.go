@@ -949,6 +949,9 @@ func (s *Supervisor) GetSessionRuntimeStatus(ctx context.Context, sessionID stri
 				if v, ok := manifest["mcdr_required"].(bool); ok {
 					envStatus.MCDRRequired = v
 				}
+				if v, ok := manifest["lucyLockHash"].(string); ok {
+					envStatus.LucyLockHash = v
+				}
 			} else {
 				envStatus.ErrorMessage = decodeErr.Error()
 			}
