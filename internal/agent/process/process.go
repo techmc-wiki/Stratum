@@ -172,7 +172,26 @@ func NewSupervisorWithRoot(agentID, root string, maxLogBytes int) (*Supervisor, 
 	if maxLogBytes <= 0 {
 		maxLogBytes = defaultLogBytes
 	}
-	return &Supervisor{agentID: agentID, runtimeRoot: filepath.Clean(root), now: func() time.Time { return time.Now().UTC() }, processes: map[string]*managedProcess{}, maxLogBytes: maxLogBytes, lucyAdapter: lucy.NoopAdapter{}}, nil
+	return &Supervisor{agentID: agentID, runtimeRoot: filepath.Clean(root), now: func() time.Time { return time.Now().UTC() }, processes: map[string]*managedProcess{}, maxLogBytes: maxLogBytes, lucyAdapter: detectLucyAdapter(root)}, nil
+}
+
+func detectLucyAdapter(workDir string) lucy.Adapter {
+	configured := strings.TrimSpace(os.Getenv("STRATUM_LUCY_WORKSPACE"))
+	if strings.EqualFold(configured, "none") {
+		return lucy.NoopAdapter{}
+	}
+	if configured != "" {
+		workDir = configured
+	}
+	manifestPath := filepath.Join(workDir, "lucy.yaml")
+	if _, err := os.Stat(manifestPath); err != nil {
+		return lucy.NoopAdapter{}
+	}
+	adapter, err := lucy.NewEmbeddedAdapter(lucy.NewLucyProjectBackend(workDir))
+	if err != nil {
+		return lucy.NoopAdapter{}
+	}
+	return adapter
 }
 
 func (s *Supervisor) SetLucyAdapter(adapter lucy.Adapter) {

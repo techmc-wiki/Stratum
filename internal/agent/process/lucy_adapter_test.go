@@ -50,6 +50,38 @@ func TestDefaultLucyAdapterIsNoop(t *testing.T) {
 	}
 }
 
+func TestDetectLucyAdapterNoop(t *testing.T) {
+	t.Setenv("STRATUM_LUCY_WORKSPACE", "")
+	adapter := detectLucyAdapter(filepath.Join(t.TempDir(), "missing"))
+	if _, ok := adapter.(lucy.NoopAdapter); !ok {
+		t.Fatalf("adapter = %T, want lucy.NoopAdapter", adapter)
+	}
+}
+
+func TestDetectLucyAdapterEmbedded(t *testing.T) {
+	t.Setenv("STRATUM_LUCY_WORKSPACE", "")
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "lucy.yaml"), []byte("format_version: v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	adapter := detectLucyAdapter(root)
+	if _, ok := adapter.(*lucy.EmbeddedAdapter); !ok {
+		t.Fatalf("adapter = %T, want *lucy.EmbeddedAdapter", adapter)
+	}
+}
+
+func TestDetectLucyAdapterEnvNone(t *testing.T) {
+	t.Setenv("STRATUM_LUCY_WORKSPACE", "none")
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "lucy.yaml"), []byte("format_version: v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	adapter := detectLucyAdapter(root)
+	if _, ok := adapter.(lucy.NoopAdapter); !ok {
+		t.Fatalf("adapter = %T, want lucy.NoopAdapter", adapter)
+	}
+}
+
 func TestSetLucyAdapterNilDefaultsToNoop(t *testing.T) {
 	root := t.TempDir()
 	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
