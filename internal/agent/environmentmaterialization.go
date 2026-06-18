@@ -43,6 +43,10 @@ type EnvironmentMaterializationResult struct {
 	LucyLockHash           string            `json:"lucyLockHash,omitempty"`
 	LucyManifestPath       string            `json:"lucyManifestPath,omitempty"`
 	LucyLockPath           string            `json:"lucyLockPath,omitempty"`
+	LucyInstallStatus      string            `json:"lucyInstallStatus,omitempty"`
+	LucyInstalledCount     int               `json:"lucyInstalledCount,omitempty"`
+	LucyFailedCount        int               `json:"lucyFailedCount,omitempty"`
+	LucyInstallTotalSize   int64             `json:"lucyInstallTotalSize,omitempty"`
 	MaterializedAt         time.Time         `json:"materializedAt"`
 	Status                 string            `json:"status"`
 	Directories            []string          `json:"directories"`

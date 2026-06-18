@@ -659,6 +659,11 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 	lucyLockHash := ""
 	lucyManifestRuntimePath := ""
 	lucyLockRuntimePath := ""
+	lucyInstallStatus := ""
+	lucyInstalledCount := 0
+	lucyFailedCount := 0
+	lucyInstallTotalSize := int64(0)
+	var resolvedLock *lucy.EnvironmentLock
 	lucyMetadata := map[string]string{}
 	if lucyConfigured {
 		lucyResolutionStatus = "resolved"
@@ -716,6 +721,7 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 						lucyMetadata["lucyResolutionError"] = err.Error()
 						lucyMetadata["lucyResolutionErrorCode"] = string(lucy.ClassifyError(err))
 					} else {
+						resolvedLock = &lock
 						lucyLockHash = lock.LockHash
 						lucyMetadata["lucyLockPath"] = lucyLockRuntimePath
 						lucyMetadata["lucyLockHash"] = lucyLockHash
@@ -723,6 +729,31 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 						lucyMetadata["lucyLockArtifactCount"] = fmt.Sprintf("%d", len(lock.Artifacts))
 					}
 				}
+			}
+		}
+	}
+	if lucyConfigured && lucyResolutionStatus == "resolved" && resolvedLock != nil && len(resolvedLock.Packages) > 0 {
+		installResult, err := adapter.InstallPackages(ctx, lucy.InstallPackagesRequest{
+			Packages:  resolvedLock.Packages,
+			TargetDir: filepath.Join(sessionRoot, "mods"),
+			WorkDir:   configDir,
+		})
+		if err != nil {
+			lucyInstallStatus = "failed"
+			lucyMetadata["lucyInstallStatus"] = lucyInstallStatus
+			lucyMetadata["lucyInstallError"] = err.Error()
+			lucyMetadata["lucyInstallErrorCode"] = string(lucy.ClassifyError(err))
+		} else {
+			lucyInstallStatus = installResult.Status
+			lucyInstalledCount = len(installResult.Installed)
+			lucyFailedCount = len(installResult.Failed)
+			lucyInstallTotalSize = installResult.TotalSize
+			lucyMetadata["lucyInstallStatus"] = lucyInstallStatus
+			lucyMetadata["lucyInstalledCount"] = fmt.Sprintf("%d", lucyInstalledCount)
+			lucyMetadata["lucyFailedCount"] = fmt.Sprintf("%d", lucyFailedCount)
+			lucyMetadata["lucyInstallTotalSize"] = fmt.Sprintf("%d", lucyInstallTotalSize)
+			for _, pkg := range installResult.Installed {
+				lucyMetadata["lucyInstallPath_"+pkg.ID] = pkg.Path
 			}
 		}
 	}
@@ -750,6 +781,10 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 		"lucyLockHash":             lucyLockHash,
 		"lucyManifestPath":         lucyManifestRuntimePath,
 		"lucyLockPath":             lucyLockRuntimePath,
+		"lucyInstallStatus":        lucyInstallStatus,
+		"lucyInstalledCount":       lucyInstalledCount,
+		"lucyFailedCount":          lucyFailedCount,
+		"lucyInstallTotalSize":     lucyInstallTotalSize,
 		"notes":                    "Environment materialization prepared directories only; it did not install Java, Minecraft, Fabric, Carpet, Lucy, MCDR, or start any runtime.",
 	}
 	for key, value := range lucyMetadata {
@@ -789,6 +824,10 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 		LucyLockHash:           lucyLockHash,
 		LucyManifestPath:       lucyManifestRuntimePath,
 		LucyLockPath:           lucyLockRuntimePath,
+		LucyInstallStatus:      lucyInstallStatus,
+		LucyInstalledCount:     lucyInstalledCount,
+		LucyFailedCount:        lucyFailedCount,
+		LucyInstallTotalSize:   lucyInstallTotalSize,
 		MaterializedAt:         time.Now().UTC(),
 		Status:                 "prepared",
 		Directories:            directories,

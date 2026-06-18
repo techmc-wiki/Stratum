@@ -2,6 +2,8 @@ package process
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -318,6 +320,157 @@ func TestMaterializeEnvironmentWritesLucyManifest(t *testing.T) {
 	}
 }
 
+func TestMaterializeEnvironmentWithEmbeddedAdapterInstallsPackages(t *testing.T) {
+	root := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("carpet jar")
+	hashBytes := sha256.Sum256(content)
+	hash := hex.EncodeToString(hashBytes[:])
+	backend := &fakeBackend{
+		plan: lucy.EnvironmentPlan{Metadata: map[string]string{}},
+		lock: lucy.EnvironmentLock{
+			LockID:      "lock-1",
+			LockHash:    "lockhash",
+			GeneratedAt: time.Now().UTC(),
+			Packages: []lucy.LockedPackage{
+				{ID: "fabric/carpet", Source: "modrinth", Name: "carpet", Version: "1.4.83", Hash: hash, Size: int64(len(content))},
+			},
+			ProviderMetadata: map[string]string{},
+		},
+		installContent: content,
+	}
+	adapter, err := lucy.NewEmbeddedAdapter(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervisor.SetLucyAdapter(adapter)
+
+	result, err := supervisor.MaterializeEnvironment(context.Background(), testMaterializationRequest("session-install-ok"))
+	if err != nil {
+		t.Fatalf("materialize environment: %v", err)
+	}
+	if result.Status != "prepared" {
+		t.Errorf("status: got %q, want prepared", result.Status)
+	}
+	if result.LucyInstallStatus != "ok" {
+		t.Errorf("install status: got %q, want ok", result.LucyInstallStatus)
+	}
+	if result.LucyInstalledCount != 1 || result.LucyFailedCount != 0 {
+		t.Errorf("install counts: installed=%d failed=%d", result.LucyInstalledCount, result.LucyFailedCount)
+	}
+	modPath := filepath.Join(root, "sessions", "session-install-ok", "mods", "carpet-1.4.83.jar")
+	if _, err := os.Stat(modPath); err != nil {
+		t.Fatalf("mod file not written: %v", err)
+	}
+	manifestPath := result.Metadata["manifestPath"]
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	var manifest map[string]interface{}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("unmarshal manifest: %v", err)
+	}
+	if manifest["lucyInstallStatus"] != "ok" {
+		t.Errorf("manifest install status: got %v, want ok", manifest["lucyInstallStatus"])
+	}
+}
+
+func TestMaterializeEnvironmentWithEmbeddedAdapterInstallFailsGracefully(t *testing.T) {
+	root := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := &fakeBackend{
+		plan: lucy.EnvironmentPlan{Metadata: map[string]string{}},
+		lock: lucy.EnvironmentLock{
+			LockID:      "lock-1",
+			LockHash:    "lockhash",
+			GeneratedAt: time.Now().UTC(),
+			Packages: []lucy.LockedPackage{
+				{ID: "fabric/carpet", Source: "modrinth", Name: "carpet", Version: "1.4.83", Hash: "abc", Size: 1},
+			},
+			ProviderMetadata: map[string]string{},
+		},
+		installErr: errors.New("download failed"),
+	}
+	adapter, err := lucy.NewEmbeddedAdapter(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervisor.SetLucyAdapter(adapter)
+
+	result, err := supervisor.MaterializeEnvironment(context.Background(), testMaterializationRequest("session-install-fail"))
+	if err != nil {
+		t.Fatalf("materialize environment: %v", err)
+	}
+	if result.Status != "prepared" {
+		t.Errorf("status: got %q, want prepared", result.Status)
+	}
+	if result.LucyResolutionStatus != "resolved" {
+		t.Errorf("resolution status: got %q, want resolved", result.LucyResolutionStatus)
+	}
+	if result.LucyInstallStatus != "failed" {
+		t.Errorf("install status: got %q, want failed", result.LucyInstallStatus)
+	}
+	if result.Metadata["lucyInstallError"] == "" {
+		t.Error("expected lucyInstallError metadata")
+	}
+}
+
+func TestMaterializeEnvironmentWithNoopAdapterSkipsInstall(t *testing.T) {
+	root := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := supervisor.MaterializeEnvironment(context.Background(), testMaterializationRequest("session-install-noop"))
+	if err != nil {
+		t.Fatalf("materialize environment: %v", err)
+	}
+	if result.LucyInstallStatus != "" {
+		t.Errorf("install status: got %q, want empty", result.LucyInstallStatus)
+	}
+	entries, err := os.ReadDir(filepath.Join(root, "sessions", "session-install-noop", "mods"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("mods dir should be empty, got %d entries", len(entries))
+	}
+}
+
+func TestMaterializeEnvironmentWithEmptyLockSkipsInstall(t *testing.T) {
+	root := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := &fakeBackend{
+		plan: lucy.EnvironmentPlan{Metadata: map[string]string{}},
+		lock: lucy.EnvironmentLock{LockID: "lock-1", LockHash: "lockhash", GeneratedAt: time.Now().UTC(), ProviderMetadata: map[string]string{}},
+	}
+	adapter, err := lucy.NewEmbeddedAdapter(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervisor.SetLucyAdapter(adapter)
+	result, err := supervisor.MaterializeEnvironment(context.Background(), testMaterializationRequest("session-empty-lock"))
+	if err != nil {
+		t.Fatalf("materialize environment: %v", err)
+	}
+	if result.LucyInstallStatus != "" {
+		t.Errorf("install status: got %q, want empty", result.LucyInstallStatus)
+	}
+	if backend.installCalled {
+		t.Error("InstallPackages should not be called for empty lock")
+	}
+}
+
 func testMaterializationRequest(sessionID string) agent.EnvironmentMaterializationRequest {
 	return agent.EnvironmentMaterializationRequest{
 		SessionID:              sessionID,
@@ -337,11 +490,15 @@ func testMaterializationRequest(sessionID string) agent.EnvironmentMaterializati
 }
 
 type fakeBackend struct {
-	caps   lucy.Capabilities
-	plan   lucy.EnvironmentPlan
-	lock   lucy.EnvironmentLock
-	status lucy.EnvironmentStatus
-	err    error
+	caps           lucy.Capabilities
+	plan           lucy.EnvironmentPlan
+	lock           lucy.EnvironmentLock
+	status         lucy.EnvironmentStatus
+	installResult  lucy.InstallPackagesResult
+	installErr     error
+	installContent []byte
+	installCalled  bool
+	err            error
 }
 
 func (f *fakeBackend) Capabilities(_ context.Context) (lucy.Capabilities, error) {
@@ -358,4 +515,29 @@ func (f *fakeBackend) Lock(_ context.Context, _ lucy.EnvironmentSpec) (lucy.Envi
 
 func (f *fakeBackend) Status(_ context.Context, _ lucy.EnvironmentSpec, _ *lucy.EnvironmentLock) (lucy.EnvironmentStatus, error) {
 	return f.status, f.err
+}
+
+func (f *fakeBackend) Install(_ context.Context, req lucy.InstallPackagesRequest) (lucy.InstallPackagesResult, error) {
+	f.installCalled = true
+	if f.installErr != nil {
+		return lucy.InstallPackagesResult{}, f.installErr
+	}
+	if f.installResult.Status != "" {
+		return f.installResult, f.err
+	}
+	installed := make([]lucy.InstalledPackage, 0, len(req.Packages))
+	var total int64
+	for _, pkg := range req.Packages {
+		content := f.installContent
+		if content == nil {
+			content = []byte(pkg.Name)
+		}
+		path := filepath.Join(req.TargetDir, pkg.Name+"-"+pkg.Version+".jar")
+		if err := os.WriteFile(path, content, 0o644); err != nil {
+			return lucy.InstallPackagesResult{}, err
+		}
+		installed = append(installed, lucy.InstalledPackage{ID: pkg.ID, Name: pkg.Name, Version: pkg.Version, Path: path, Hash: pkg.Hash, Size: int64(len(content))})
+		total += int64(len(content))
+	}
+	return lucy.InstallPackagesResult{Installed: installed, Failed: []lucy.FailedPackage{}, Status: "ok", TotalSize: total}, f.err
 }
