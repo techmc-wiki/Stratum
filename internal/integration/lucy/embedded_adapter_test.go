@@ -7,11 +7,13 @@ import (
 )
 
 type fakeBackend struct {
-	caps   Capabilities
-	plan   EnvironmentPlan
-	lock   EnvironmentLock
-	status EnvironmentStatus
-	err    error
+	caps          Capabilities
+	plan          EnvironmentPlan
+	lock          EnvironmentLock
+	status        EnvironmentStatus
+	installResult InstallPackagesResult
+	installErr    error
+	err           error
 }
 
 func (f *fakeBackend) Capabilities(_ context.Context) (Capabilities, error) {
@@ -28,6 +30,13 @@ func (f *fakeBackend) Lock(_ context.Context, _ EnvironmentSpec) (EnvironmentLoc
 
 func (f *fakeBackend) Status(_ context.Context, _ EnvironmentSpec, _ *EnvironmentLock) (EnvironmentStatus, error) {
 	return f.status, f.err
+}
+
+func (f *fakeBackend) Install(_ context.Context, _ InstallPackagesRequest) (InstallPackagesResult, error) {
+	if f.installErr != nil {
+		return InstallPackagesResult{}, f.installErr
+	}
+	return f.installResult, f.err
 }
 
 func TestEmbeddedAdapterRequiresBackend(t *testing.T) {

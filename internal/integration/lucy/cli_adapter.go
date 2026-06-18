@@ -126,7 +126,27 @@ func (a *CLIAdapter) CheckStatus(ctx context.Context, req StatusRequest) (Enviro
 	return response, nil
 }
 
+func (a *CLIAdapter) InstallPackages(ctx context.Context, req InstallPackagesRequest) (InstallPackagesResult, error) {
+	if err := req.Validate(); err != nil {
+		return InstallPackagesResult{}, NewAdapterError(ErrorCodeValidationFailed, "invalid install request", err, false)
+	}
+	var response InstallPackagesResult
+	if err := a.runWithWorkingDir(ctx, "install", []string{"install", "--json"}, req.WorkDir, req, &response); err != nil {
+		return InstallPackagesResult{}, err
+	}
+	fillInstallPaths(req, &response)
+	response = validateInstalledHashes(req, response)
+	if err := response.Validate(); err != nil {
+		return InstallPackagesResult{}, NewAdapterError(ErrorCodeValidationFailed, "invalid install response", err, false)
+	}
+	return response, nil
+}
+
 func (a *CLIAdapter) run(ctx context.Context, operation string, request, response interface{}) error {
+	return a.runWithWorkingDir(ctx, operation, []string{operation, "--json"}, a.workingDir, request, response)
+}
+
+func (a *CLIAdapter) runWithWorkingDir(ctx context.Context, operation string, args []string, workingDir string, request, response interface{}) error {
 	ctx, cancel := context.WithTimeout(ctx, a.timeout)
 	defer cancel()
 	stdin, err := json.Marshal(request)
@@ -135,9 +155,9 @@ func (a *CLIAdapter) run(ctx context.Context, operation string, request, respons
 	}
 	result, err := a.runner.Run(ctx, CommandRequest{
 		CommandPath:    a.commandPath,
-		Args:           []string{operation, "--json"},
+		Args:           args,
 		Stdin:          stdin,
-		WorkingDir:     a.workingDir,
+		WorkingDir:     workingDir,
 		Env:            a.env,
 		MaxOutputBytes: a.maxOutputBytes,
 	})

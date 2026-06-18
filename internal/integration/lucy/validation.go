@@ -182,7 +182,7 @@ func (lock EnvironmentLock) isZero() bool {
 
 // Validate checks a resolved package record.
 func (item LockedPackage) Validate() error {
-	if err := validateSafeID("locked package id", item.ID); err != nil {
+	if err := validatePackageID("locked package id", item.ID); err != nil {
 		return err
 	}
 	if strings.TrimSpace(item.Source) == "" {
@@ -217,6 +217,74 @@ func (EnvironmentStatus) Validate() error {
 	return nil
 }
 
+func (req InstallPackagesRequest) Validate() error {
+	if strings.TrimSpace(req.TargetDir) == "" {
+		return errors.New("target dir is required")
+	}
+	if strings.TrimSpace(req.WorkDir) == "" {
+		return errors.New("work dir is required")
+	}
+	for index, item := range req.Packages {
+		if err := item.Validate(); err != nil {
+			return fmt.Errorf("package %d: %w", index, err)
+		}
+	}
+	return nil
+}
+
+func (result InstallPackagesResult) Validate() error {
+	switch result.Status {
+	case "ok", "partial", "failed", "not_capable":
+	case "":
+		return errors.New("install status is required")
+	default:
+		return fmt.Errorf("unsupported install status %q", result.Status)
+	}
+	if result.TotalSize < 0 {
+		return errors.New("install total size must be non-negative")
+	}
+	for index, item := range result.Installed {
+		if err := item.Validate(); err != nil {
+			return fmt.Errorf("installed package %d: %w", index, err)
+		}
+	}
+	for index, item := range result.Failed {
+		if err := item.Validate(); err != nil {
+			return fmt.Errorf("failed package %d: %w", index, err)
+		}
+	}
+	return nil
+}
+
+func (item InstalledPackage) Validate() error {
+	if err := validatePackageID("installed package id", item.ID); err != nil {
+		return err
+	}
+	if strings.TrimSpace(item.Name) == "" {
+		return errors.New("installed package name is required")
+	}
+	if strings.TrimSpace(item.Version) == "" {
+		return errors.New("installed package version is required")
+	}
+	if strings.TrimSpace(item.Path) == "" {
+		return errors.New("installed package path is required")
+	}
+	if item.Size < 0 {
+		return errors.New("installed package size must be non-negative")
+	}
+	return nil
+}
+
+func (item FailedPackage) Validate() error {
+	if err := validatePackageID("failed package id", item.ID); err != nil {
+		return err
+	}
+	if strings.TrimSpace(item.Error) == "" {
+		return errors.New("failed package error is required")
+	}
+	return nil
+}
+
 func validateSafeID(label, value string) error {
 	if value == "" || value == "." || value == ".." {
 		return fmt.Errorf("%s is required", label)
@@ -227,6 +295,22 @@ func validateSafeID(label, value string) error {
 			continue
 		}
 		return fmt.Errorf("%s %q contains unsupported characters", label, value)
+	}
+	return nil
+}
+
+func validatePackageID(label, value string) error {
+	if value == "" || value == "." || value == ".." {
+		return fmt.Errorf("%s is required", label)
+	}
+	parts := strings.Split(value, "/")
+	if len(parts) > 2 {
+		return fmt.Errorf("%s %q contains unsupported characters", label, value)
+	}
+	for _, part := range parts {
+		if err := validateSafeID(label, part); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -25,10 +25,43 @@ type StatusProvider interface {
 	CheckStatus(context.Context, StatusRequest) (EnvironmentStatus, error)
 }
 
+// PackageInstaller downloads resolved packages into a target runtime directory.
+type PackageInstaller interface {
+	InstallPackages(context.Context, InstallPackagesRequest) (InstallPackagesResult, error)
+}
+
+type InstallPackagesRequest struct {
+	Packages  []LockedPackage `json:"packages"`
+	TargetDir string          `json:"target_dir"`
+	WorkDir   string          `json:"work_dir"`
+}
+
+type InstallPackagesResult struct {
+	Installed []InstalledPackage `json:"installed"`
+	Failed    []FailedPackage    `json:"failed"`
+	Status    string             `json:"status"`
+	TotalSize int64              `json:"total_size"`
+}
+
+type InstalledPackage struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Path    string `json:"path"`
+	Hash    string `json:"hash"`
+	Size    int64  `json:"size"`
+}
+
+type FailedPackage struct {
+	ID    string `json:"id"`
+	Error string `json:"error"`
+}
+
 // Adapter is the complete Stratum-facing Lucy integration contract.
 type Adapter interface {
 	CapabilityProvider
 	EnvironmentPlanner
 	LockProvider
 	StatusProvider
+	PackageInstaller
 }

@@ -42,3 +42,7 @@ func (NoopAdapter) CheckStatus(context.Context, StatusRequest) (EnvironmentStatu
 		Metadata: map[string]string{},
 	}, nil
 }
+
+func (NoopAdapter) InstallPackages(context.Context, InstallPackagesRequest) (InstallPackagesResult, error) {
+	return InstallPackagesResult{Status: "not_capable"}, nil
+}

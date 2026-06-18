@@ -10,6 +10,7 @@ type EmbeddedBackend interface {
 	Plan(ctx context.Context, spec EnvironmentSpec) (EnvironmentPlan, error)
 	Lock(ctx context.Context, spec EnvironmentSpec) (EnvironmentLock, error)
 	Status(ctx context.Context, spec EnvironmentSpec, lock *EnvironmentLock) (EnvironmentStatus, error)
+	Install(ctx context.Context, req InstallPackagesRequest) (InstallPackagesResult, error)
 }
 
 type EmbeddedAdapter struct {
@@ -81,6 +82,22 @@ func (a *EmbeddedAdapter) CheckStatus(ctx context.Context, req StatusRequest) (E
 		return EnvironmentStatus{}, NewAdapterError(ErrorCodeValidationFailed, "invalid backend status", err, false)
 	}
 	return status, nil
+}
+
+func (a *EmbeddedAdapter) InstallPackages(ctx context.Context, req InstallPackagesRequest) (InstallPackagesResult, error) {
+	if err := req.Validate(); err != nil {
+		return InstallPackagesResult{}, NewAdapterError(ErrorCodeInvalidRequest, "invalid install request", err, false)
+	}
+	result, err := a.backend.Install(ctx, req)
+	if err != nil {
+		return InstallPackagesResult{}, a.classifyError(err)
+	}
+	fillInstallPaths(req, &result)
+	result = validateInstalledHashes(req, result)
+	if err := result.Validate(); err != nil {
+		return InstallPackagesResult{}, NewAdapterError(ErrorCodeValidationFailed, "invalid backend install result", err, false)
+	}
+	return result, nil
 }
 
 func (a *EmbeddedAdapter) classifyError(err error) error {

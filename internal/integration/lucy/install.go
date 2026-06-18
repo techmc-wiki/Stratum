@@ -3,11 +3,16 @@ package lucy
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
 
 	lucyinstall "github.com/mclucy/lucy/install"
-	lucyprobe "github.com/mclucy/lucy/probe"
 	lucytypes "github.com/mclucy/lucy/types"
+	lucyworkspace "github.com/mclucy/lucy/workspace"
 )
+
+var lucyInstallCwdMu sync.Mutex
 
 // InstallService provides operations for Lucy package installation.
 type InstallService struct {
@@ -42,7 +47,10 @@ func (s *InstallService) Install(ctx context.Context, req PackageRequest) error 
 		},
 		Version: lucytypes.BareVersion(req.Version),
 	}
-	_, err := lucyinstall.Install(lucyReq, lucyinstall.DefaultOptions())
+	err := s.withWorkDir(ctx, func() error {
+		_, err := lucyinstall.Install(lucyReq, lucyinstall.DefaultOptions())
+		return err
+	})
 	if err != nil {
 		return fmt.Errorf("lucy install: %w", err)
 	}
@@ -67,11 +75,86 @@ func (s *InstallService) InstallMany(ctx context.Context, requests []PackageRequ
 			Version: lucytypes.BareVersion(req.Version),
 		}
 	}
-	_, err := lucyinstall.InstallMany(lucyReqs, lucyinstall.DefaultOptions())
+	err := s.withWorkDir(ctx, func() error {
+		_, err := lucyinstall.InstallMany(lucyReqs, lucyinstall.DefaultOptions())
+		return err
+	})
 	if err != nil {
 		return fmt.Errorf("lucy install many: %w", err)
 	}
 	return nil
+}
+
+func (s *InstallService) InstallPackages(ctx context.Context, requests []PackageRequest, targetDir string) ([]InstalledPackage, []FailedPackage, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		return nil, nil, fmt.Errorf("create target dir: %w", err)
+	}
+	if err := s.InstallMany(ctx, requests); err != nil {
+		return nil, nil, err
+	}
+	installed := make([]InstalledPackage, 0, len(requests))
+	failed := make([]FailedPackage, 0)
+	for _, req := range requests {
+		id := req.Platform + "/" + req.Name
+		if req.Platform == "" {
+			id = req.Name
+		}
+		path := filepath.Join(targetDir, req.Name+"-"+req.Version+".jar")
+		info, err := os.Stat(path)
+		if err != nil {
+			failed = append(failed, FailedPackage{ID: id, Error: err.Error()})
+			continue
+		}
+		installed = append(installed, InstalledPackage{
+			ID:      id,
+			Name:    req.Name,
+			Version: req.Version,
+			Path:    path,
+			Size:    info.Size(),
+		})
+	}
+	return installed, failed, nil
+}
+
+func (s *InstallService) withWorkDir(ctx context.Context, fn func() error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.workDir == "" {
+		return fn()
+	}
+	lucyInstallCwdMu.Lock()
+	defer lucyInstallCwdMu.Unlock()
+	original, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get cwd: %w", err)
+	}
+	if err := os.Chdir(s.workDir); err != nil {
+		return fmt.Errorf("change lucy work dir: %w", err)
+	}
+	defer func() { _ = os.Chdir(original) }()
+	return fn()
+}
+
+func PackageRequestsFromLocked(packages []LockedPackage) []PackageRequest {
+	requests := make([]PackageRequest, 0, len(packages))
+	for _, pkg := range packages {
+		platform := packagePlatformFromID(pkg.ID)
+		name := pkg.Name
+		if name == "" {
+			name = packageNameFromID(pkg.ID)
+		}
+		requests = append(requests, PackageRequest{
+			Platform: platform,
+			Name:     name,
+			Scope:    pkg.Source,
+			Version:  pkg.Version,
+		})
+	}
+	return requests
 }
 
 // ProbeService provides operations for Lucy server probing.
@@ -86,7 +169,7 @@ func NewProbeService(workDir string) *ProbeService {
 
 // ServerInfo returns the current server environment information.
 func (s *ProbeService) ServerInfo() (map[string]interface{}, error) {
-	info := lucyprobe.ServerInfoAt(s.workDir)
+	info := lucyworkspace.ServerInfoAt(s.workDir)
 	result := make(map[string]interface{})
 	result["game_version"] = string(info.Runtime.GameVersion)
 	result["platform"] = string(info.Runtime.DerivedModLoader())
@@ -99,5 +182,5 @@ func (s *ProbeService) ServerInfo() (map[string]interface{}, error) {
 
 // Invalidate marks the cached server info as stale.
 func (s *ProbeService) Invalidate() {
-	lucyprobe.InvalidateServerInfo()
+	lucyworkspace.InvalidateServerInfo()
 }

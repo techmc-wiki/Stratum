@@ -2,8 +2,13 @@ package lucy
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -11,9 +16,11 @@ import (
 type fakeRunner struct {
 	result CommandResult
 	err    error
+	req    CommandRequest
 }
 
-func (f *fakeRunner) Run(_ context.Context, _ CommandRequest) (CommandResult, error) {
+func (f *fakeRunner) Run(_ context.Context, req CommandRequest) (CommandResult, error) {
+	f.req = req
 	return f.result, f.err
 }
 
@@ -105,6 +112,50 @@ func TestCLIAdapterCheckStatus(t *testing.T) {
 	}
 	if result.Missing == nil {
 		t.Fatal("expected missing")
+	}
+}
+
+func TestCLIAdapterInstallPackages(t *testing.T) {
+	targetDir := t.TempDir()
+	workDir := t.TempDir()
+	content := []byte("mod jar")
+	hashBytes := sha256.Sum256(content)
+	hash := hex.EncodeToString(hashBytes[:])
+	installedPath := filepath.Join(targetDir, "carpet-1.4.83.jar")
+	if err := os.WriteFile(installedPath, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	response := InstallPackagesResult{
+		Installed: []InstalledPackage{{ID: "fabric/carpet", Name: "carpet", Version: "1.4.83", Path: installedPath, Hash: hash, Size: int64(len(content))}},
+		Failed:    []FailedPackage{},
+		Status:    "ok",
+		TotalSize: int64(len(content)),
+	}
+	stdout, _ := json.Marshal(response)
+	runner := &fakeRunner{result: CommandResult{Stdout: stdout, ExitCode: 0}}
+	adapter, err := NewCLIAdapter(CLIAdapterOptions{CommandPath: "lucy", Runner: runner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := adapter.InstallPackages(context.Background(), InstallPackagesRequest{
+		Packages:  []LockedPackage{{ID: "fabric/carpet", Source: "modrinth", Name: "carpet", Version: "1.4.83", Hash: hash, Size: int64(len(content))}},
+		TargetDir: targetDir,
+		WorkDir:   workDir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "ok" || len(result.Installed) != 1 || len(result.Failed) != 0 {
+		t.Fatalf("unexpected install result: %#v", result)
+	}
+	if result.Installed[0].Path != installedPath {
+		t.Fatalf("installed path: got %q, want %q", result.Installed[0].Path, installedPath)
+	}
+	if runner.req.WorkingDir != workDir {
+		t.Fatalf("working dir: got %q, want %q", runner.req.WorkingDir, workDir)
+	}
+	if !reflect.DeepEqual(runner.req.Args, []string{"install", "--json"}) {
+		t.Fatalf("args: got %#v", runner.req.Args)
 	}
 }
 
