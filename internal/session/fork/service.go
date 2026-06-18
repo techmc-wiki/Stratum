@@ -86,6 +86,14 @@ func (s *Service) CreateFork(ctx context.Context, opts ForkOptions) (session.Ses
 		expiresAt := now.Add(*opts.TTL)
 		forkSession.ExpiresAt = &expiresAt
 	}
+	if opts.SourceCheckpointID != "" {
+		if srcCP, cpErr := s.repo.GetCheckpoint(ctx, opts.SourceCheckpointID); cpErr == nil && srcCP.LucyLockHash != "" {
+			if forkSession.Metadata == nil {
+				forkSession.Metadata = make(map[string]string)
+			}
+			forkSession.Metadata["sourceLucyLockHash"] = srcCP.LucyLockHash
+		}
+	}
 
 	forkSession.ForkProvenance = &session.ForkProvenance{
 		SourceType:             string(opts.SourceType),

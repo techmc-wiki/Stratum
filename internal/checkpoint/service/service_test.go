@@ -272,6 +272,42 @@ func TestCreateMetadataOnlyCheckpoint(t *testing.T) {
 	}
 }
 
+func TestCreateCheckpointWithLucyLockHash(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	cp, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-lucy", SessionID: "s-1", ActorID: "actor-1", LucyLockHash: "hash123",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.LucyLockHash != "hash123" {
+		t.Fatalf("LucyLockHash = %q, want hash123", cp.LucyLockHash)
+	}
+}
+
+func TestCreateCheckpointWithoutLucyLockHash(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	cp, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-no-lucy", SessionID: "s-1", ActorID: "actor-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.LucyLockHash != "" {
+		t.Fatalf("LucyLockHash = %q, want empty", cp.LucyLockHash)
+	}
+}
+
 func TestCreateCommandQuiescedRunsSequenceAndCreatesWorldSnapshot(t *testing.T) {
 	agent := &mockAgent{}
 	repo := &mockRepo{
@@ -735,6 +771,33 @@ func TestRestoreCreatesNewCheckpoint(t *testing.T) {
 	}
 	if auditMeta["worldDirRel"] != "world_restored" {
 		t.Fatalf("worldDirRel = %q", auditMeta["worldDirRel"])
+	}
+}
+
+func TestRestoreCheckpointCarriesLucyLockHash(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-source": {ID: "s-source", ProjectID: "p-1", EnvironmentID: "env-1"},
+			"s-target": {ID: "s-target", ProjectID: "p-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{
+			"cp-source": {
+				ID: "cp-source", ProjectID: "p-1", SourceSessionID: "s-source", CreatorID: "creator-1",
+				Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+				ConsistencyLevel: consistency.LevelCommandQuiesced, EnvironmentID: "env-1",
+				WorldStateRef: "agent-local://mock/sessions/s-source/checkpoints/world.zip",
+				LucyLockHash:  "hash123",
+			},
+		},
+	}
+	cp, err := Restore(context.Background(), repo, RestoreRequest{
+		CheckpointID: "cp-source", TargetSessionID: "s-target", ActorID: "actor-1", AgentClient: &mockAgent{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.LucyLockHash != "hash123" {
+		t.Fatalf("LucyLockHash = %q, want hash123", cp.LucyLockHash)
 	}
 }
 

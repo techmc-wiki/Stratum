@@ -22,6 +22,7 @@ type CreateRequest struct {
 	ConsistencyLevel      consistency.Level
 	ConsistencyMetadata   map[string]string
 	RuntimeStatusSnapshot *checkpoint.RuntimeStatusSnapshot
+	LucyLockHash          string
 	AgentClient           agent.AgentClient
 }
 
@@ -203,6 +204,7 @@ func buildCheckpointParams(req CreateRequest, sess session.Session, level consis
 		ConsistencyMetadata:   req.ConsistencyMetadata,
 		EnvironmentID:         sess.EnvironmentID,
 		RuntimeProfileID:      sess.RuntimeProfileID,
+		LucyLockHash:          req.LucyLockHash,
 		RuntimeStatusSnapshot: prepareRuntimeStatusSnapshot(req.RuntimeStatusSnapshot, sess),
 		Notes:                 req.Notes,
 	}
@@ -335,6 +337,7 @@ func Restore(ctx context.Context, repo Repository, req RestoreRequest) (checkpoi
 		EnvironmentID:    targetSession.EnvironmentID,
 		RuntimeProfileID: targetSession.RuntimeProfileID,
 		WorldStateRef:    agentResult.RestoredRef,
+		LucyLockHash:     sourceCP.LucyLockHash,
 		Notes:            notes,
 		Metadata:         metadata,
 	}

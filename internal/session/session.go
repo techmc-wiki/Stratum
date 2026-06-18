@@ -57,23 +57,24 @@ type ForkProvenance struct {
 }
 
 type Session struct {
-	ID                 string          `json:"id"`
-	ProjectID          string          `json:"projectId"`
-	RoomID             string          `json:"roomId,omitempty"`
-	OwnerUserID        string          `json:"ownerUserId"`
-	Type               Type            `json:"type"`
-	State              State           `json:"state"`
-	EnvironmentID      string          `json:"environmentId"`
-	RuntimeProfileID   string          `json:"runtimeProfileId,omitempty"`
-	SourceCheckpointID string          `json:"sourceCheckpointId,omitempty"`
-	AssignedAgentID    string          `json:"assignedAgentId,omitempty"`
-	LastAgentStatus    string          `json:"lastAgentStatus,omitempty"`
-	LastRuntimeMessage string          `json:"lastRuntimeMessage,omitempty"`
-	RuntimeEndpoint    string          `json:"runtimeEndpoint,omitempty"`
-	ForkProvenance     *ForkProvenance `json:"forkProvenance,omitempty"`
-	CreatedAt          time.Time       `json:"createdAt"`
-	ExpiresAt          *time.Time      `json:"expiresAt,omitempty"`
-	LastActiveAt       time.Time       `json:"lastActiveAt"`
+	ID                 string            `json:"id"`
+	ProjectID          string            `json:"projectId"`
+	RoomID             string            `json:"roomId,omitempty"`
+	OwnerUserID        string            `json:"ownerUserId"`
+	Type               Type              `json:"type"`
+	State              State             `json:"state"`
+	EnvironmentID      string            `json:"environmentId"`
+	RuntimeProfileID   string            `json:"runtimeProfileId,omitempty"`
+	SourceCheckpointID string            `json:"sourceCheckpointId,omitempty"`
+	AssignedAgentID    string            `json:"assignedAgentId,omitempty"`
+	LastAgentStatus    string            `json:"lastAgentStatus,omitempty"`
+	LastRuntimeMessage string            `json:"lastRuntimeMessage,omitempty"`
+	RuntimeEndpoint    string            `json:"runtimeEndpoint,omitempty"`
+	ForkProvenance     *ForkProvenance   `json:"forkProvenance,omitempty"`
+	Metadata           map[string]string `json:"metadata,omitempty"`
+	CreatedAt          time.Time         `json:"createdAt"`
+	ExpiresAt          *time.Time        `json:"expiresAt,omitempty"`
+	LastActiveAt       time.Time         `json:"lastActiveAt"`
 }
 
 func (s *Session) Transition(to State) error {

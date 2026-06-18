@@ -9,9 +9,13 @@ import (
 
 	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
+	"github.com/stratummc/stratum/internal/artifact"
+	artifactstaging "github.com/stratummc/stratum/internal/artifact/staging"
 	"github.com/stratummc/stratum/internal/audit"
 	"github.com/stratummc/stratum/internal/environment"
 	"github.com/stratummc/stratum/internal/idgen"
+	"github.com/stratummc/stratum/internal/integration/lucy"
+	"github.com/stratummc/stratum/internal/integration/lucybridge"
 	"github.com/stratummc/stratum/internal/operation"
 	operationsvc "github.com/stratummc/stratum/internal/operation/service"
 	"github.com/stratummc/stratum/internal/resourcepolicy"
@@ -31,6 +35,8 @@ type Repository interface {
 	GetOperation(context.Context, string) (operation.Operation, error)
 	ListOperations(context.Context) ([]operation.Operation, error)
 	UpdateOperation(context.Context, operation.Operation) error
+	ListArtifactStagingPlansBySession(context.Context, string) ([]artifactstaging.Plan, error)
+	GetArtifact(context.Context, string) (artifact.Artifact, error)
 }
 
 type (
@@ -91,6 +97,32 @@ func New(repository Repository, policy resourcepolicy.Policy, clients ...agent.A
 func (s *Service) WithArtifactReadinessGate(gate ArtifactReadinessGate) *Service {
 	s.artifactGate = gate
 	return s
+}
+
+func collectApprovedLocalArtifactRefs(ctx context.Context, repo Repository, sessionID string) []lucy.LocalArtifactRef {
+	plans, err := repo.ListArtifactStagingPlansBySession(ctx, sessionID)
+	if err != nil || len(plans) == 0 {
+		return nil
+	}
+	refs := make([]lucy.LocalArtifactRef, 0, len(plans))
+	for _, plan := range plans {
+		if plan.Status != artifactstaging.StatusPlanned || plan.StagingKind != artifactstaging.KindArtifact {
+			continue
+		}
+		art, err := repo.GetArtifact(ctx, plan.ArtifactID)
+		if err != nil || art.Status != artifact.StatusApproved {
+			continue
+		}
+		ref, err := lucybridge.ArtifactToLocalRef(art, plan.TargetStagingName)
+		if err != nil {
+			continue
+		}
+		refs = append(refs, ref)
+	}
+	if len(refs) == 0 {
+		return nil
+	}
+	return refs
 }
 
 func (s *Service) Create(ctx context.Context, value session.Session) error {
@@ -419,6 +451,7 @@ func (s *Service) start(ctx context.Context, id, actor string) error {
 			}
 			agentResult = &result
 		}
+		localArtifacts := collectApprovedLocalArtifactRefs(ctx, s.repository, value.ID)
 		materializationRequest := agent.EnvironmentMaterializationRequest{
 			SessionID:              value.ID,
 			EnvironmentID:          env.ID,
@@ -431,7 +464,8 @@ func (s *Service) start(ctx context.Context, id, actor string) error {
 			MCDRRequired:           env.MCDRRequired,
 			CarpetRequired:         env.CarpetRequired,
 			LucyManifestRef:        env.LucyManifestRef,
-			LucyLockRef:            env.LucyLockRef,
+			LucyLockRef:            sessionLucyLockRef(value, env.LucyLockRef),
+			LocalArtifacts:         localArtifacts,
 			RuntimeProfileID:       selectedProfileID,
 			RuntimeProfileRequired: env.RuntimeProfileRequired,
 			ActorID:                actor,
@@ -599,6 +633,7 @@ func (s *Service) restart(ctx context.Context, id, actor string) error {
 		} else {
 			setOperationMetadata(ctx, map[string]string{"restartStopStatus": "not_required"})
 		}
+		localArtifacts := collectApprovedLocalArtifactRefs(ctx, s.repository, value.ID)
 		materializationRequest := agent.EnvironmentMaterializationRequest{
 			SessionID:              value.ID,
 			EnvironmentID:          env.ID,
@@ -611,7 +646,8 @@ func (s *Service) restart(ctx context.Context, id, actor string) error {
 			MCDRRequired:           env.MCDRRequired,
 			CarpetRequired:         env.CarpetRequired,
 			LucyManifestRef:        env.LucyManifestRef,
-			LucyLockRef:            env.LucyLockRef,
+			LucyLockRef:            sessionLucyLockRef(value, env.LucyLockRef),
+			LocalArtifacts:         localArtifacts,
 			RuntimeProfileID:       selectedProfileID,
 			RuntimeProfileRequired: env.RuntimeProfileRequired,
 			ActorID:                actor,
@@ -897,6 +933,13 @@ func agentRequest(ctx context.Context, value session.Session) agent.SessionReque
 		request.RuntimeProfileID = operationValue.RuntimeProfileID
 	}
 	return request
+}
+
+func sessionLucyLockRef(value session.Session, fallback string) string {
+	if value.Metadata != nil && value.Metadata["sourceLucyLockHash"] != "" {
+		return value.Metadata["sourceLucyLockHash"]
+	}
+	return fallback
 }
 
 func (s *Service) currentUsage(ctx context.Context, target session.Session) (resourcepolicy.Usage, error) {

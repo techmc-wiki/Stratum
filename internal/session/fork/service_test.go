@@ -196,6 +196,32 @@ func TestCreateForkFromCheckpoint(t *testing.T) {
 	}
 }
 
+func TestForkFromCheckpointCarriesLucyLockHash(t *testing.T) {
+	repo := newMockRepo()
+	repo.environments["env-1"] = environment.Environment{ID: "env-1", Name: "Test Env"}
+	repo.checkpoints["cp-1"] = checkpoint.Checkpoint{
+		ID: "cp-1", ProjectID: "project-1", RoomID: "room-1",
+		SourceSessionID: "original-session", CreatorID: "owner-1",
+		Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly, ConsistencyLevel: consistency.LevelMetadataOnly,
+		EnvironmentID: "env-1", LucyLockHash: "hash123", CreatedAt: testTime,
+	}
+	svc := newTestService(repo)
+	fork, err := svc.CreateFork(context.Background(), ForkOptions{
+		SourceType:         SourceTypeCheckpoint,
+		SourceID:           "cp-1",
+		ProjectID:          "project-1",
+		RoomID:             "room-1",
+		SourceCheckpointID: "cp-1",
+		CreatorID:          "user-fork",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fork.Metadata["sourceLucyLockHash"] != "hash123" {
+		t.Fatalf("sourceLucyLockHash = %q, want hash123", fork.Metadata["sourceLucyLockHash"])
+	}
+}
+
 func TestCreateForkFromCheckpointWithoutSession(t *testing.T) {
 	repo := newMockRepo()
 	repo.environments["env-1"] = environment.Environment{ID: "env-1", Name: "Test Env"}

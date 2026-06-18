@@ -14,6 +14,8 @@ import (
 	"github.com/stratummc/stratum/internal/agent/httptransport"
 	"github.com/stratummc/stratum/internal/agent/local"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
+	"github.com/stratummc/stratum/internal/artifact"
+	artifactstaging "github.com/stratummc/stratum/internal/artifact/staging"
 	"github.com/stratummc/stratum/internal/audit"
 	"github.com/stratummc/stratum/internal/environment"
 	"github.com/stratummc/stratum/internal/operation"
@@ -22,6 +24,16 @@ import (
 	"github.com/stratummc/stratum/internal/storage/filesystem"
 	stratumerrors "github.com/stratummc/stratum/internal/stratumerr"
 )
+
+type capturingAgent struct {
+	*local.Fake
+	lastMaterialization agent.EnvironmentMaterializationRequest
+}
+
+func (a *capturingAgent) MaterializeEnvironment(ctx context.Context, request agent.EnvironmentMaterializationRequest) (agent.EnvironmentMaterializationResult, error) {
+	a.lastMaterialization = request
+	return a.Fake.MaterializeEnvironment(ctx, request)
+}
 
 var lifecycleTime = time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
 
@@ -92,6 +104,73 @@ func TestAgentStartSuccessPersistsMetadataAndAudit(t *testing.T) {
 	events = onlySessionAudit(events)
 	if len(events) != 1 || events[0].Metadata["agentResult"] != "success" || events[0].Metadata["agentId"] != local.DefaultAgentID || events[0].Metadata["agentMode"] != "local" {
 		t.Fatalf("events = %+v", events)
+	}
+}
+
+func TestCollectApprovedLocalArtifactRefs(t *testing.T) {
+	ctx, store, _, _ := newLifecycleTest(t, resourcepolicy.MVPDefault())
+	now := lifecycleTime
+	approved := artifact.Artifact{ID: "approved", Name: "Approved", Type: artifact.TypeJar, UploaderID: "uploader-1", SHA256: artifact.HashBytes([]byte("approved")), SizeBytes: 8, PayloadStatus: artifact.PayloadAvailable, PayloadAlgorithm: "sha256", PayloadReference: "sha256/approved", Status: artifact.StatusApproved, CreatedAt: now}
+	pending := artifact.Artifact{ID: "pending", Name: "Pending", Type: artifact.TypeJar, UploaderID: "uploader-1", SHA256: artifact.HashBytes([]byte("pending")), SizeBytes: 7, PayloadStatus: artifact.PayloadAvailable, PayloadAlgorithm: "sha256", PayloadReference: "sha256/pending", Status: artifact.StatusPending, CreatedAt: now}
+	rejected := artifact.Artifact{ID: "rejected", Name: "Rejected", Type: artifact.TypeJar, UploaderID: "uploader-1", SHA256: artifact.HashBytes([]byte("rejected")), SizeBytes: 8, PayloadStatus: artifact.PayloadAvailable, PayloadAlgorithm: "sha256", PayloadReference: "sha256/rejected", Status: artifact.StatusRejected, CreatedAt: now}
+	for _, value := range []artifact.Artifact{approved, pending, rejected} {
+		if err := store.SaveArtifact(ctx, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plans := []artifactstaging.Plan{
+		makeTestStagingPlan("plan-approved", "session-1", approved, "mods/approved.jar", artifactstaging.KindArtifact, artifactstaging.StatusPlanned),
+		makeTestStagingPlan("plan-pending", "session-1", pending, "mods/pending.jar", artifactstaging.KindArtifact, artifactstaging.StatusPlanned),
+		makeTestStagingPlan("plan-rejected", "session-1", rejected, "mods/rejected.jar", artifactstaging.KindArtifact, artifactstaging.StatusPlanned),
+		makeTestStagingPlan("plan-applied", "session-1", approved, "mods/applied.jar", artifactstaging.KindArtifact, artifactstaging.StatusAppliedStub),
+		makeTestStagingPlan("plan-config", "session-1", approved, "config/rules.conf", artifactstaging.KindConfig, artifactstaging.StatusPlanned),
+	}
+	for _, plan := range plans {
+		if err := store.CreateArtifactStagingPlan(ctx, plan); err != nil {
+			t.Fatal(err)
+		}
+	}
+	refs := collectApprovedLocalArtifactRefs(ctx, store, "session-1")
+	if len(refs) != 1 {
+		t.Fatalf("refs=%+v", refs)
+	}
+	if refs[0].ArtifactID != "approved" || refs[0].RuntimeName != "mods/approved.jar" {
+		t.Fatalf("unexpected ref: %+v", refs[0])
+	}
+}
+
+func TestCollectApprovedLocalArtifactRefsEmptySession(t *testing.T) {
+	ctx, store, _, _ := newLifecycleTest(t, resourcepolicy.MVPDefault())
+	refs := collectApprovedLocalArtifactRefs(ctx, store, "empty-session")
+	if refs != nil {
+		t.Fatalf("refs=%+v, want nil", refs)
+	}
+}
+
+func TestLocalArtifactsFlowIntoMaterializationRequest(t *testing.T) {
+	ctx, store, _, _ := newLifecycleTest(t, resourcepolicy.MVPDefault())
+	fake := &capturingAgent{Fake: local.NewFake()}
+	service := New(store, resourcepolicy.MVPDefault(), fake)
+	service.now = func() time.Time { return lifecycleTime }
+	service.newID = func(prefix string) (string, error) { return prefix + "-1", nil }
+	createTestSession(t, store, testSession("session-artifact-flow", session.TypeShared, session.StateCreated))
+	now := lifecycleTime
+	approved := artifact.Artifact{ID: "approved", Name: "Approved", Type: artifact.TypeJar, UploaderID: "uploader-1", SHA256: artifact.HashBytes([]byte("approved")), SizeBytes: 8, PayloadStatus: artifact.PayloadAvailable, PayloadAlgorithm: "sha256", PayloadReference: "sha256/approved", Status: artifact.StatusApproved, CreatedAt: now}
+	if err := store.SaveArtifact(ctx, approved); err != nil {
+		t.Fatal(err)
+	}
+	plan := makeTestStagingPlan("plan-approved", "session-artifact-flow", approved, "mods/approved.jar", artifactstaging.KindArtifact, artifactstaging.StatusPlanned)
+	if err := store.CreateArtifactStagingPlan(ctx, plan); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Start(ctx, "session-artifact-flow", "actor-1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.lastMaterialization.LocalArtifacts) != 1 {
+		t.Fatalf("LocalArtifacts=%+v", fake.lastMaterialization.LocalArtifacts)
+	}
+	if fake.lastMaterialization.LocalArtifacts[0].ArtifactID != "approved" {
+		t.Fatalf("unexpected LocalArtifacts=%+v", fake.lastMaterialization.LocalArtifacts)
 	}
 }
 
@@ -677,6 +756,25 @@ func createTestSession(t *testing.T, store *filesystem.Store, value session.Sess
 	ensureTestEnvironment(t, store, value.EnvironmentID)
 	if err := store.CreateSession(context.Background(), value); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func makeTestStagingPlan(id, sessionID string, art artifact.Artifact, target string, kind artifactstaging.Kind, status artifactstaging.Status) artifactstaging.Plan {
+	return artifactstaging.Plan{
+		ID:                id,
+		SessionID:         sessionID,
+		ProjectID:         "project-1",
+		RoomID:            "room-1",
+		ArtifactID:        art.ID,
+		ArtifactName:      art.Name,
+		ArtifactType:      string(art.Type),
+		ArtifactStatus:    string(art.Status),
+		ArtifactHash:      art.SHA256,
+		TargetStagingName: target,
+		StagingKind:       kind,
+		ActorID:           "actor-1",
+		CreatedAt:         lifecycleTime,
+		Status:            status,
 	}
 }
 
