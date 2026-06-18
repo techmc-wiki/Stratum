@@ -1,0 +1,19 @@
+format_version: "1"
+environment:
+  game_version: "1.17.1"
+  server_core: "fabric"
+  server_core_version: "0.11.7"
+  modding_platform: "fabric"
+  modding_platform_version: "0.11.7"
+  mcdr: true
+packages:
+  - id: fabric/fabric-carpet
+    version: "1.4.44"
+    source: modrinth
+    role: required
+    side: server
+  - id: fabric/fabric-api
+    version: "0.40.0"
+    source: modrinth
+    role: required
+    side: server
