@@ -11,6 +11,7 @@ import (
 	"github.com/stratummc/stratum/internal/artifact"
 	"github.com/stratummc/stratum/internal/audit"
 	"github.com/stratummc/stratum/internal/idgen"
+	"github.com/stratummc/stratum/internal/integration/lucy"
 	"github.com/stratummc/stratum/internal/project"
 	stratumerrors "github.com/stratummc/stratum/internal/stratumerr"
 )
@@ -151,6 +152,7 @@ func (s *Service) ImportFile(ctx context.Context, id, path, actor string) (artif
 	value.PayloadStatus = artifact.PayloadAvailable
 	value.PayloadImportedBy = actor
 	value.PayloadImportedAt = &importedAt
+	enrichJarCompatibility(ctx, &value, path)
 	if err := s.repository.SaveArtifact(ctx, value); err != nil {
 		return artifact.Artifact{}, err
 	}
@@ -184,10 +186,47 @@ func (s *Service) RegisterFile(ctx context.Context, id, name, path, uploader str
 		return artifact.Artifact{}, fmt.Errorf("hash artifact: %w", err)
 	}
 	value := artifact.Artifact{ID: id, Name: name, Type: kind, UploaderID: uploader, SHA256: hash, SizeBytes: size, PayloadStatus: artifact.PayloadAvailable, PayloadAlgorithm: "sha256", TargetMinecraftVersions: versions, LoaderCompatibility: loaders, Status: artifact.StatusPending, CreatedAt: s.now()}
+	enrichJarCompatibility(ctx, &value, path)
 	if err := s.repository.SaveArtifact(ctx, value); err != nil {
 		return artifact.Artifact{}, err
 	}
 	return value, nil
+}
+
+func enrichJarCompatibility(ctx context.Context, value *artifact.Artifact, path string) {
+	if value == nil || value.Type != artifact.TypeJar {
+		return
+	}
+	infos, err := lucy.NewArtifactService().Analyze(ctx, path)
+	if err != nil || len(infos) == 0 {
+		return
+	}
+	versions := make([]string, 0, len(infos))
+	loaders := make([]string, 0, len(infos))
+	for _, info := range infos {
+		if info.Platform != "" {
+			loaders = append(loaders, info.Platform)
+		}
+	}
+	value.TargetMinecraftVersions = dedupeStrings(append(value.TargetMinecraftVersions, versions...))
+	value.LoaderCompatibility = dedupeStrings(append(value.LoaderCompatibility, loaders...))
+}
+
+func dedupeStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+	return result
 }
 
 func (s *Service) auditCreated(ctx context.Context, value artifact.Artifact, actor string) error {

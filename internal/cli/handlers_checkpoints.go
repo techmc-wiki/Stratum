@@ -38,13 +38,16 @@ func createCheckpoint(ctx context.Context, store *filesystem.Store, agentClient 
 		return 2
 	}
 	var snapshot *checkpoint.RuntimeStatusSnapshot
+	lucyLockHash := ""
 	if hasAgentURL {
 		status, err := agentClient.GetSessionRuntimeStatus(ctx, *sessionID)
-		if err != nil {
-			return reportError(stderr, "capture checkpoint runtime status", err)
+		if err == nil {
+			value := checkpointRuntimeStatusSnapshot(status)
+			snapshot = &value
+			if status.EnvironmentManifest != nil {
+				lucyLockHash = status.EnvironmentManifest.LucyLockHash
+			}
 		}
-		value := checkpointRuntimeStatusSnapshot(status)
-		snapshot = &value
 	}
 	cp, err := checkpointsvc.Create(ctx, store, checkpointsvc.CreateRequest{
 		ID:                    *id,
@@ -53,6 +56,7 @@ func createCheckpoint(ctx context.Context, store *filesystem.Store, agentClient 
 		Notes:                 *notes,
 		ConsistencyLevel:      consistencyLevel,
 		RuntimeStatusSnapshot: snapshot,
+		LucyLockHash:          lucyLockHash,
 		AgentClient:           agentClient,
 	})
 	if err != nil {

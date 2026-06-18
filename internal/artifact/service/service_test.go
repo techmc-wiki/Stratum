@@ -1,6 +1,7 @@
 package service
 
 import (
+	"archive/zip"
 	"context"
 	"os"
 	"path/filepath"
@@ -43,6 +44,26 @@ func TestImportFileStoresBlobUpdatesPendingArtifactAndAudits(t *testing.T) {
 	}
 }
 
+func TestImportFileAnalyzesJAR(t *testing.T) {
+	store := artifactImportStore(t, artifact.StatusPending)
+	blobs, err := artifactblob.New(filepath.Join(t.TempDir(), "artifacts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := writeFabricJar(t, "fabric-artifact.jar")
+	service := NewWithBlobStore(store, blobs)
+	value, err := service.ImportFile(context.Background(), "artifact-1", path, "actor-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(value.LoaderCompatibility) == 0 {
+		t.Fatalf("LoaderCompatibility not populated: %+v", value)
+	}
+	if value.LoaderCompatibility[0] != "fabric" {
+		t.Fatalf("LoaderCompatibility=%+v", value.LoaderCompatibility)
+	}
+}
+
 func TestImportFileValidationIdempotencyAndConflict(t *testing.T) {
 	store := artifactImportStore(t, artifact.StatusPending)
 	blobs, err := artifactblob.New(filepath.Join(t.TempDir(), "artifacts"))
@@ -81,6 +102,22 @@ func TestImportFileValidationIdempotencyAndConflict(t *testing.T) {
 	}
 	if _, err := service.ImportFile(context.Background(), "artifact-1", t.TempDir(), "actor-1"); err == nil || !strings.Contains(err.Error(), "not a regular file") {
 		t.Fatalf("directory err=%v", err)
+	}
+}
+
+func TestRegisterFileAnalyzesJAR(t *testing.T) {
+	store := memory.New()
+	path := writeFabricJar(t, "registered-fabric.jar")
+	service := New(store)
+	value, err := service.RegisterFile(context.Background(), "artifact-1", "Artifact", path, "actor-1", artifact.TypeJar, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(value.LoaderCompatibility) == 0 {
+		t.Fatalf("LoaderCompatibility not populated: %+v", value)
+	}
+	if value.LoaderCompatibility[0] != "fabric" {
+		t.Fatalf("LoaderCompatibility=%+v", value.LoaderCompatibility)
 	}
 }
 
@@ -368,6 +405,31 @@ func writeArtifactFile(t *testing.T, name, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), name)
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeFabricJar(t *testing.T, name string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zipWriter := zip.NewWriter(file)
+	writer, err := zipWriter.Create("fabric.mod.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = writer.Write([]byte("{\"schemaVersion\":1,\"id\":\"testmod\",\"version\":\"1.0.0\",\"name\":\"Test Mod\",\"depends\":{\"minecraft\":\"1.17.1\"}}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := zipWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
 		t.Fatal(err)
 	}
 	return path

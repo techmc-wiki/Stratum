@@ -32,7 +32,7 @@ func TestCheckpointCreateCapturesAgentRuntimeStatus(t *testing.T) {
 		RuntimeRootExists: true, SessionRootExists: true,
 		EnvironmentManifest: &agent.EnvironmentManifestStatus{
 			Exists: true, Status: "prepared", EnvironmentID: "env-test", MinecraftVersion: "1.17.1",
-			LoaderType: "fabric", ServerCore: "carpet", RuntimeProfileID: "dummy-process",
+			LoaderType: "fabric", ServerCore: "carpet", RuntimeProfileID: "dummy-process", LucyLockHash: "hash123",
 		},
 		MCDRLayout:            &agent.MCDRLayoutStatus{MCDRRootExists: true, ManifestExists: true},
 		MaterializedArtifacts: &agent.MaterializedArtifactsStatus{ManifestExists: true, Count: 2},
@@ -61,6 +61,9 @@ func TestCheckpointCreateCapturesAgentRuntimeStatus(t *testing.T) {
 	if cp.RuntimeStatusSnapshot == nil || !cp.RuntimeStatusSnapshot.EnvironmentManifestExists || cp.RuntimeStatusSnapshot.ProcessState != "running" || cp.RuntimeStatusSnapshot.MaterializedArtifactsCount != 2 || cp.RuntimeStatusSnapshot.AppliedArtifactsCount != 1 {
 		t.Fatalf("runtime status snapshot = %+v", cp.RuntimeStatusSnapshot)
 	}
+	if cp.LucyLockHash != "hash123" {
+		t.Fatalf("LucyLockHash = %q, want hash123", cp.LucyLockHash)
+	}
 
 	stdout.Reset()
 	stderr.Reset()
@@ -74,7 +77,7 @@ func TestCheckpointCreateCapturesAgentRuntimeStatus(t *testing.T) {
 	}
 }
 
-func TestCheckpointRuntimeStatusFailureDoesNotPersist(t *testing.T) {
+func TestCheckpointRuntimeStatusFailureGracefullyCreatesMetadataOnly(t *testing.T) {
 	server := httptest.NewServer(httptransport.NewServer(checkpointRuntimeStatusAgent{AgentClient: local.NewFake(), err: errors.New("runtime status unavailable")}, "", nil).Handler())
 	defer server.Close()
 
@@ -84,24 +87,20 @@ func TestCheckpointRuntimeStatusFailureDoesNotPersist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := store.ListAuditEvents(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"--data-dir", dataDirectory, "--agent-url", server.URL, "checkpoints", "create", "--id", "checkpoint-failed", "--session", "session-1", "--actor", "actor-1"}, &stdout, &stderr)
-	if code == 0 || !strings.Contains(stderr.String(), "runtime status unavailable") {
+	if code != 0 {
 		t.Fatalf("create: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	if _, err := store.GetCheckpoint(context.Background(), "checkpoint-failed"); err == nil {
-		t.Fatal("checkpoint persisted after runtime status failure")
-	}
-	after, err := store.ListAuditEvents(context.Background())
+	cp, err := store.GetCheckpoint(context.Background(), "checkpoint-failed")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(after) != len(before) {
-		t.Fatalf("audit written after runtime status failure: before=%d after=%d", len(before), len(after))
+	if cp.RuntimeStatusSnapshot != nil {
+		t.Fatalf("runtime status snapshot = %+v, want nil", cp.RuntimeStatusSnapshot)
+	}
+	if cp.LucyLockHash != "" {
+		t.Fatalf("LucyLockHash = %q, want empty", cp.LucyLockHash)
 	}
 }
 
