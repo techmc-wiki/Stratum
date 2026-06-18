@@ -3,9 +3,11 @@ package process
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/integration/lucy"
@@ -101,6 +103,9 @@ func TestSetLucyAdapterEmbedded(t *testing.T) {
 	if result.Metadata["lucyAdapterConfigured"] != "true" {
 		t.Errorf("lucy adapter configured: got %q, want %q", result.Metadata["lucyAdapterConfigured"], "true")
 	}
+	if result.LucyResolutionStatus != "resolved" {
+		t.Errorf("lucy resolution status: got %q, want resolved", result.LucyResolutionStatus)
+	}
 }
 
 func TestMaterializationWritesManifestWithLucyMetadata(t *testing.T) {
@@ -162,13 +167,172 @@ func TestMaterializationDoesNotWriteLucyManifests(t *testing.T) {
 		t.Fatalf("materialize environment: %v", err)
 	}
 	sessionRoot := filepath.Join(root, "sessions", "session-no-lucy")
-	lucyYaml := filepath.Join(sessionRoot, "lucy.yaml")
+	lucyYaml := filepath.Join(sessionRoot, "config", "lucy.yaml")
 	if _, err := os.Stat(lucyYaml); err == nil {
 		t.Error("lucy.yaml should not exist")
 	}
-	lucyLock := filepath.Join(sessionRoot, "lucy-lock.yaml")
+	lucyLock := filepath.Join(sessionRoot, "config", "lucy-lock.yaml")
 	if _, err := os.Stat(lucyLock); err == nil {
 		t.Error("lucy-lock.yaml should not exist")
+	}
+}
+
+func TestMaterializeEnvironmentWithEmbeddedAdapterResolvesLock(t *testing.T) {
+	root := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := &fakeBackend{
+		plan: lucy.EnvironmentPlan{
+			Actions: []lucy.PlanAction{
+				{ActionType: lucy.ActionDownload, PackageID: "fabric-api", Target: "mods/fabric-api.jar", Hash: "abc", Size: 1},
+			},
+			Metadata: map[string]string{},
+		},
+		lock: lucy.EnvironmentLock{
+			LockID:      "lock-1",
+			LockHash:    "sha256:lockhash",
+			GeneratedAt: time.Now().UTC(),
+			Packages: []lucy.LockedPackage{
+				{ID: "fabric-api", Source: "modrinth", Name: "fabric-api", Version: "0.46.1", Hash: "abc", Size: 1},
+			},
+			ProviderMetadata: map[string]string{},
+		},
+	}
+	adapter, err := lucy.NewEmbeddedAdapter(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervisor.SetLucyAdapter(adapter)
+
+	result, err := supervisor.MaterializeEnvironment(context.Background(), testMaterializationRequest("session-resolved"))
+	if err != nil {
+		t.Fatalf("materialize environment: %v", err)
+	}
+	if result.Status != "prepared" {
+		t.Errorf("status: got %q, want prepared", result.Status)
+	}
+	if result.LucyResolutionStatus != "resolved" {
+		t.Errorf("lucy status: got %q, want resolved", result.LucyResolutionStatus)
+	}
+	if result.LucyLockHash != "sha256:lockhash" {
+		t.Errorf("lock hash: got %q, want sha256:lockhash", result.LucyLockHash)
+	}
+	lockPath := filepath.Join(root, "sessions", "session-resolved", "config", "lucy-lock.yaml")
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("lucy-lock.yaml not written: %v", err)
+	}
+	manifestPath := result.Metadata["manifestPath"]
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read materialization manifest: %v", err)
+	}
+	var manifest map[string]interface{}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("unmarshal materialization manifest: %v", err)
+	}
+	if manifest["lucyResolutionStatus"] != "resolved" {
+		t.Errorf("manifest lucyResolutionStatus: got %v, want resolved", manifest["lucyResolutionStatus"])
+	}
+}
+
+func TestMaterializeEnvironmentWithEmbeddedAdapterPlanErrorDegradesGracefully(t *testing.T) {
+	root := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := lucy.NewEmbeddedAdapter(&fakeBackend{err: errors.New("planner unavailable")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervisor.SetLucyAdapter(adapter)
+
+	result, err := supervisor.MaterializeEnvironment(context.Background(), testMaterializationRequest("session-plan-error"))
+	if err != nil {
+		t.Fatalf("materialize environment: %v", err)
+	}
+	if result.Status != "prepared" {
+		t.Errorf("status: got %q, want prepared", result.Status)
+	}
+	if result.LucyResolutionStatus != "failed" {
+		t.Errorf("lucy status: got %q, want failed", result.LucyResolutionStatus)
+	}
+	if result.Metadata["lucyResolutionError"] == "" {
+		t.Error("expected lucyResolutionError metadata")
+	}
+	lockPath := filepath.Join(root, "sessions", "session-plan-error", "config", "lucy-lock.yaml")
+	if _, err := os.Stat(lockPath); err == nil {
+		t.Fatal("lucy-lock.yaml should not be written after plan failure")
+	}
+}
+
+func TestMaterializeEnvironmentWithNoopAdapterStillDoesNotResolve(t *testing.T) {
+	root := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := supervisor.MaterializeEnvironment(context.Background(), testMaterializationRequest("session-noop-stable"))
+	if err != nil {
+		t.Fatalf("materialize environment: %v", err)
+	}
+	if result.LucyResolutionStatus != "not_requested" {
+		t.Errorf("lucy status: got %q, want not_requested", result.LucyResolutionStatus)
+	}
+	if result.LucyLockHash != "" || result.LucyManifestPath != "" || result.LucyLockPath != "" {
+		t.Errorf("noop result should not include lucy paths or lock hash: %#v", result)
+	}
+}
+
+func TestMaterializeEnvironmentWritesLucyManifest(t *testing.T) {
+	root := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := lucy.NewEmbeddedAdapter(&fakeBackend{
+		plan: lucy.EnvironmentPlan{Metadata: map[string]string{}},
+		lock: lucy.EnvironmentLock{LockID: "lock-1", LockHash: "hash", GeneratedAt: time.Now().UTC(), ProviderMetadata: map[string]string{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervisor.SetLucyAdapter(adapter)
+
+	result, err := supervisor.MaterializeEnvironment(context.Background(), testMaterializationRequest("session-lucy-manifest"))
+	if err != nil {
+		t.Fatalf("materialize environment: %v", err)
+	}
+	lucyManifestPath := filepath.Join(root, result.LucyManifestPath)
+	if _, err := os.Stat(lucyManifestPath); err != nil {
+		t.Fatalf("lucy.yaml not written: %v", err)
+	}
+	data, err := os.ReadFile(lucyManifestPath)
+	if err != nil {
+		t.Fatalf("read lucy.yaml: %v", err)
+	}
+	if !json.Valid(data) && len(data) == 0 {
+		t.Fatal("lucy.yaml should not be empty")
+	}
+}
+
+func testMaterializationRequest(sessionID string) agent.EnvironmentMaterializationRequest {
+	return agent.EnvironmentMaterializationRequest{
+		SessionID:              sessionID,
+		EnvironmentID:          "env-117-fabric",
+		EnvironmentName:        "1.17 Fabric Carpet",
+		MinecraftVersion:       "1.17.1",
+		JavaVersion:            "17",
+		LoaderType:             "fabric",
+		LoaderVersion:          "0.12.0",
+		ServerCore:             "carpet",
+		MCDRRequired:           true,
+		CarpetRequired:         true,
+		RuntimeProfileID:       "dummy-process",
+		RuntimeProfileRequired: true,
+		ActorID:                "alice",
 	}
 }
 

@@ -617,6 +617,14 @@ func safeName(value string) string {
 	return value
 }
 
+func runtimeRelativePath(runtimeRoot, path string) string {
+	rel, err := filepath.Rel(runtimeRoot, path)
+	if err != nil {
+		return path
+	}
+	return rel
+}
+
 func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.EnvironmentMaterializationRequest) (agent.EnvironmentMaterializationResult, error) {
 	s.mu.RLock()
 	adapter := s.lucyAdapter
@@ -646,6 +654,78 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 			return agent.EnvironmentMaterializationResult{}, fmt.Errorf("create directory %s: %w", dir, err)
 		}
 	}
+	lucyConfigured := adapter != nil && adapterMode != "noop"
+	lucyResolutionStatus := "not_requested"
+	lucyLockHash := ""
+	lucyManifestRuntimePath := ""
+	lucyLockRuntimePath := ""
+	lucyMetadata := map[string]string{}
+	if lucyConfigured {
+		lucyResolutionStatus = "resolved"
+		lucyManifestPath := filepath.Join(configDir, "lucy.yaml")
+		lucyManifestRuntimePath = runtimeRelativePath(s.runtimeRoot, lucyManifestPath)
+		defaultManifest := lucy.CreateDefault(request.MinecraftVersion, request.LoaderType, request.LoaderVersion, request.MCDRRequired)
+		if err := lucy.NewManifestService(configDir).Write(ctx, defaultManifest); err != nil {
+			lucyResolutionStatus = "failed"
+			lucyMetadata["lucyResolutionError"] = err.Error()
+			lucyMetadata["lucyResolutionErrorCode"] = string(lucy.ClassifyError(err))
+		} else {
+			lucyMetadata["lucyManifestPath"] = lucyManifestRuntimePath
+			spec := lucy.EnvironmentSpec{
+				EnvironmentID:    request.EnvironmentID,
+				MinecraftVersion: request.MinecraftVersion,
+				JavaVersion:      request.JavaVersion,
+				LoaderType:       request.LoaderType,
+				LoaderVersion:    request.LoaderVersion,
+				ServerCore:       request.ServerCore,
+				CarpetRequired:   request.CarpetRequired,
+				MCDRRequired:     request.MCDRRequired,
+				RuntimeProfileID: request.RuntimeProfileID,
+				Packages:         request.Packages,
+				LocalArtifacts:   request.LocalArtifacts,
+				Metadata: map[string]string{
+					"lucyManifestRef": request.LucyManifestRef,
+					"lucyLockRef":     request.LucyLockRef,
+				},
+			}
+			plan, err := adapter.PlanEnvironment(ctx, lucy.PlanEnvironmentRequest{Spec: spec})
+			if err != nil {
+				lucyResolutionStatus = "failed"
+				lucyMetadata["lucyResolutionError"] = err.Error()
+				lucyMetadata["lucyResolutionErrorCode"] = string(lucy.ClassifyError(err))
+			} else {
+				lucyMetadata["lucyPlanActionCount"] = fmt.Sprintf("%d", len(plan.Actions))
+				lucyMetadata["lucyPlanWarningCount"] = fmt.Sprintf("%d", len(plan.Warnings))
+				lucyMetadata["lucyPlanErrorCount"] = fmt.Sprintf("%d", len(plan.Errors))
+				lucyMetadata["lucyPlanRequiresLockUpdate"] = fmt.Sprintf("%t", plan.RequiresLockUpdate)
+				lock, err := adapter.LockEnvironment(ctx, lucy.LockEnvironmentRequest{Spec: spec})
+				if err != nil {
+					lucyResolutionStatus = "failed"
+					lucyMetadata["lucyResolutionError"] = err.Error()
+					lucyMetadata["lucyResolutionErrorCode"] = string(lucy.ClassifyError(err))
+				} else {
+					lucyLockPath := filepath.Join(configDir, "lucy-lock.yaml")
+					lucyLockRuntimePath = runtimeRelativePath(s.runtimeRoot, lucyLockPath)
+					lockJSON, err := json.MarshalIndent(lock, "", "  ")
+					if err != nil {
+						lucyResolutionStatus = "failed"
+						lucyMetadata["lucyResolutionError"] = err.Error()
+						lucyMetadata["lucyResolutionErrorCode"] = string(lucy.ClassifyError(err))
+					} else if err := os.WriteFile(lucyLockPath, lockJSON, 0o644); err != nil {
+						lucyResolutionStatus = "failed"
+						lucyMetadata["lucyResolutionError"] = err.Error()
+						lucyMetadata["lucyResolutionErrorCode"] = string(lucy.ClassifyError(err))
+					} else {
+						lucyLockHash = lock.LockHash
+						lucyMetadata["lucyLockPath"] = lucyLockRuntimePath
+						lucyMetadata["lucyLockHash"] = lucyLockHash
+						lucyMetadata["lucyLockPackageCount"] = fmt.Sprintf("%d", len(lock.Packages))
+						lucyMetadata["lucyLockArtifactCount"] = fmt.Sprintf("%d", len(lock.Artifacts))
+					}
+				}
+			}
+		}
+	}
 	manifestPath := filepath.Join(configDir, "environment-materialization.json")
 	manifest := map[string]interface{}{
 		"session_id":               request.SessionID,
@@ -663,10 +743,17 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 		"materialized_at":          time.Now().UTC().Format(time.RFC3339),
 		"status":                   "prepared",
 		"prepared_directories":     directories,
-		"lucy_adapter_configured":  adapter != nil && adapterMode != "noop",
+		"lucy_adapter_configured":  lucyConfigured,
 		"lucy_adapter_mode":        adapterMode,
-		"lucy_resolution_status":   "not_requested",
+		"lucy_resolution_status":   lucyResolutionStatus,
+		"lucyResolutionStatus":     lucyResolutionStatus,
+		"lucyLockHash":             lucyLockHash,
+		"lucyManifestPath":         lucyManifestRuntimePath,
+		"lucyLockPath":             lucyLockRuntimePath,
 		"notes":                    "Environment materialization prepared directories only; it did not install Java, Minecraft, Fabric, Carpet, Lucy, MCDR, or start any runtime.",
+	}
+	for key, value := range lucyMetadata {
+		manifest[key] = value
 	}
 	manifestJSON, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -679,8 +766,11 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 		"manifestPath":          manifestPath,
 		"sessionRoot":           sessionRoot,
 		"lucyAdapterMode":       adapterMode,
-		"lucyResolutionStatus":  "not_requested",
-		"lucyAdapterConfigured": fmt.Sprintf("%t", adapter != nil && adapterMode != "noop"),
+		"lucyResolutionStatus":  lucyResolutionStatus,
+		"lucyAdapterConfigured": fmt.Sprintf("%t", lucyConfigured),
+	}
+	for key, value := range lucyMetadata {
+		metadata[key] = value
 	}
 	result := agent.EnvironmentMaterializationResult{
 		SessionID:              request.SessionID,
@@ -695,6 +785,10 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 		CarpetRequired:         request.CarpetRequired,
 		RuntimeProfileID:       request.RuntimeProfileID,
 		RuntimeProfileRequired: request.RuntimeProfileRequired,
+		LucyResolutionStatus:   lucyResolutionStatus,
+		LucyLockHash:           lucyLockHash,
+		LucyManifestPath:       lucyManifestRuntimePath,
+		LucyLockPath:           lucyLockRuntimePath,
 		MaterializedAt:         time.Now().UTC(),
 		Status:                 "prepared",
 		Directories:            directories,

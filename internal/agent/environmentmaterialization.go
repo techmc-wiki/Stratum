@@ -1,6 +1,10 @@
 package agent
 
-import "time"
+import (
+	"time"
+
+	"github.com/stratummc/stratum/internal/integration/lucy"
+)
 
 type EnvironmentMaterializationRequest struct {
 	SessionID              string
@@ -13,6 +17,10 @@ type EnvironmentMaterializationRequest struct {
 	ServerCore             string
 	MCDRRequired           bool
 	CarpetRequired         bool
+	LucyManifestRef        string
+	LucyLockRef            string
+	Packages               []lucy.PackageRef
+	LocalArtifacts         []lucy.LocalArtifactRef
 	RuntimeProfileID       string
 	RuntimeProfileRequired bool
 	ActorID                string
@@ -31,6 +39,10 @@ type EnvironmentMaterializationResult struct {
 	CarpetRequired         bool              `json:"carpetRequired"`
 	RuntimeProfileID       string            `json:"runtimeProfileId"`
 	RuntimeProfileRequired bool              `json:"runtimeProfileRequired"`
+	LucyResolutionStatus   string            `json:"lucyResolutionStatus"`
+	LucyLockHash           string            `json:"lucyLockHash,omitempty"`
+	LucyManifestPath       string            `json:"lucyManifestPath,omitempty"`
+	LucyLockPath           string            `json:"lucyLockPath,omitempty"`
 	MaterializedAt         time.Time         `json:"materializedAt"`
 	Status                 string            `json:"status"`
 	Directories            []string          `json:"directories"`
