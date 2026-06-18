@@ -663,7 +663,14 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 	lucyInstalledCount := 0
 	lucyFailedCount := 0
 	lucyInstallTotalSize := int64(0)
+	lucyIntegrityStatus := "not_checked"
+	lucyIntegrityOK := true
+	lucyIntegrityMissing := []string{}
+	lucyIntegrityCorrupt := []string{}
+	lucyIntegrityErrors := []string{}
+	lucyIntegrityChecked := 0
 	var resolvedLock *lucy.EnvironmentLock
+	var resolvedSpec *lucy.EnvironmentSpec
 	lucyMetadata := map[string]string{}
 	if lucyConfigured {
 		lucyResolutionStatus = "resolved"
@@ -693,6 +700,7 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 					"lucyLockRef":     request.LucyLockRef,
 				},
 			}
+			resolvedSpec = &spec
 			plan, err := adapter.PlanEnvironment(ctx, lucy.PlanEnvironmentRequest{Spec: spec})
 			if err != nil {
 				lucyResolutionStatus = "failed"
@@ -757,6 +765,48 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 			}
 		}
 	}
+	if lucyConfigured && lucyResolutionStatus == "resolved" && resolvedLock != nil && len(resolvedLock.Packages) > 0 {
+		if resolvedSpec != nil {
+			statusResult, err := adapter.CheckStatus(ctx, lucy.StatusRequest{Spec: *resolvedSpec, Lock: resolvedLock})
+			if err != nil {
+				lucyMetadata["lucyCheckStatusError"] = err.Error()
+			} else {
+				lucyMetadata["lucyCheckStatusMissing"] = fmt.Sprintf("%d", len(statusResult.Missing))
+				lucyMetadata["lucyCheckStatusDrifted"] = fmt.Sprintf("%d", len(statusResult.Drifted))
+			}
+		}
+		integrityResult, err := adapter.VerifyIntegrity(ctx, lucy.IntegrityRequest{
+			LockPath: filepath.Join(configDir, "lucy-lock.yaml"),
+			ModsDir:  filepath.Join(sessionRoot, "mods"),
+		})
+		if err != nil {
+			lucyIntegrityStatus = "error"
+			lucyIntegrityOK = false
+			lucyIntegrityErrors = []string{err.Error()}
+			lucyMetadata["lucyIntegrityStatus"] = lucyIntegrityStatus
+			lucyMetadata["lucyIntegrityError"] = err.Error()
+			lucyMetadata["lucyIntegrityErrorCode"] = string(lucy.ClassifyError(err))
+		} else {
+			lucyIntegrityStatus = integrityResult.Status
+			lucyIntegrityOK = integrityResult.OK
+			lucyIntegrityMissing = append([]string(nil), integrityResult.Missing...)
+			lucyIntegrityCorrupt = append([]string(nil), integrityResult.Corrupt...)
+			lucyIntegrityErrors = append([]string(nil), integrityResult.Errors...)
+			lucyIntegrityChecked = integrityResult.Checked
+			lucyMetadata["lucyIntegrityStatus"] = lucyIntegrityStatus
+			lucyMetadata["lucyIntegrityChecked"] = fmt.Sprintf("%d", integrityResult.Checked)
+			lucyMetadata["lucyIntegrityMissing"] = fmt.Sprintf("%d", len(integrityResult.Missing))
+			lucyMetadata["lucyIntegrityCorrupt"] = fmt.Sprintf("%d", len(integrityResult.Corrupt))
+		}
+	}
+	if lucyConfigured && lucyResolutionStatus == "resolved" && resolvedLock != nil && len(resolvedLock.Packages) == 0 {
+		lucyIntegrityStatus = "ok"
+		lucyIntegrityOK = true
+		lucyMetadata["lucyIntegrityStatus"] = lucyIntegrityStatus
+		lucyMetadata["lucyIntegrityChecked"] = "0"
+		lucyMetadata["lucyIntegrityMissing"] = "0"
+		lucyMetadata["lucyIntegrityCorrupt"] = "0"
+	}
 	manifestPath := filepath.Join(configDir, "environment-materialization.json")
 	manifest := map[string]interface{}{
 		"session_id":               request.SessionID,
@@ -785,6 +835,10 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 		"lucyInstalledCount":       lucyInstalledCount,
 		"lucyFailedCount":          lucyFailedCount,
 		"lucyInstallTotalSize":     lucyInstallTotalSize,
+		"lucyIntegrityStatus":      lucyIntegrityStatus,
+		"lucyIntegrityChecked":     lucyIntegrityChecked,
+		"lucyIntegrityMissing":     len(lucyIntegrityMissing),
+		"lucyIntegrityCorrupt":     len(lucyIntegrityCorrupt),
 		"notes":                    "Environment materialization prepared directories only; it did not install Java, Minecraft, Fabric, Carpet, Lucy, MCDR, or start any runtime.",
 	}
 	for key, value := range lucyMetadata {
@@ -828,10 +882,14 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 		LucyInstalledCount:     lucyInstalledCount,
 		LucyFailedCount:        lucyFailedCount,
 		LucyInstallTotalSize:   lucyInstallTotalSize,
+		LucyIntegrityStatus:    lucyIntegrityStatus,
 		MaterializedAt:         time.Now().UTC(),
 		Status:                 "prepared",
 		Directories:            directories,
 		Metadata:               metadata,
+	}
+	if !lucyIntegrityOK && lucyConfigured {
+		return agent.EnvironmentMaterializationResult{}, agent.NewEnvironmentIntegrityError(request.SessionID, lucyIntegrityStatus, lucyIntegrityMissing, lucyIntegrityCorrupt, lucyIntegrityErrors)
 	}
 	return result, nil
 }

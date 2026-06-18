@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -193,12 +194,9 @@ func TestMaterializeEnvironmentWithEmbeddedAdapterResolvesLock(t *testing.T) {
 			Metadata: map[string]string{},
 		},
 		lock: lucy.EnvironmentLock{
-			LockID:      "lock-1",
-			LockHash:    "sha256:lockhash",
-			GeneratedAt: time.Now().UTC(),
-			Packages: []lucy.LockedPackage{
-				{ID: "fabric-api", Source: "modrinth", Name: "fabric-api", Version: "0.46.1", Hash: "abc", Size: 1},
-			},
+			LockID:           "lock-1",
+			LockHash:         "sha256:lockhash",
+			GeneratedAt:      time.Now().UTC(),
 			ProviderMetadata: map[string]string{},
 		},
 	}
@@ -404,21 +402,16 @@ func TestMaterializeEnvironmentWithEmbeddedAdapterInstallFailsGracefully(t *test
 	}
 	supervisor.SetLucyAdapter(adapter)
 
-	result, err := supervisor.MaterializeEnvironment(context.Background(), testMaterializationRequest("session-install-fail"))
-	if err != nil {
-		t.Fatalf("materialize environment: %v", err)
+	_, err = supervisor.MaterializeEnvironment(context.Background(), testMaterializationRequest("session-install-fail"))
+	if err == nil {
+		t.Fatal("expected integrity error after failed install")
 	}
-	if result.Status != "prepared" {
-		t.Errorf("status: got %q, want prepared", result.Status)
+	var integrityErr *agent.EnvironmentIntegrityError
+	if !errors.As(err, &integrityErr) {
+		t.Fatalf("expected EnvironmentIntegrityError, got %T: %v", err, err)
 	}
-	if result.LucyResolutionStatus != "resolved" {
-		t.Errorf("resolution status: got %q, want resolved", result.LucyResolutionStatus)
-	}
-	if result.LucyInstallStatus != "failed" {
-		t.Errorf("install status: got %q, want failed", result.LucyInstallStatus)
-	}
-	if result.Metadata["lucyInstallError"] == "" {
-		t.Error("expected lucyInstallError metadata")
+	if integrityErr.Status != "missing_files" {
+		t.Fatalf("integrity status: got %q, want missing_files", integrityErr.Status)
 	}
 }
 
@@ -471,6 +464,162 @@ func TestMaterializeEnvironmentWithEmptyLockSkipsInstall(t *testing.T) {
 	}
 }
 
+func TestMaterializeEnvironmentWithIntegrityPass(t *testing.T) {
+	root := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("valid jar")
+	hashBytes := sha256.Sum256(content)
+	hash := hex.EncodeToString(hashBytes[:])
+	backend := &fakeBackend{
+		plan: lucy.EnvironmentPlan{Metadata: map[string]string{}},
+		lock: lucy.EnvironmentLock{
+			LockID:      "lock-1",
+			LockHash:    "lockhash",
+			GeneratedAt: time.Now().UTC(),
+			Packages: []lucy.LockedPackage{
+				{ID: "fabric/carpet", Source: "modrinth", Name: "carpet", Version: "1.4.83", Hash: hash, Size: int64(len(content))},
+			},
+			ProviderMetadata: map[string]string{},
+		},
+		installContent: content,
+	}
+	adapter, err := lucy.NewEmbeddedAdapter(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervisor.SetLucyAdapter(adapter)
+	result, err := supervisor.MaterializeEnvironment(context.Background(), testMaterializationRequest("session-integrity-ok"))
+	if err != nil {
+		t.Fatalf("materialize environment: %v", err)
+	}
+	if result.LucyIntegrityStatus != "ok" {
+		t.Errorf("integrity status: got %q, want ok", result.LucyIntegrityStatus)
+	}
+	if result.Status != "prepared" {
+		t.Errorf("status: got %q, want prepared", result.Status)
+	}
+}
+
+func TestMaterializeEnvironmentWithIntegrityFailRejectsStart(t *testing.T) {
+	root := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := &fakeBackend{
+		plan: lucy.EnvironmentPlan{Metadata: map[string]string{}},
+		lock: lucy.EnvironmentLock{
+			LockID:      "lock-1",
+			LockHash:    "lockhash",
+			GeneratedAt: time.Now().UTC(),
+			Packages: []lucy.LockedPackage{
+				{ID: "fabric/carpet", Source: "modrinth", Name: "carpet", Version: "1.4.83", Hash: strings.Repeat("0", 64), Size: 9},
+			},
+			ProviderMetadata: map[string]string{},
+		},
+		installContent: []byte("wrong jar"),
+	}
+	adapter, err := lucy.NewEmbeddedAdapter(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervisor.SetLucyAdapter(adapter)
+	_, err = supervisor.MaterializeEnvironment(context.Background(), testMaterializationRequest("session-integrity-bad"))
+	if err == nil {
+		t.Fatal("expected integrity error")
+	}
+	var integrityErr *agent.EnvironmentIntegrityError
+	if !errors.As(err, &integrityErr) {
+		t.Fatalf("expected EnvironmentIntegrityError, got %T: %v", err, err)
+	}
+	if integrityErr.Status != "hash_mismatch" || len(integrityErr.Corrupt) != 1 {
+		t.Fatalf("unexpected integrity error: %#v", integrityErr)
+	}
+	modPath := filepath.Join(root, "sessions", "session-integrity-bad", "mods", "carpet-1.4.83.jar")
+	if _, statErr := os.Stat(modPath); statErr != nil {
+		t.Fatalf("bad mod file should exist for diagnosis: %v", statErr)
+	}
+}
+
+func TestMaterializeEnvironmentWithIntegrityMissingFileRejectsStart(t *testing.T) {
+	root := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := &fakeBackend{
+		plan: lucy.EnvironmentPlan{Metadata: map[string]string{}},
+		lock: lucy.EnvironmentLock{
+			LockID:      "lock-1",
+			LockHash:    "lockhash",
+			GeneratedAt: time.Now().UTC(),
+			Packages: []lucy.LockedPackage{
+				{ID: "fabric/carpet", Source: "modrinth", Name: "carpet", Version: "1.4.83", Hash: strings.Repeat("1", 64), Size: 1},
+			},
+			ProviderMetadata: map[string]string{},
+		},
+		installResult: lucy.InstallPackagesResult{Installed: []lucy.InstalledPackage{}, Failed: []lucy.FailedPackage{}, Status: "ok", TotalSize: 0},
+	}
+	adapter, err := lucy.NewEmbeddedAdapter(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervisor.SetLucyAdapter(adapter)
+	_, err = supervisor.MaterializeEnvironment(context.Background(), testMaterializationRequest("session-integrity-missing"))
+	if err == nil {
+		t.Fatal("expected integrity error")
+	}
+	var integrityErr *agent.EnvironmentIntegrityError
+	if !errors.As(err, &integrityErr) {
+		t.Fatalf("expected EnvironmentIntegrityError, got %T: %v", err, err)
+	}
+	if integrityErr.Status != "missing_files" || len(integrityErr.Missing) != 1 {
+		t.Fatalf("unexpected integrity error: %#v", integrityErr)
+	}
+}
+
+func TestMaterializeEnvironmentWithNoopAdapterIntegrityNotChecked(t *testing.T) {
+	root := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := supervisor.MaterializeEnvironment(context.Background(), testMaterializationRequest("session-integrity-noop"))
+	if err != nil {
+		t.Fatalf("materialize environment: %v", err)
+	}
+	if result.LucyIntegrityStatus != "not_checked" {
+		t.Errorf("integrity status: got %q, want not_checked", result.LucyIntegrityStatus)
+	}
+}
+
+func TestMaterializeEnvironmentWithIntegrityOnLockOnlyNoInstall(t *testing.T) {
+	root := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := &fakeBackend{
+		plan: lucy.EnvironmentPlan{Metadata: map[string]string{}},
+		lock: lucy.EnvironmentLock{LockID: "lock-1", LockHash: "lockhash", GeneratedAt: time.Now().UTC(), ProviderMetadata: map[string]string{}},
+	}
+	adapter, err := lucy.NewEmbeddedAdapter(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervisor.SetLucyAdapter(adapter)
+	result, err := supervisor.MaterializeEnvironment(context.Background(), testMaterializationRequest("session-integrity-empty-lock"))
+	if err != nil {
+		t.Fatalf("materialize environment: %v", err)
+	}
+	if result.LucyIntegrityStatus != "ok" {
+		t.Errorf("integrity status: got %q, want ok", result.LucyIntegrityStatus)
+	}
+}
+
 func testMaterializationRequest(sessionID string) agent.EnvironmentMaterializationRequest {
 	return agent.EnvironmentMaterializationRequest{
 		SessionID:              sessionID,
@@ -490,15 +639,17 @@ func testMaterializationRequest(sessionID string) agent.EnvironmentMaterializati
 }
 
 type fakeBackend struct {
-	caps           lucy.Capabilities
-	plan           lucy.EnvironmentPlan
-	lock           lucy.EnvironmentLock
-	status         lucy.EnvironmentStatus
-	installResult  lucy.InstallPackagesResult
-	installErr     error
-	installContent []byte
-	installCalled  bool
-	err            error
+	caps            lucy.Capabilities
+	plan            lucy.EnvironmentPlan
+	lock            lucy.EnvironmentLock
+	status          lucy.EnvironmentStatus
+	installResult   lucy.InstallPackagesResult
+	installErr      error
+	installContent  []byte
+	installCalled   bool
+	integrityResult lucy.IntegrityResult
+	integrityErr    error
+	err             error
 }
 
 func (f *fakeBackend) Capabilities(_ context.Context) (lucy.Capabilities, error) {
@@ -540,4 +691,14 @@ func (f *fakeBackend) Install(_ context.Context, req lucy.InstallPackagesRequest
 		total += int64(len(content))
 	}
 	return lucy.InstallPackagesResult{Installed: installed, Failed: []lucy.FailedPackage{}, Status: "ok", TotalSize: total}, f.err
+}
+
+func (f *fakeBackend) VerifyIntegrity(ctx context.Context, req lucy.IntegrityRequest) (lucy.IntegrityResult, error) {
+	if f.integrityErr != nil {
+		return lucy.IntegrityResult{}, f.integrityErr
+	}
+	if f.integrityResult.Status != "" {
+		return f.integrityResult, f.err
+	}
+	return lucy.NewProbeService(req.ModsDir).VerifyIntegrityFromLock(ctx, req.LockPath, req.ModsDir)
 }
