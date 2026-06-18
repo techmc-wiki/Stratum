@@ -94,6 +94,7 @@ func newRootCommand(runtime *commandRuntime) *cobra.Command {
 	cmd.AddCommand(newOperationsCommand())
 	cmd.AddCommand(newRuntimeObservationsCommand())
 	cmd.AddCommand(newAgentsCommand())
+	cmd.AddCommand(newLucyCommand())
 	return cmd
 }
 
