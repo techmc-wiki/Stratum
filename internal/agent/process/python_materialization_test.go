@@ -2,10 +2,15 @@ package process
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stratummc/stratum/internal/agent"
+	agentjava "github.com/stratummc/stratum/internal/agent/java"
 	agentpython "github.com/stratummc/stratum/internal/agent/python"
+	"github.com/stratummc/stratum/internal/agent/serverjar"
 )
 
 type fakePythonDetector struct{}
@@ -26,6 +31,34 @@ func (fakePythonManager) InstallMCDR(context.Context, agentpython.InstallMCDRReq
 
 func (fakePythonManager) VerifyMCDR(context.Context, agentpython.VenvResult) (string, error) {
 	return "MCDReforged v2.15.7", nil
+}
+
+type fakeJavaDetector struct{}
+
+func (fakeJavaDetector) SelectForMinecraftVersion(_ context.Context, _ string) (agentjava.Installation, error) {
+	return agentjava.Installation{Version: "17.0.10", Major: 17, ExecutablePath: "/usr/bin/java17", Home: "/usr/lib/jvm/java17"}, nil
+}
+
+type fakeServerJarDeployer struct {
+	root string
+}
+
+func (d fakeServerJarDeployer) Deploy(_ context.Context, req serverjar.DeployRequest) (serverjar.DeployResult, error) {
+	if req.ServerCore == "error" {
+		return serverjar.DeployResult{}, fmt.Errorf("download failed")
+	}
+	jarName := "test-server.jar"
+	if req.ServerCore == "fabric" {
+		jarName = "fabric-server-" + req.MinecraftVersion + "-fat.jar"
+	}
+	target := filepath.Join(req.TargetDir, jarName)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return serverjar.DeployResult{}, err
+	}
+	if err := os.WriteFile(target, []byte("jar-content"), 0o644); err != nil {
+		return serverjar.DeployResult{}, err
+	}
+	return serverjar.DeployResult{DeployedPath: target, JarName: jarName, SHA256: "abc123", SizeBytes: 42, Source: "test"}, nil
 }
 
 func TestMaterializeEnvironmentPreparesMCDRPythonRuntime(t *testing.T) {
@@ -60,5 +93,89 @@ func TestMaterializeEnvironmentPreparesMCDRPythonRuntime(t *testing.T) {
 	}
 	if result.Metadata["mcdrExecutable"] == "" || result.Metadata["mcdrVenvPath"] == "" {
 		t.Fatalf("missing MCDR runtime metadata: %+v", result.Metadata)
+	}
+}
+
+func TestMaterializeEnvironmentJavaAndServerJar(t *testing.T) {
+	root := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervisor.SetJavaAndServerJarRuntime(fakeJavaDetector{}, fakeServerJarDeployer{root: root})
+
+	result, err := supervisor.MaterializeEnvironment(context.Background(), agent.EnvironmentMaterializationRequest{
+		SessionID:        "session-java-jar",
+		EnvironmentID:    "env-fabric",
+		EnvironmentName:  "Fabric",
+		MinecraftVersion: "1.17.1",
+		JavaVersion:      "16",
+		LoaderType:       "fabric",
+		LoaderVersion:    "0.12.0",
+		ServerCore:       "fabric",
+		ActorID:          "alice",
+	})
+	if err != nil {
+		t.Fatalf("materialize environment: %v", err)
+	}
+	if result.Metadata["javaDetectionStatus"] != "ok" {
+		t.Fatalf("java metadata=%+v", result.Metadata)
+	}
+	if result.Metadata["javaExecutable"] != "/usr/bin/java17" {
+		t.Fatalf("java executable: %q", result.Metadata["javaExecutable"])
+	}
+	if result.Metadata["serverJarDeployStatus"] != "ok" {
+		t.Fatalf("server jar metadata=%+v", result.Metadata)
+	}
+	if result.Metadata["serverJarName"] == "" {
+		t.Fatalf("missing server jar name")
+	}
+}
+
+func TestMaterializeEnvironmentServerJarFailureNonFatal(t *testing.T) {
+	root := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervisor.SetJavaAndServerJarRuntime(fakeJavaDetector{}, fakeServerJarDeployer{root: root})
+
+	result, err := supervisor.MaterializeEnvironment(context.Background(), agent.EnvironmentMaterializationRequest{
+		SessionID:        "session-fail",
+		EnvironmentID:    "env-fail",
+		EnvironmentName:  "Fail",
+		MinecraftVersion: "1.17.1",
+		ServerCore:       "error",
+		ActorID:          "alice",
+	})
+	if err != nil {
+		t.Fatalf("materialize should not fail on server jar error: %v", err)
+	}
+	if result.Metadata["serverJarDeployStatus"] != "failed" {
+		t.Fatalf("expected server jar deploy failure: %+v", result.Metadata)
+	}
+}
+
+func TestMaterializeEnvironmentSkipsServerJarForCustom(t *testing.T) {
+	root := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervisor.SetJavaAndServerJarRuntime(fakeJavaDetector{}, fakeServerJarDeployer{root: root})
+
+	result, err := supervisor.MaterializeEnvironment(context.Background(), agent.EnvironmentMaterializationRequest{
+		SessionID:        "session-custom",
+		EnvironmentID:    "env-custom",
+		EnvironmentName:  "Custom",
+		MinecraftVersion: "1.17.1",
+		ServerCore:       "custom",
+		ActorID:          "alice",
+	})
+	if err != nil {
+		t.Fatalf("materialize environment: %v", err)
+	}
+	if result.Metadata["serverJarDeployStatus"] == "ok" {
+		t.Fatalf("should skip server jar for custom core: %+v", result.Metadata)
 	}
 }

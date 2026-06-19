@@ -15,8 +15,10 @@ import (
 	"time"
 
 	"github.com/stratummc/stratum/internal/agent"
+	agentjava "github.com/stratummc/stratum/internal/agent/java"
 	agentpython "github.com/stratummc/stratum/internal/agent/python"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
+	"github.com/stratummc/stratum/internal/agent/serverjar"
 	"github.com/stratummc/stratum/internal/integration/lucy"
 )
 
@@ -140,16 +142,18 @@ type managedProcess struct {
 }
 
 type Supervisor struct {
-	mu             sync.RWMutex
-	agentID        string
-	runtimeRoot    string
-	now            func() time.Time
-	processes      map[string]*managedProcess
-	sequence       uint64
-	maxLogBytes    int
-	lucyAdapter    lucy.Adapter
-	pythonDetector pythonRuntimeDetector
-	pythonManager  pythonEnvironmentManager
+	mu                sync.RWMutex
+	agentID           string
+	runtimeRoot       string
+	now               func() time.Time
+	processes         map[string]*managedProcess
+	sequence          uint64
+	maxLogBytes       int
+	lucyAdapter       lucy.Adapter
+	pythonDetector    pythonRuntimeDetector
+	pythonManager     pythonEnvironmentManager
+	javaDetector      javaRuntimeDetector
+	serverJarDeployer serverJarMaterializer
 }
 
 type pythonRuntimeDetector interface {
@@ -160,6 +164,14 @@ type pythonEnvironmentManager interface {
 	CreateVenv(context.Context, agentpython.VenvRequest) (agentpython.VenvResult, error)
 	InstallMCDR(context.Context, agentpython.InstallMCDRRequest) error
 	VerifyMCDR(context.Context, agentpython.VenvResult) (string, error)
+}
+
+type javaRuntimeDetector interface {
+	SelectForMinecraftVersion(context.Context, string) (agentjava.Installation, error)
+}
+
+type serverJarMaterializer interface {
+	Deploy(context.Context, serverjar.DeployRequest) (serverjar.DeployResult, error)
 }
 
 func NewSupervisor(agentID string) *Supervisor {
@@ -185,7 +197,9 @@ func NewSupervisorWithRoot(agentID, root string, maxLogBytes int) (*Supervisor, 
 	if maxLogBytes <= 0 {
 		maxLogBytes = defaultLogBytes
 	}
-	return &Supervisor{agentID: agentID, runtimeRoot: filepath.Clean(root), now: func() time.Time { return time.Now().UTC() }, processes: map[string]*managedProcess{}, maxLogBytes: maxLogBytes, lucyAdapter: detectLucyAdapter(root), pythonDetector: agentpython.NewDetector(), pythonManager: agentpython.NewManager()}, nil
+	_ = serverjar.SetProxy(os.Getenv("STRATUM_PROXY"))
+	cacheDir := filepath.Join(root, "cache", "serverjars")
+	return &Supervisor{agentID: agentID, runtimeRoot: filepath.Clean(root), now: func() time.Time { return time.Now().UTC() }, processes: map[string]*managedProcess{}, maxLogBytes: maxLogBytes, lucyAdapter: detectLucyAdapter(root), pythonDetector: agentpython.NewDetector(), pythonManager: agentpython.NewManager(), javaDetector: agentjava.NewDetector(), serverJarDeployer: serverjar.NewDeployer(cacheDir)}, nil
 }
 
 func detectLucyAdapter(workDir string) lucy.Adapter {
@@ -229,6 +243,22 @@ func (s *Supervisor) SetPythonRuntime(detector pythonRuntimeDetector, manager py
 		s.pythonManager = agentpython.NewManager()
 	} else {
 		s.pythonManager = manager
+	}
+}
+
+func (s *Supervisor) SetJavaAndServerJarRuntime(detector javaRuntimeDetector, deployer serverJarMaterializer) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if detector == nil {
+		s.javaDetector = agentjava.NewDetector()
+	} else {
+		s.javaDetector = detector
+	}
+	if deployer == nil {
+		cacheDir := filepath.Join(s.runtimeRoot, "cache", "serverjars")
+		s.serverJarDeployer = serverjar.NewDeployer(cacheDir)
+	} else {
+		s.serverJarDeployer = deployer
 	}
 }
 
@@ -730,11 +760,58 @@ func (s *Supervisor) materializeMCDRRuntime(ctx context.Context, layout SessionR
 	}, nil
 }
 
+func (s *Supervisor) materializeJavaAndServerJar(ctx context.Context, layout SessionRuntimeLayout, request agent.EnvironmentMaterializationRequest, detector javaRuntimeDetector, deployer serverJarMaterializer) map[string]string {
+	md := map[string]string{}
+	if detector == nil || deployer == nil {
+		md["javaServerJarStatus"] = "skipped"
+		return md
+	}
+	javaInstall, err := detector.SelectForMinecraftVersion(ctx, request.MinecraftVersion)
+	if err != nil {
+		md["javaDetectionStatus"] = "failed"
+		md["javaDetectionError"] = err.Error()
+	} else {
+		md["javaDetectionStatus"] = "ok"
+		md["javaExecutable"] = javaInstall.ExecutablePath
+		md["javaVersion"] = javaInstall.Version
+		md["javaMajor"] = fmt.Sprintf("%d", javaInstall.Major)
+		md["javaHome"] = javaInstall.Home
+	}
+	targetDir := layout.WorkDir
+	if request.MCDRRequired {
+		mcdrLayout, err := layout.MCDR()
+		if err == nil {
+			targetDir = mcdrLayout.MCDRServerDir
+		}
+	}
+	deployResult, err := deployer.Deploy(ctx, serverjar.DeployRequest{
+		SessionID:        request.SessionID,
+		ServerCore:       request.ServerCore,
+		MinecraftVersion: request.MinecraftVersion,
+		LoaderVersion:    request.LoaderVersion,
+		TargetDir:        targetDir,
+	})
+	if err != nil {
+		md["serverJarDeployStatus"] = "failed"
+		md["serverJarDeployError"] = err.Error()
+	} else {
+		md["serverJarDeployStatus"] = "ok"
+		md["serverJarName"] = deployResult.JarName
+		md["serverJarPath"] = deployResult.DeployedPath
+		md["serverJarHash"] = deployResult.SHA256
+		md["serverJarSize"] = fmt.Sprintf("%d", deployResult.SizeBytes)
+		md["serverJarSource"] = deployResult.Source
+	}
+	return md
+}
+
 func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.EnvironmentMaterializationRequest) (agent.EnvironmentMaterializationResult, error) {
 	s.mu.RLock()
 	adapter := s.lucyAdapter
 	pythonDetector := s.pythonDetector
 	pythonManager := s.pythonManager
+	javaDetector := s.javaDetector
+	serverJarDeployer := s.serverJarDeployer
 	s.mu.RUnlock()
 	if pythonDetector == nil {
 		pythonDetector = agentpython.NewDetector()
@@ -795,6 +872,12 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 			return agent.EnvironmentMaterializationResult{}, err
 		}
 		for key, value := range mcdrMetadata {
+			lucyMetadata[key] = value
+		}
+	}
+	if request.ServerCore != "" && request.ServerCore != "custom" {
+		javaServerMetadata := s.materializeJavaAndServerJar(ctx, layout, request, javaDetector, serverJarDeployer)
+		for key, value := range javaServerMetadata {
 			lucyMetadata[key] = value
 		}
 	}
