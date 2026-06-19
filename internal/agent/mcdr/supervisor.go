@@ -83,10 +83,12 @@ func (s *Supervisor) Start(ctx context.Context, sessionID string, profile runtim
 
 	actualProfile := profile
 	if mcdrExecutable != "" {
-		if len(profile.CommandArgv) > 0 {
-			actualProfile.CommandArgv = append([]string{mcdrExecutable}, profile.CommandArgv[1:]...)
-		} else {
-			actualProfile.CommandArgv = []string{mcdrExecutable}
+		if _, statErr := os.Stat(mcdrExecutable); statErr == nil {
+			if len(profile.CommandArgv) > 0 {
+				actualProfile.CommandArgv = append([]string{mcdrExecutable}, profile.CommandArgv[1:]...)
+			} else {
+				actualProfile.CommandArgv = []string{mcdrExecutable}
+			}
 		}
 	}
 
