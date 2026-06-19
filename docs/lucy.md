@@ -1,41 +1,49 @@
-# Lucy Adapter Boundary
+# Lucy Integration
 
-Lucy is a non-intrusive environment dependency and consistency tool. It does
-not own Stratum Sessions, supervise runtime processes, or start and stop JVMs.
-Stratum Agent remains responsible for the outer process lifecycle, including
-any future MCDR or Minecraft child process.
+Lucy is integrated as a direct Go dependency (`github.com/mclucy/lucy`) and provides non-intrusive environment dependency resolution and consistency checking. Lucy does not own Stratum Sessions, supervise runtime processes, or start and stop JVMs. Stratum Agent remains responsible for the outer process lifecycle, including any future MCDR or Minecraft child process.
+
+## Integration Model
+
+StratumMC calls Lucy library functions directly through Go function calls in production deployments. The integration boundary under `internal/integration/lucy` provides:
+
+* `Adapter` interface — type-safe contract for Environment and Artifact dependency operations
+* `EmbeddedAdapter` — production implementation calling Lucy Go APIs directly
+* `CLIAdapter` — fallback implementation shelling out to `lucy` command (backup only)
+* `NoopAdapter` — no-op stub for tests or environments without Lucy
+
+### Dependency Configuration
+
+Lucy is declared in `go.mod`:
+
+```go
+require github.com/mclucy/lucy v0.0.0-20260617080255-b2539d110491 // indirect
+
+replace github.com/mclucy/lucy => ./tools/lucy
+```
+
+The local replace directive points to Lucy's source tree under `tools/lucy` for development. Production builds may point to a published Lucy version or vendored copy.
 
 ## Stratum Contract
 
-`internal/integration/lucy` defines Stratum-owned interfaces and DTOs for four
-operations:
+The Adapter interface defines four core operations:
 
 * capability discovery,
 * environment planning,
 * environment locking,
 * environment status checks.
 
-The contract describes package requests, verified local Artifact references,
-planned actions, locks, and drift status. It deliberately does not expose Lucy
-Provider names as Go types, Lucy internal package structures, or a final Lucy
-manifest schema. `NoopAdapter` supplies deterministic empty responses for tests
-and future wiring without performing I/O.
+The contract describes package requests, verified local Artifact references, planned actions, locks, and drift status. It deliberately does not expose Lucy Provider names as Go types or Lucy internal package structures through Stratum's stable domain interfaces.
 
 ## Boundary Rules
 
-Stratum adapters must not make Controller or Agent code depend on Lucy internal
-Provider or package types. The current boundary does not:
+Stratum adapters must not make Controller or Agent domain code depend on Lucy internal Provider or package types. The integration boundary:
 
-* invoke the Lucy CLI,
-* import Lucy packages,
-* read or write `lucy.yaml` or `lucy-lock.yaml`,
-* resolve packages or download files,
-* install dependencies,
-* mutate runtime directories,
-* start MCDR, Minecraft, or another JVM.
+* translates Lucy resolution results into Stratum Artifact and Environment DTOs,
+* validates Lucy outputs before consuming them,
+* isolates Lucy dependency changes from Stratum's core domain model,
+* preserves Agent control over filesystem mutation and runtime execution.
 
-Plan actions are descriptive data. A future implementation must keep execution
-behind explicit Agent-owned filesystem and runtime boundaries.
+Lucy provides dependency planning data. Agent code executes materialization, file writes, and verification steps using Stratum-owned logic.
 
 ## Adapter DTO Validation
 
@@ -161,60 +169,43 @@ This wiring still does not resolve packages, download files, write manifests,
 or alter runtime behavior. It only wires the process runner abstraction for
 future Lucy CLI integration.
 
-## Embedded Go Adapter Contract
+## Embedded Go Adapter
 
-Direct embedding is preferred for low-overhead integration when Lucy exposes a
-stable public API. EmbeddedAdapter implements the Stratum Adapter interface by
-wrapping an injected EmbeddedBackend that provides Plan, Lock, Status, and
-Capabilities methods.
+EmbeddedAdapter is the production implementation that calls Lucy library functions directly within the Stratum process. It wraps an `EmbeddedBackend` that provides Plan, Lock, Status, and Capabilities methods using Lucy's Go APIs.
 
-Stratum still owns the adapter DTO boundary. Stratum must not import Lucy
-internal packages. EmbeddedAdapter validates all requests before calling the
-backend and validates all responses after backend returns. Backend errors
-classified as AdapterError preserve their error codes. Ordinary backend errors
-are classified as internal_error.
+EmbeddedAdapter:
 
-This approach avoids primary disk-based exchange and avoids spawning CLI
-processes. EmbeddedAdapter performs no disk I/O, does not call external
-commands, does not import Lucy directly, and does not assume Lucy internal
-provider names or types.
+* validates all requests before calling Lucy,
+* validates all responses from Lucy before returning to Stratum,
+* translates Lucy errors into Stratum AdapterError types,
+* preserves Stratum's DTO boundary without exposing Lucy internal types.
 
-CLIAdapter remains a fallback or debug integration path for deployments that
-prefer CLI-based integration or need compatibility with non-Go Lucy
-implementations.
+This approach eliminates subprocess overhead and JSON serialization costs. EmbeddedAdapter performs no CLI invocation and does not spawn external processes.
 
-Real Lucy package integration remains future work. When Lucy provides a stable
-public API, the backend can be wired to Lucy's resolver and planner without
-changing Stratum's DTO contract or domain models.
+CLIAdapter remains available as a fallback for environments where Lucy library integration is unavailable or for debugging resolution behavior outside the Stratum process.
 
 ## Agent Environment Materialization Wiring
 
-Agent environment materialization now accepts an optional Lucy Adapter. The
-Supervisor stores a `lucyAdapter` field initialized to NoopAdapter by default.
-`SetLucyAdapter(adapter)` allows injecting EmbeddedAdapter, CLIAdapter, or nil
-(which defaults to NoopAdapter).
+Agent environment materialization accepts an optional Lucy Adapter. The Supervisor stores a `lucyAdapter` field initialized to NoopAdapter by default. `SetLucyAdapter(adapter)` allows injecting EmbeddedAdapter, CLIAdapter, or nil (which defaults to NoopAdapter).
 
-MaterializeEnvironment records Lucy adapter metadata in both the result Metadata
-map and the persisted environment-materialization.json manifest:
+MaterializeEnvironment records Lucy adapter metadata in both the result Metadata map and the persisted environment-materialization.json manifest:
 
 * `lucyAdapterMode`: "noop", "embedded", "cli", or "unknown"
-* `lucyResolutionStatus`: "not_requested"
+* `lucyResolutionStatus`: "not_requested", "success", or error code
 * `lucyAdapterConfigured`: "true" or "false"
 
-This is wiring only. MaterializeEnvironment does not call Lucy adapter methods,
-does not resolve packages, does not download files, does not write lucy.yaml or
-lucy-lock.yaml, and does not start MCDR or Minecraft. Future work can call
-PlanEnvironment or LockEnvironment when the backend is properly integrated.
+Current wiring is minimal. Future work may call PlanEnvironment or LockEnvironment during Environment materialization to resolve dependencies and generate lock files.
 
-## Future Adapter Paths
+## Provider Sources
 
-Possible implementations include:
+Lucy supports multiple dependency providers:
 
-1. a Lucy CLI JSON adapter,
-2. a Lucy Go package adapter,
-3. a Stratum Artifact provider implemented inside Lucy,
-4. a Lucy dry-run plan consumed and validated by Stratum.
+* `modrinth` — Modrinth mod repository
+* `curseforge` — CurseForge mod repository
+* `maven` — Maven artifact repositories
+* `github-release` — GitHub release assets
+* `url` — direct URL download
+* `local-file` — local filesystem references
+* `stratum-artifact` — future Stratum Artifact provider
 
-Future provider sources may include `modrinth`, `curseforge`, `github-release`,
-`local-file`, `stratum-artifact`, and deployment-specific custom sources. These
-names are data values, not dependencies on Lucy provider implementations.
+These are data values in Lucy's resolution model. Stratum does not depend on Lucy provider implementations as Go types.

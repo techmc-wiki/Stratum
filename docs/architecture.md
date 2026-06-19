@@ -598,21 +598,44 @@ Shared Sessions require stricter permissions than fork, private, or review Sessi
 
 ## Lucy Integration
 
-Lucy Integration is a dependency and package planning integration. It must not own Session lifecycle.
+Lucy is integrated as a direct Go dependency under `github.com/mclucy/lucy` (local replace in `go.mod`). StratumMC calls Lucy's package resolution and artifact planning logic directly through Go function calls, not through external CLI invocation.
 
-Lucy may eventually provide:
+### Integration boundary
+
+The Stratum-side Lucy boundary lives under `internal/integration/lucy`. It provides:
+
+* `Adapter` interface — type-safe boundary for Environment and Artifact dependency resolution
+* `EmbeddedAdapter` — production implementation that calls Lucy library functions directly
+* `CLIAdapter` — fallback implementation that shells out to `lucy` command (backup only)
+* `NoopAdapter` — no-op stub for tests or environments without Lucy
+
+Production deployments should use `EmbeddedAdapter` to invoke Lucy's Go APIs directly within the Stratum process. This eliminates subprocess overhead, provides structured error handling, and allows tight integration with Stratum's Artifact and Environment workflows.
+
+### Lucy responsibilities
+
+Lucy provides:
 
 * package reference parsing
-* provider routing
+* provider routing (e.g., Modrinth, CurseForge, Maven, URL)
 * dependency closure resolution
 * version conflict solving
-* download metadata
-* lock generation
+* download metadata and checksums
+* lock file generation
 * cache-aware download planning
 
-Stratum must not depend on premature Lucy public APIs. Any future embedded interface should be grounded in Lucy's real install pipeline and type model. Stratum should not expose Lucy internal Provider, package, or manifest types through its own stable interfaces.
+### Lucy non-responsibilities
 
-The Stratum-side Lucy boundary lives under `internal/integration/lucy`. The current `NoopAdapter` performs no I/O, resolution, downloads, or manifest processing.
+Lucy must not:
+
+* own Session lifecycle
+* start or stop Minecraft servers
+* manage MCDR daemons
+* mutate Stratum Controller metadata
+* perform Artifact approval or staging decisions
+
+Stratum validates Artifact references and compatibility before delegating resolution to Lucy. Lucy returns dependency plans; Stratum Agent materializes them into session directories and records application results.
+
+Stratum does not expose Lucy's internal Provider, package, or manifest types through its own stable interfaces. The `internal/integration/lucy` boundary translates between Lucy's resolution model and Stratum's Artifact and Environment domain.
 
 See `docs/lucy.md`.
 

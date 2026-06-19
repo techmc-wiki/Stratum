@@ -247,22 +247,27 @@ Do not make Lucy responsible for any of these.
 
 ### Lucy
 
-Lucy is strictly non-intrusive.
+Lucy is integrated as a direct Go dependency (`github.com/mclucy/lucy`). StratumMC calls Lucy library functions directly for dependency resolution and package planning.
 
-Lucy may be used for:
+Lucy provides:
 
-* dependency manifests,
-* mod/plugin/server-core files,
-* lock files,
-* environment consistency checks,
-* possible future backup integration.
+* package reference parsing,
+* provider routing (Modrinth, CurseForge, Maven, URL),
+* dependency closure resolution,
+* version conflict solving,
+* download metadata and checksums,
+* lock file generation,
+* cache-aware download planning.
 
 Lucy must not be treated as:
 
 * a JVM process manager,
 * a live server controller,
 * an MCDR replacement,
-* a session scheduler.
+* a session scheduler,
+* a runtime lifecycle owner.
+
+The integration boundary under `internal/integration/lucy` isolates Lucy's resolution logic from Stratum's domain model. Production deployments use `EmbeddedAdapter` to call Lucy Go APIs directly within the Stratum process.
 
 ### Uploaded Jars
 
@@ -309,7 +314,6 @@ Do not implement these in MVP:
 * GTMC/StratumMC Debug Mod,
 * full Web UI,
 * production container orchestration,
-* real Lucy integration beyond interface stubs,
 * real MCDR process supervision beyond interface stubs.
 
 ---
