@@ -150,11 +150,11 @@ func TestSessionReadyForStartAppliedArtifactVerification(t *testing.T) {
 	}
 }
 
-func TestSessionReadyForStartRequiresMCDRLayoutWhenConfigured(t *testing.T) {
+func TestSessionReadyForStartAcceptsPreparedMCDRLayoutWhenConfigured(t *testing.T) {
 	supervisor := readinessSupervisor(t)
 	materializeReadinessEnvironment(t, supervisor, true)
 	result, err := supervisor.SessionReadyForStart(context.Background(), "session-1")
-	if err != nil || result.Ready || !readinessHasIssue(result, "mcdr_layout_missing") {
+	if err != nil || !result.Ready || readinessHasIssue(result, "mcdr_layout_missing") {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 }
@@ -177,6 +177,9 @@ func readinessSupervisor(t *testing.T) *Supervisor {
 
 func materializeReadinessEnvironment(t *testing.T, supervisor *Supervisor, mcdrRequired bool) {
 	t.Helper()
+	if mcdrRequired {
+		supervisor.SetPythonRuntime(fakePythonDetector{}, fakePythonManager{})
+	}
 	_, err := supervisor.MaterializeEnvironment(context.Background(), agent.EnvironmentMaterializationRequest{SessionID: "session-1", EnvironmentID: "environment-1", EnvironmentName: "Test", MinecraftVersion: "1.17.1", JavaVersion: "17", LoaderType: "fabric", ServerCore: "carpet", MCDRRequired: mcdrRequired, RuntimeProfileID: runtimeprofile.DefaultProfileID, RuntimeProfileRequired: true, ActorID: "actor-1"})
 	if err != nil {
 		t.Fatal(err)

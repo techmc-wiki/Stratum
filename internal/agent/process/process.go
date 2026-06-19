@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/stratummc/stratum/internal/agent"
+	agentpython "github.com/stratummc/stratum/internal/agent/python"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
 	"github.com/stratummc/stratum/internal/integration/lucy"
 )
@@ -139,14 +140,26 @@ type managedProcess struct {
 }
 
 type Supervisor struct {
-	mu          sync.RWMutex
-	agentID     string
-	runtimeRoot string
-	now         func() time.Time
-	processes   map[string]*managedProcess
-	sequence    uint64
-	maxLogBytes int
-	lucyAdapter lucy.Adapter
+	mu             sync.RWMutex
+	agentID        string
+	runtimeRoot    string
+	now            func() time.Time
+	processes      map[string]*managedProcess
+	sequence       uint64
+	maxLogBytes    int
+	lucyAdapter    lucy.Adapter
+	pythonDetector pythonRuntimeDetector
+	pythonManager  pythonEnvironmentManager
+}
+
+type pythonRuntimeDetector interface {
+	SelectForMCDR(context.Context) (agentpython.Installation, error)
+}
+
+type pythonEnvironmentManager interface {
+	CreateVenv(context.Context, agentpython.VenvRequest) (agentpython.VenvResult, error)
+	InstallMCDR(context.Context, agentpython.InstallMCDRRequest) error
+	VerifyMCDR(context.Context, agentpython.VenvResult) (string, error)
 }
 
 func NewSupervisor(agentID string) *Supervisor {
@@ -172,7 +185,7 @@ func NewSupervisorWithRoot(agentID, root string, maxLogBytes int) (*Supervisor, 
 	if maxLogBytes <= 0 {
 		maxLogBytes = defaultLogBytes
 	}
-	return &Supervisor{agentID: agentID, runtimeRoot: filepath.Clean(root), now: func() time.Time { return time.Now().UTC() }, processes: map[string]*managedProcess{}, maxLogBytes: maxLogBytes, lucyAdapter: detectLucyAdapter(root)}, nil
+	return &Supervisor{agentID: agentID, runtimeRoot: filepath.Clean(root), now: func() time.Time { return time.Now().UTC() }, processes: map[string]*managedProcess{}, maxLogBytes: maxLogBytes, lucyAdapter: detectLucyAdapter(root), pythonDetector: agentpython.NewDetector(), pythonManager: agentpython.NewManager()}, nil
 }
 
 func detectLucyAdapter(workDir string) lucy.Adapter {
@@ -201,6 +214,21 @@ func (s *Supervisor) SetLucyAdapter(adapter lucy.Adapter) {
 		s.lucyAdapter = lucy.NoopAdapter{}
 	} else {
 		s.lucyAdapter = adapter
+	}
+}
+
+func (s *Supervisor) SetPythonRuntime(detector pythonRuntimeDetector, manager pythonEnvironmentManager) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if detector == nil {
+		s.pythonDetector = agentpython.NewDetector()
+	} else {
+		s.pythonDetector = detector
+	}
+	if manager == nil {
+		s.pythonManager = agentpython.NewManager()
+	} else {
+		s.pythonManager = manager
 	}
 }
 
@@ -655,10 +683,65 @@ func deriveServerJarName(serverCore string) string {
 	}
 }
 
+func (s *Supervisor) materializeMCDRRuntime(ctx context.Context, layout SessionRuntimeLayout, request agent.EnvironmentMaterializationRequest, detector pythonRuntimeDetector, manager pythonEnvironmentManager) (map[string]string, error) {
+	mcdrLayout, err := layout.MCDR()
+	if err != nil {
+		return nil, err
+	}
+	if err := mcdrLayout.Create(); err != nil {
+		return nil, fmt.Errorf("prepare MCDR runtime directories: %w", err)
+	}
+	if err := mcdrLayout.WriteManifest(); err != nil {
+		return nil, fmt.Errorf("write MCDR layout manifest: %w", err)
+	}
+	pythonInstall, err := detector.SelectForMCDR(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("select Python for MCDR: %w", err)
+	}
+	venvPath := filepath.Join(mcdrLayout.MCDRRoot, "venv")
+	venv, err := manager.CreateVenv(ctx, agentpython.VenvRequest{
+		SessionID: request.SessionID,
+		VenvPath:  venvPath,
+		Python:    pythonInstall,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create MCDR Python venv: %w", err)
+	}
+	requestedVersion := "latest"
+	if err := manager.InstallMCDR(ctx, agentpython.InstallMCDRRequest{Venv: venv, Version: requestedVersion}); err != nil {
+		return nil, fmt.Errorf("install MCDR: %w", err)
+	}
+	installedVersion, err := manager.VerifyMCDR(ctx, venv)
+	if err != nil {
+		return nil, fmt.Errorf("verify MCDR: %w", err)
+	}
+	return map[string]string{
+		"mcdrMaterializationStatus": "ready",
+		"mcdrRequestedVersion":      requestedVersion,
+		"mcdrVersion":               installedVersion,
+		"mcdrExecutable":            venv.MCDRExecutable,
+		"mcdrVenvPath":              venv.VenvPath,
+		"mcdrPythonExecutable":      venv.PythonExec,
+		"mcdrPipExecutable":         venv.PipExec,
+		"pythonExecutable":          pythonInstall.ExecutablePath,
+		"pythonVersion":             pythonInstall.Version,
+		"pythonHasVenv":             fmt.Sprintf("%t", pythonInstall.HasVenv),
+		"pythonHasPip":              fmt.Sprintf("%t", pythonInstall.HasPip),
+	}, nil
+}
+
 func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.EnvironmentMaterializationRequest) (agent.EnvironmentMaterializationResult, error) {
 	s.mu.RLock()
 	adapter := s.lucyAdapter
+	pythonDetector := s.pythonDetector
+	pythonManager := s.pythonManager
 	s.mu.RUnlock()
+	if pythonDetector == nil {
+		pythonDetector = agentpython.NewDetector()
+	}
+	if pythonManager == nil {
+		pythonManager = agentpython.NewManager()
+	}
 	adapterMode := "unknown"
 	switch adapter.(type) {
 	case lucy.NoopAdapter:
@@ -705,6 +788,15 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 	serverJarName := deriveServerJarName(request.ServerCore)
 	if serverJarName != "" {
 		lucyMetadata["serverJarName"] = serverJarName
+	}
+	if request.MCDRRequired {
+		mcdrMetadata, err := s.materializeMCDRRuntime(ctx, layout, request, pythonDetector, pythonManager)
+		if err != nil {
+			return agent.EnvironmentMaterializationResult{}, err
+		}
+		for key, value := range mcdrMetadata {
+			lucyMetadata[key] = value
+		}
 	}
 	if lucyConfigured {
 		lucyResolutionStatus = "resolved"

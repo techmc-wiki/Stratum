@@ -24,7 +24,7 @@ func TestMaterializeEnvironment(t *testing.T) {
 		LoaderType:             "fabric",
 		LoaderVersion:          "0.12.0",
 		ServerCore:             "carpet",
-		MCDRRequired:           true,
+		MCDRRequired:           false,
 		CarpetRequired:         true,
 		RuntimeProfileID:       "dummy-process",
 		RuntimeProfileRequired: true,
