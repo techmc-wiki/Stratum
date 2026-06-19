@@ -106,32 +106,44 @@ Minecraft server.
   They do not copy world files, snapshot artifacts, backup runtime directories,
   repair runtime state, stop sessions, or support restore/rollback. Checkpoint
   creation writes a checkpoint.created audit event.
+- **Lucy integration** — `internal/integration/lucy` provides Go adapters for
+  Lucy dependency resolution, lock generation, package installation, and
+  integrity verification. EmbeddedAdapter calls Lucy library functions directly.
+  CLIAdapter and NoopAdapter exist for testing. Lucy integration does not start
+  processes or manage runtime lifecycle.
+- **MCDR bridge** — `internal/agent/mcdrbridge` defines a planning-only contract
+  for MCDR child RuntimeProfile integration. BuildLaunchPlan constructs validated
+  MCDR launch plan manifests with session-relative paths, launch commands, stop
+  strategies, preconditions, and metadata. The bridge does not start MCDR, does
+  not start Minecraft, and does not install dependencies. MCDR RuntimeProfile
+  executor is not yet implemented.
 
 The current HTTP Agent maintains safe cross-platform dummy runtimes, captures
 lifecycle logs, reports running/stopped process observations, and counts active
 runtimes in resource reports. Lifecycle decisions remain in the Controller. No
 command starts Minecraft, MCDR, Lucy, or another JVM process.
 
-## Next phase: Additional Explicit Reconciliation
+## Next phase: RuntimeProfile Execution
 
-RuntimeProfile loading, runtime mismatch detection, persisted observation
-history, explicit mark-stopped, stop-runtime, and mark-crashed reconciliation,
-per-session runtime directory allocation, and internal runtime staging helpers
-are implemented. Metadata-only artifact staging plans define which approved
-artifacts may later be staged, and artifact review can approve or reject pending
-metadata. Artifact metadata can be created without inventing a payload hash.
-The next phase may add another narrowly scoped Agent runtime
-capability. It must not perform automatic repair or accept arbitrary
-user-supplied commands.
+Lucy integration, MCDR bridge, and Environment materialization are complete as
+planning/preparation layers. RuntimeProfiles are defined and validated.
 
-A later phase may add **MCDR RuntimeProfile v0**, where the Agent launches MCDR
-as a trusted child process. An example disabled MCDR-managed profile exists in
-`docs/runtime-profiles/mcdr-managed.example.json` to demonstrate the intended
-integration. Agent provides MCDR runtime directory layout helpers that compute
-and create MCDR-specific directories under session work directory; directory
-preparation does not start MCDR or invoke Python. MCDR may manage Minecraft
-internally, but it will not replace Agent process supervision or become the
-Controller's lifecycle manager.
+The next atomic task is **MCDR RuntimeProfile executor v0**:
+
+- Agent `process.Supervisor` executes the MCDR RuntimeProfile's command_argv
+- Minecraft is launched by MCDR's config.yml start_command (not by Agent)
+- Agent supervises the outer MCDR process lifecycle (start, stop, logs, exit)
+- MCDR bridge launch plan becomes the read-only manifest for RuntimeProfile execution
+- Real JVM detection and server jar provisioning remain future tasks
+- Initial implementation uses test/dev MCDR configs with no real Minecraft launch
+
+After MCDR executor v0, subsequent tasks may include:
+
+- Java runtime detection and version validation
+- Fabric/Forge server jar provisioning
+- World checkpoint backup/restore implementation
+- lucy.yaml/lucy-lock.yaml generation from Environment
+- Real package installation during Environment materialization
 
 ## Included
 

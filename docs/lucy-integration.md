@@ -1,25 +1,45 @@
 # Lucy Integration
 
-StratumMC 将 Lucy 作为子模块嵌入在 `tools/lucy/`，可以直接一起编译。
+StratumMC integrates Lucy as a direct Go library dependency (`github.com/mclucy/lucy`).
 
-## 构建
+## Architecture
+
+Lucy is embedded as a Go library, not a submodule or CLI subprocess. The
+integration layer at `internal/integration/lucy` provides a clean adapter
+contract that isolates Lucy's resolution logic from Stratum's domain model.
+
+### Production Mode: EmbeddedAdapter
+
+Production deployments use `EmbeddedAdapter`, which calls Lucy library functions
+directly within the Stratum process. This provides:
+
+- Zero subprocess overhead
+- Type-safe API boundaries
+- Compile-time dependency resolution
+- No shell/CLI parsing risks
+
+### Test Modes
+
+- `CLIAdapter` — wraps `lucy` CLI for integration tests (requires Lucy binary)
+- `NoopAdapter` — returns empty results for unit tests without Lucy dependency
+
+## Build
+
+Lucy is included as a Go dependency:
 
 ```bash
-# 构建所有组件（包括 Lucy）
+# Build all components (includes Lucy library)
 task build
 
-# 或单独构建 Lucy
+# Or build standalone Lucy CLI
 go build -o lucy.exe ./cmd/lucy
-
-# Linux 构建
-task build:linux-amd64
 ```
 
-编译后的二进制：
-- `dist/local/lucy` (或 `dist/local/lucy.exe` on Windows)
-- `dist/linux-amd64/lucy`
+Binaries:
+- `dist/local/stratum.exe` (includes Lucy library)
+- `dist/local/lucy.exe` (standalone CLI)
 
-## 核心概念
+## Core Concepts
 
 ### Manifest (lucy.yaml)
 
@@ -117,16 +137,34 @@ dist/local/lucy add fabric/carpet
 dist/local/lucy install
 ```
 
-## 架构边界
+### Checkpoint Integration
 
-Lucy 严格非侵入：
+Checkpoints record Lucy lock file hashes to ensure reproducibility:
 
-- ✅ 管理依赖清单和锁文件
-- ✅ 提取 artifact 元数据
-- ✅ 依赖解析（通过 Lucy CLI）
-- ❌ **不**管理 JVM 进程
-- ❌ **不**控制服务器运行时
-- ❌ **不**替代 MCDR 或 Agent 监督
+```go
+lock, _ := adapter.LockEnvironment(ctx, lucy.LockEnvironmentRequest{
+	ManifestPath: filepath.Join(sessionDir, "lucy.yaml"),
+})
+checkpoint := checkpoint.Metadata{
+	EnvironmentLockHash: lock.Hash,
+}
+```
+
+## Architecture Boundaries
+
+Lucy is strictly non-intrusive:
+
+- ✅ Manages dependency manifests and lock files
+- ✅ Extracts artifact metadata
+- ✅ Resolves dependencies and computes package closure
+- ✅ Downloads packages with checksum verification
+- ✅ Verifies installed package integrity
+- ❌ **Does not** manage JVM processes
+- ❌ **Does not** control server runtime lifecycle
+- ❌ **Does not** replace MCDR or Agent supervision
+- ❌ **Does not** perform session scheduling
+
+Lucy resolves "what should be installed." Agent decides "when and where to install it."
 
 进程生命周期由 `internal/agent/process` 管理。  
 MCDR 集成在 `internal/integration/mcdr`。

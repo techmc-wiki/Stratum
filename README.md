@@ -25,31 +25,39 @@ The control plane is split into three components:
 
 MCDR and Lucy are integrated:
 
-- **MCDR** may run as a child RuntimeProfile under Agent supervision for in-game command bridging
-- **Lucy** (embedded as submodule in `tools/lucy/`) provides non-intrusive dependency manifests and lock files; it does **not** manage JVM processes or session scheduling
+- **Lucy** is embedded as a Go library (`github.com/mclucy/lucy`) for dependency resolution, package installation, and environment materialization
+- **MCDR** may run as a child RuntimeProfile under Agent supervision for in-game command bridging (planning contract exists, executor pending)
 
 See [docs/architecture.md](docs/architecture.md) for design boundaries and [docs/runtime.md](docs/runtime.md) for Agent ownership rules.
 
 ## Current Status
 
-This is an MVP skeleton. It implements:
+### ✅ Implemented
 
-- Core domain models (Project, Room, Session, Checkpoint, Artifact, Environment, ResourcePolicy)
-- Durable operations with request correlation, idempotency, and audit history
-- In-memory and filesystem-backed repositories
-- HTTP Agent with a Go dummy RuntimeProfile for safe development
-- Standard-library CLI with no external frameworks
+- **Core domain models** — Project, Room, Session, Checkpoint, Artifact, Environment, ResourcePolicy
+- **Durable operations** — request correlation, idempotency, and audit history
+- **Repository layer** — in-memory and filesystem-backed storage
+- **HTTP Agent** — process lifecycle supervision with RuntimeProfile abstraction
+- **Lucy integration** — embedded Go library for dependency resolution, manifest/lock files, and package installation
+- **MCDR bridge** — planning-only contract for MCDR child RuntimeProfile integration
+- **Environment materialization** — Lucy-driven package installation, artifact staging, and runtime workspace setup
+- **RuntimeProfile registry** — declarative process launch configs with readiness checks and stop strategies
+- **CLI** — standard-library implementation with no external frameworks
 
-It does **not** yet implement:
+### ⚠️ Not Yet Implemented
 
-- Actual Minecraft server launching
-- MCDR integration beyond interfaces
-- Full Lucy CLI integration in Agent workflows
-- 1.12 or latest environments (only 1.17 Fabric + MCDR + Carpet stubs)
-- Web UI
-- Production container orchestration
+- **Actual Minecraft server launching** — current RuntimeProfiles use test stubs; no real JVM/MCDR processes started
+- **MCDR RuntimeProfile executor** — MCDR bridge defines launch plans but Agent does not yet execute them
+- **Real Java runtime detection** — Java version validation stubs exist but no real JVM discovery
+- **Server jar provisioning** — Fabric/Forge server download and verification not yet implemented
+- **World checkpoint backup/restore** — checkpoint metadata exists but world file operations are stubs
+- **1.12 or latest environments** — only 1.17 Fabric + MCDR + Carpet planned
+- **Web UI** — CLI-only currently
+- **Production orchestration** — no container/deployment tooling
 
-The HTTP Agent supervises only the built-in Go dummy runtime. It does not launch Minecraft, MCDR, Lucy, shells, or user commands.
+### 🔐 Safety Boundaries
+
+All tests use process stubs and do not execute user commands, launch shells, or start real JVM instances. Agent RuntimeProfile execution is isolated behind declarative JSON configs. The system is ready for controlled RuntimeProfile implementation.
 
 ## Quick Start
 
