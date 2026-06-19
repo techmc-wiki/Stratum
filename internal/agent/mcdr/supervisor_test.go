@@ -21,7 +21,7 @@ func TestMCDRSupervisorStartStop(t *testing.T) {
 	ms := NewSupervisor(ps)
 	profile := mcdrTestProfile(t, "stdin")
 
-	state, err := ms.Start(context.Background(), "mcdr-start-stop", profile, "")
+	state, err := ms.Start(context.Background(), "mcdr-start-stop", profile)
 	if err != nil || state.Status != StatusRunning || state.PID <= 0 {
 		t.Fatalf("started=%+v err=%v", state, err)
 	}
@@ -65,7 +65,7 @@ func TestMCDRSupervisorStartStopIdempotent(t *testing.T) {
 	ms := NewSupervisor(ps)
 	profile := mcdrTestProfile(t, "stdin")
 
-	_, err = ms.Start(context.Background(), "mcdr-idempotent", profile, "")
+	_, err = ms.Start(context.Background(), "mcdr-idempotent", profile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,11 +91,11 @@ func TestMCDRSupervisorRestart(t *testing.T) {
 	ms := NewSupervisor(ps)
 	profile := mcdrTestProfile(t, "stdin")
 
-	first, err := ms.Start(context.Background(), "mcdr-restart", profile, "")
+	first, err := ms.Start(context.Background(), "mcdr-restart", profile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := ms.Restart(context.Background(), "mcdr-restart", profile, "")
+	second, err := ms.Restart(context.Background(), "mcdr-restart", profile)
 	if err != nil || second.Status != StatusRunning || second.PID <= 0 {
 		t.Fatalf("restarted=%+v err=%v", second, err)
 	}
@@ -114,7 +114,7 @@ func TestMCDRSupervisorSendCommand(t *testing.T) {
 	ms := NewSupervisor(ps)
 	profile := mcdrTestProfile(t, "stdin")
 
-	_, err = ms.Start(context.Background(), "mcdr-send-cmd", profile, "")
+	_, err = ms.Start(context.Background(), "mcdr-send-cmd", profile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestMCDRSupervisorRejectsNonMCDRProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	ms := NewSupervisor(ps)
-	_, err = ms.Start(context.Background(), "bad-profile", runtimeprofile.DummyProcess(), "")
+	_, err = ms.Start(context.Background(), "bad-profile", runtimeprofile.DummyProcess())
 	if err == nil || !strings.Contains(err.Error(), "mcdr-python") {
 		t.Fatalf("expected mcdr-python rejection: %v", err)
 	}
@@ -239,7 +239,7 @@ func TestMCDRSupervisorStartWritesConfigYML(t *testing.T) {
 	}
 	ms := NewSupervisor(ps)
 	profile := mcdrTestProfile(t, "stdin")
-	state, err := ms.Start(context.Background(), "mcdr-config-test", profile, "")
+	state, err := ms.Start(context.Background(), "mcdr-config-test", profile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +295,7 @@ func TestMCDRSupervisorStartConfigWriteFailsDoesNotStartProcess(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte{}, 0o400); err != nil {
 		t.Fatal(err)
 	}
-	state, err := ms.Start(context.Background(), "mcdr-fail-config", profile, "")
+	state, err := ms.Start(context.Background(), "mcdr-fail-config", profile)
 	if err == nil || !strings.Contains(err.Error(), "config.yml") {
 		t.Fatalf("expected config write failure, got state=%+v err=%v", state, err)
 	}
@@ -317,7 +317,7 @@ func TestMCDRSupervisorStartWithReadinessCheckSuccess(t *testing.T) {
 		Pattern: "helper-ready",
 		Timeout: 3 * time.Second,
 	}
-	state, err := ms.Start(context.Background(), "mcdr-ready-ok", profile, "")
+	state, err := ms.Start(context.Background(), "mcdr-ready-ok", profile)
 	if err != nil {
 		t.Fatalf("Start with readiness: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestMCDRSupervisorStartWithReadinessCheckTimeout(t *testing.T) {
 		Pattern: "helper-ready",
 		Timeout: 200 * time.Millisecond,
 	}
-	_, err = ms.Start(context.Background(), "mcdr-ready-timeout", profile, "")
+	_, err = ms.Start(context.Background(), "mcdr-ready-timeout", profile)
 	if err == nil || !strings.Contains(err.Error(), "readiness") {
 		t.Fatalf("expected readiness timeout, got %v", err)
 	}
@@ -362,7 +362,7 @@ func TestMCDRSupervisorStartWithReadinessCheckExit(t *testing.T) {
 		Pattern: "helper-ready",
 		Timeout: 3 * time.Second,
 	}
-	_, err = ms.Start(context.Background(), "mcdr-ready-exit", profile, "")
+	_, err = ms.Start(context.Background(), "mcdr-ready-exit", profile)
 	if err == nil || !strings.Contains(err.Error(), "readiness") {
 		t.Fatalf("expected readiness exit detection, got %v", err)
 	}

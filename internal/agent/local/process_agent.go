@@ -17,15 +17,14 @@ import (
 )
 
 type ProcessAgent struct {
-	id             string
-	endpoint       string
-	supervisor     *agentprocess.Supervisor
-	mcdr           *mcdr.Supervisor
-	profiles       *runtimeprofile.Registry
-	mu             sync.RWMutex
-	prepared       map[string]bool
-	frozen         map[string]bool
-	serverJarNames map[string]string
+	id         string
+	endpoint   string
+	supervisor *agentprocess.Supervisor
+	mcdr       *mcdr.Supervisor
+	profiles   *runtimeprofile.Registry
+	mu         sync.RWMutex
+	prepared   map[string]bool
+	frozen     map[string]bool
 }
 
 var (
@@ -50,7 +49,7 @@ func NewProcessAgentWithRegistry(id string, profiles *runtimeprofile.Registry) *
 		profiles = runtimeprofile.Builtins()
 	}
 	supervisor := agentprocess.NewSupervisor(id)
-	return &ProcessAgent{id: id, endpoint: "local://agent/" + id, supervisor: supervisor, mcdr: mcdr.NewSupervisor(supervisor), profiles: profiles, prepared: map[string]bool{}, frozen: map[string]bool{}, serverJarNames: map[string]string{}}
+	return &ProcessAgent{id: id, endpoint: "local://agent/" + id, supervisor: supervisor, mcdr: mcdr.NewSupervisor(supervisor), profiles: profiles, prepared: map[string]bool{}, frozen: map[string]bool{}}
 }
 
 func NewProcessAgentWithRegistryAndRoot(id string, profiles *runtimeprofile.Registry, runtimeRoot string) (*ProcessAgent, error) {
@@ -61,7 +60,7 @@ func NewProcessAgentWithRegistryAndRoot(id string, profiles *runtimeprofile.Regi
 	if err != nil {
 		return nil, err
 	}
-	return &ProcessAgent{id: id, endpoint: "local://agent/" + id, supervisor: supervisor, mcdr: mcdr.NewSupervisor(supervisor), profiles: profiles, prepared: map[string]bool{}, frozen: map[string]bool{}, serverJarNames: map[string]string{}}, nil
+	return &ProcessAgent{id: id, endpoint: "local://agent/" + id, supervisor: supervisor, mcdr: mcdr.NewSupervisor(supervisor), profiles: profiles, prepared: map[string]bool{}, frozen: map[string]bool{}}, nil
 }
 
 func (a *ProcessAgent) RuntimeProfiles(context.Context) ([]runtimeprofile.Profile, error) {
@@ -92,8 +91,7 @@ func (a *ProcessAgent) StartSession(ctx context.Context, request agent.SessionRe
 		return agent.OperationResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationStart, Message: err.Error()}
 	}
 	if profile.RuntimeType == runtimeprofile.TypeMCDRPython {
-		serverJarName := a.readServerJarName(request.SessionID)
-		state, startErr := a.mcdr.Start(ctx, request.SessionID, profile, serverJarName)
+		state, startErr := a.mcdr.Start(ctx, request.SessionID, profile)
 		if startErr != nil {
 			return agent.OperationResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationStart, Message: startErr.Error()}
 		}
@@ -140,8 +138,7 @@ func (a *ProcessAgent) RestartSession(ctx context.Context, request agent.Session
 		return agent.OperationResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationRestart, Message: err.Error()}
 	}
 	if profile.RuntimeType == runtimeprofile.TypeMCDRPython {
-		serverJarName := a.readServerJarName(request.SessionID)
-		state, restartErr := a.mcdr.Restart(ctx, request.SessionID, profile, serverJarName)
+		state, restartErr := a.mcdr.Restart(ctx, request.SessionID, profile)
 		if restartErr != nil {
 			return agent.OperationResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationRestart, Message: restartErr.Error()}
 		}
@@ -320,12 +317,6 @@ func (a *ProcessAgent) result(message string) agent.OperationResult {
 	return agent.OperationResult{AgentID: a.id, Status: "success", Message: message, Mode: agentprocess.RuntimeModeDummy}
 }
 
-func (a *ProcessAgent) readServerJarName(sessionID string) string {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.serverJarNames[sessionID]
-}
-
 func (a *ProcessAgent) Start(ctx context.Context, sessionID string) error {
 	_, err := a.StartSession(ctx, agent.SessionRequest{SessionID: sessionID, RuntimeProfileID: runtimeprofile.DefaultProfileID})
 	return err
@@ -346,16 +337,7 @@ func (a *ProcessAgent) Inspect(ctx context.Context, sessionID string) (agent.Ses
 }
 
 func (a *ProcessAgent) MaterializeEnvironment(ctx context.Context, request agent.EnvironmentMaterializationRequest) (agent.EnvironmentMaterializationResult, error) {
-	result, err := a.supervisor.MaterializeEnvironment(ctx, request)
-	if err != nil {
-		return result, err
-	}
-	if jarName, ok := result.Metadata["serverJarName"]; ok && jarName != "" {
-		a.mu.Lock()
-		a.serverJarNames[request.SessionID] = jarName
-		a.mu.Unlock()
-	}
-	return result, nil
+	return a.supervisor.MaterializeEnvironment(ctx, request)
 }
 
 func (a *ProcessAgent) GetSessionRuntimeStatus(ctx context.Context, sessionID string) (agent.SessionRuntimeStatus, error) {

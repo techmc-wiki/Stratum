@@ -14,11 +14,12 @@ import (
 const configYMLName = "config.yml"
 
 type RuntimeConfig struct {
-	ServerWorkDir string
-	ServerJarName string
-	PluginDir     string
-	LogDir        string
-	ConfigDir     string
+	ServerWorkDir  string
+	ServerJarName  string
+	JavaExecutable string
+	PluginDir      string
+	LogDir         string
+	ConfigDir      string
 }
 
 func NewRuntimeConfig(layout process.MCDRRuntimeLayout) RuntimeConfig {
@@ -114,7 +115,13 @@ func renderRuntimeConfig(cfg RuntimeConfig) []byte {
 	b.WriteString(quoteYAMLString(cfg.ConfigDir))
 	b.WriteByte('\n')
 	if cfg.ServerJarName != "" {
-		b.WriteString("start_command: java -jar ")
+		javaCmd := cfg.JavaExecutable
+		if javaCmd == "" {
+			javaCmd = "java"
+		}
+		b.WriteString("start_command: ")
+		b.WriteString(quoteYAMLString(javaCmd))
+		b.WriteString(" -jar ")
 		b.WriteString(quoteYAMLString(cfg.ServerJarName))
 		b.WriteString(" nogui\n")
 	}

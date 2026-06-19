@@ -2,8 +2,11 @@ package mcdr
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	agentprocess "github.com/stratummc/stratum/internal/agent/process"
@@ -42,7 +45,7 @@ func NewSupervisor(processSupervisor *agentprocess.Supervisor) *Supervisor {
 	return &Supervisor{processSupervisor: processSupervisor}
 }
 
-func (s *Supervisor) Start(ctx context.Context, sessionID string, profile runtimeprofile.Profile, serverJarName string) (RuntimeState, error) {
+func (s *Supervisor) Start(ctx context.Context, sessionID string, profile runtimeprofile.Profile) (RuntimeState, error) {
 	if profile.RuntimeType != runtimeprofile.TypeMCDRPython {
 		return RuntimeState{}, fmt.Errorf("MCDR supervisor requires mcdr-python profile, got %q", profile.RuntimeType)
 	}
@@ -66,13 +69,28 @@ func (s *Supervisor) Start(ctx context.Context, sessionID string, profile runtim
 		return RuntimeState{}, fmt.Errorf("write MCDR layout manifest: %w", err)
 	}
 
+	manifestData := readMaterializationManifest(sessionLayout.ConfigDir)
+	serverJarName := manifestData["serverJarName"]
+	mcdrExecutable := manifestData["mcdrExecutable"]
+	javaExecutable := manifestData["javaExecutable"]
+
 	mcdrConfig := NewRuntimeConfig(mcdrLayout)
 	mcdrConfig.ServerJarName = serverJarName
+	mcdrConfig.JavaExecutable = javaExecutable
 	if _, err := WriteRuntimeConfig(mcdrLayout, mcdrConfig); err != nil {
 		return RuntimeState{}, fmt.Errorf("write MCDR config.yml: %w", err)
 	}
 
-	model, err := s.processSupervisor.StartProcess(ctx, sessionID, profile)
+	actualProfile := profile
+	if mcdrExecutable != "" {
+		if len(profile.CommandArgv) > 0 {
+			actualProfile.CommandArgv = append([]string{mcdrExecutable}, profile.CommandArgv[1:]...)
+		} else {
+			actualProfile.CommandArgv = []string{mcdrExecutable}
+		}
+	}
+
+	model, err := s.processSupervisor.StartProcess(ctx, sessionID, actualProfile)
 	if err != nil {
 		return RuntimeState{}, err
 	}
@@ -85,6 +103,25 @@ func (s *Supervisor) Start(ctx context.Context, sessionID string, profile runtim
 	}
 
 	return s.runtimeState(model), nil
+}
+
+func readMaterializationManifest(configDir string) map[string]string {
+	manifestPath := filepath.Join(configDir, "environment-materialization.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return map[string]string{}
+	}
+	var manifest map[string]interface{}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return map[string]string{}
+	}
+	result := map[string]string{}
+	for key, value := range manifest {
+		if str, ok := value.(string); ok {
+			result[key] = str
+		}
+	}
+	return result
 }
 
 func (s *Supervisor) Stop(ctx context.Context, sessionID string) (RuntimeState, error) {
@@ -104,7 +141,7 @@ func (s *Supervisor) Stop(ctx context.Context, sessionID string) (RuntimeState, 
 	return RuntimeState{}, fmt.Errorf("session %q process cannot stop from %s", sessionID, model.Status)
 }
 
-func (s *Supervisor) Restart(ctx context.Context, sessionID string, profile runtimeprofile.Profile, serverJarName string) (RuntimeState, error) {
+func (s *Supervisor) Restart(ctx context.Context, sessionID string, profile runtimeprofile.Profile) (RuntimeState, error) {
 	if profile.RuntimeType != runtimeprofile.TypeMCDRPython {
 		return RuntimeState{}, fmt.Errorf("MCDR supervisor requires mcdr-python profile, got %q", profile.RuntimeType)
 	}
@@ -113,7 +150,7 @@ func (s *Supervisor) Restart(ctx context.Context, sessionID string, profile runt
 			return RuntimeState{}, err
 		}
 	}
-	return s.Start(ctx, sessionID, profile, serverJarName)
+	return s.Start(ctx, sessionID, profile)
 }
 
 func (s *Supervisor) SendCommand(sessionID, command string) error {
