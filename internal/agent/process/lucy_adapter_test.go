@@ -165,11 +165,11 @@ func TestMaterializationWritesManifestWithLucyMetadata(t *testing.T) {
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		t.Fatalf("unmarshal manifest: %v", err)
 	}
-	if manifest["lucy_adapter_mode"] != "noop" {
-		t.Errorf("manifest lucy_adapter_mode: got %v, want noop", manifest["lucy_adapter_mode"])
+	if manifest["lucy_adapter_mode"] != "embedded" {
+		t.Errorf("manifest lucy_adapter_mode: got %v, want embedded", manifest["lucy_adapter_mode"])
 	}
-	if manifest["lucy_resolution_status"] != "not_requested" {
-		t.Errorf("manifest lucy_resolution_status: got %v, want not_requested", manifest["lucy_resolution_status"])
+	if manifest["lucy_resolution_status"] != "resolved" {
+		t.Errorf("manifest lucy_resolution_status: got %v, want resolved", manifest["lucy_resolution_status"])
 	}
 }
 
@@ -179,6 +179,7 @@ func TestMaterializationDoesNotWriteLucyManifests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	supervisor.SetLucyAdapter(lucy.NoopAdapter{})
 	request := agent.EnvironmentMaterializationRequest{
 		SessionID:        "session-no-lucy",
 		EnvironmentID:    "env-117-fabric",
@@ -297,6 +298,7 @@ func TestMaterializeEnvironmentWithNoopAdapterStillDoesNotResolve(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	supervisor.SetLucyAdapter(lucy.NoopAdapter{})
 	result, err := supervisor.MaterializeEnvironment(context.Background(), testMaterializationRequest("session-noop-stable"))
 	if err != nil {
 		t.Fatalf("materialize environment: %v", err)
@@ -610,6 +612,7 @@ func TestMaterializeEnvironmentWithNoopAdapterIntegrityNotChecked(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	supervisor.SetLucyAdapter(lucy.NoopAdapter{})
 	result, err := supervisor.MaterializeEnvironment(context.Background(), testMaterializationRequest("session-integrity-noop"))
 	if err != nil {
 		t.Fatalf("materialize environment: %v", err)

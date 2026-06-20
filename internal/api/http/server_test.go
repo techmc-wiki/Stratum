@@ -15,6 +15,7 @@ import (
 	"github.com/stratummc/stratum/internal/audit"
 	"github.com/stratummc/stratum/internal/checkpoint"
 	"github.com/stratummc/stratum/internal/checkpoint/consistency"
+	"github.com/stratummc/stratum/internal/room"
 	"github.com/stratummc/stratum/internal/session"
 )
 
@@ -30,7 +31,7 @@ func TestHealth(t *testing.T) {
 func TestRestoreCheckpointSuccess(t *testing.T) {
 	repo := &mockCheckpointRepo{
 		sessions: map[string]session.Session{
-			"session-target": {ID: "session-target", ProjectID: "project-1", RoomID: "room-1", EnvironmentID: "env-1"},
+			"session-target": {ID: "session-target", ProjectID: "project-1", RoomID: "room-1", EnvironmentID: "env-1", State: session.StateStopped},
 		},
 		checkpoints: map[string]checkpoint.Checkpoint{
 			"checkpoint-source": {
@@ -58,7 +59,9 @@ func TestRestoreCheckpointSuccess(t *testing.T) {
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
+		var errBody map[string]string
+		json.NewDecoder(response.Body).Decode(&errBody)
+		t.Fatalf("status = %d, want %d, error: %v", response.StatusCode, http.StatusOK, errBody)
 	}
 	var payload CheckpointRestoreResponse
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
@@ -147,6 +150,10 @@ func (m *mockCheckpointRepo) ListCheckpointsBySession(_ context.Context, session
 func (m *mockCheckpointRepo) AppendAuditEvent(_ context.Context, event audit.Event) error {
 	m.auditEvents = append(m.auditEvents, event)
 	return nil
+}
+
+func (m *mockCheckpointRepo) GetRoom(_ context.Context, id string) (room.Room, error) {
+	return room.Room{}, fmt.Errorf("room %q not found", id)
 }
 
 type mockCheckpointAgent struct{}
@@ -279,6 +286,14 @@ func (m *mockCheckpointAgent) RestoreWorldSnapshot(_ context.Context, request ag
 		SizeBytes:   4096,
 		RestoredAt:  time.Date(2026, 6, 17, 12, 0, 0, 0, time.UTC),
 	}, nil
+}
+
+func (m *mockCheckpointAgent) ReadSessionFile(_ context.Context, sessionID, relPath string) ([]byte, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *mockCheckpointAgent) WriteSessionFile(_ context.Context, sessionID, relPath string, content []byte) error {
+	return fmt.Errorf("not implemented")
 }
 
 var _ agent.AgentClient = (*mockCheckpointAgent)(nil)
