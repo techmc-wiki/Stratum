@@ -12,6 +12,7 @@ level-type=flat
 difficulty=peaceful
 generate-structures=false
 spawn-protection=5
+view-distance=12
 `
 	cfg, err := Parse(strings.NewReader(input))
 	if err != nil {
@@ -32,6 +33,9 @@ spawn-protection=5
 	}
 	if cfg.SpawnProtection != 5 {
 		t.Errorf("SpawnProtection = %d, want 5", cfg.SpawnProtection)
+	}
+	if cfg.ViewDistance != 12 {
+		t.Errorf("ViewDistance = %d, want 12", cfg.ViewDistance)
 	}
 }
 
@@ -93,6 +97,7 @@ func TestToWorldProfileSnapshot(t *testing.T) {
 		GenerateStructures: true,
 		Difficulty:         "hard",
 		SpawnProtection:    20,
+		ViewDistance:       16,
 	}
 
 	snapshot := ToWorldProfileSnapshot(cfg, "1.17.1")
@@ -114,6 +119,9 @@ func TestToWorldProfileSnapshot(t *testing.T) {
 	}
 	if snapshot.SpawnRadius != 20 {
 		t.Errorf("SpawnRadius = %d", snapshot.SpawnRadius)
+	}
+	if snapshot.ViewDistance != 16 {
+		t.Errorf("ViewDistance = %d", snapshot.ViewDistance)
 	}
 	if snapshot.MinecraftVersion != "1.17.1" {
 		t.Errorf("MinecraftVersion = %q", snapshot.MinecraftVersion)

@@ -16,6 +16,7 @@ type WorldConfig struct {
 	GenerateStructures bool
 	Difficulty         string
 	SpawnProtection    int
+	ViewDistance       int
 }
 
 func Parse(r io.Reader) (WorldConfig, error) {
@@ -54,6 +55,10 @@ func Parse(r io.Reader) (WorldConfig, error) {
 			if v, err := strconv.Atoi(value); err == nil {
 				cfg.SpawnProtection = v
 			}
+		case "view-distance":
+			if v, err := strconv.Atoi(value); err == nil {
+				cfg.ViewDistance = v
+			}
 		}
 	}
 
@@ -82,6 +87,7 @@ func ToWorldProfileSnapshot(cfg WorldConfig, minecraftVersion string) *checkpoin
 		GenerateStructures: cfg.GenerateStructures,
 		SpawnRadius:        cfg.SpawnProtection,
 		Difficulty:         difficulty,
+		ViewDistance:       cfg.ViewDistance,
 		MinecraftVersion:   minecraftVersion,
 		CapturedFrom:       "server.properties",
 	}
