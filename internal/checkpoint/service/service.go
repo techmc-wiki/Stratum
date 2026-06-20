@@ -70,6 +70,11 @@ func Create(ctx context.Context, repo Repository, req CreateRequest) (checkpoint
 	}
 	switch consistencyLevel {
 	case consistency.LevelMetadataOnly:
+	case consistency.LevelStopped:
+		if err := validateStopped(ctx, req, sess); err != nil {
+			return checkpoint.Checkpoint{}, err
+		}
+		return createStopped(ctx, repo, req, sess)
 	case consistency.LevelBestEffort:
 		if err := validateWorldSnapshotCapable(ctx, req, sess, consistencyLevel); err != nil {
 			return checkpoint.Checkpoint{}, err
@@ -82,8 +87,8 @@ func Create(ctx context.Context, repo Repository, req CreateRequest) (checkpoint
 		return createCommandQuiesced(ctx, repo, req, sess)
 	default:
 		return checkpoint.Checkpoint{}, fmt.Errorf(
-			"checkpoint consistency level %q requires checkpoint orchestration; supported: %q, %q, %q",
-			consistencyLevel, consistency.LevelMetadataOnly, consistency.LevelBestEffort, consistency.LevelCommandQuiesced)
+			"checkpoint consistency level %q requires checkpoint orchestration; supported: %q, %q, %q, %q",
+			consistencyLevel, consistency.LevelMetadataOnly, consistency.LevelStopped, consistency.LevelBestEffort, consistency.LevelCommandQuiesced)
 	}
 	cp, err := checkpoint.New(buildCheckpointParams(ctx, repo, req, sess, consistencyLevel))
 	if err != nil {
@@ -93,6 +98,69 @@ func Create(ctx context.Context, repo Repository, req CreateRequest) (checkpoint
 		return checkpoint.Checkpoint{}, err
 	}
 	if err := repo.AppendAuditEvent(ctx, buildAuditEvent(req, cp)); err != nil {
+		return cp, fmt.Errorf("checkpoint created but audit append failed: %w", err)
+	}
+	return cp, nil
+}
+
+func validateStopped(ctx context.Context, req CreateRequest, sess session.Session) error {
+	if req.AgentClient == nil {
+		return fmt.Errorf("checkpoint consistency level %q requires an agent client", req.ConsistencyLevel)
+	}
+	if sess.State != session.StateRunning {
+		return fmt.Errorf("checkpoint consistency level %q requires running session, current state: %s", req.ConsistencyLevel, sess.State)
+	}
+	return nil
+}
+
+func createStopped(ctx context.Context, repo Repository, req CreateRequest, sess session.Session) (checkpoint.Checkpoint, error) {
+	consistencyMetadata := mergeMetadata(req.ConsistencyMetadata)
+	previousProfile := sess.RuntimeProfileID
+
+	if _, err := req.AgentClient.StopSession(ctx, agent.SessionRequest{SessionID: req.SessionID}); err != nil {
+		consistencyMetadata["stopSessionError"] = err.Error()
+		return checkpoint.Checkpoint{}, fmt.Errorf("stop session: %w", err)
+	}
+
+	snapResult, snapErr := req.AgentClient.CreateWorldSnapshot(ctx, agent.WorldCheckpointRequest{SessionID: req.SessionID})
+	if snapErr != nil {
+		consistencyMetadata["worldSnapshotError"] = snapErr.Error()
+		if _,
+			restartErr := req.AgentClient.StartSession(ctx, agent.SessionRequest{SessionID: req.SessionID, RuntimeProfileID: previousProfile}); restartErr != nil {
+			consistencyMetadata["restartSessionError"] = restartErr.Error()
+		}
+		return checkpoint.Checkpoint{}, fmt.Errorf("world snapshot failed: %w", snapErr)
+	}
+
+	if _,
+		restartErr := req.AgentClient.StartSession(ctx, agent.SessionRequest{SessionID: req.SessionID, RuntimeProfileID: previousProfile}); restartErr != nil {
+		consistencyMetadata["restartSessionError"] = restartErr.Error()
+		return checkpoint.Checkpoint{}, fmt.Errorf("restart session after snapshot: %w", restartErr)
+	}
+
+	consistencyMetadata["worldSnapshot"] = "true"
+	consistencyMetadata["snapshotSizeBytes"] = fmt.Sprintf("%d", snapResult.SizeBytes)
+	consistencyMetadata["snapshotSHA256"] = snapResult.SHA256
+	consistencyMetadata["stoppedBeforeSnapshot"] = "true"
+	consistencyMetadata["restartedAfterSnapshot"] = "true"
+
+	params := buildCheckpointParams(ctx, repo, req, sess, consistency.LevelStopped)
+	params.ConsistencyMetadata = consistencyMetadata
+	params.WorldStateRef = snapResult.SnapshotRef
+	cp, err := checkpoint.New(params)
+	if err != nil {
+		return checkpoint.Checkpoint{}, err
+	}
+	if err := repo.CreateCheckpoint(ctx, cp); err != nil {
+		return checkpoint.Checkpoint{}, err
+	}
+
+	event := buildAuditEvent(req, cp)
+	event.Metadata["worldSnapshot"] = "true"
+	event.Metadata["stoppedLevel"] = "true"
+	event.Metadata["snapshotSizeBytes"] = consistencyMetadata["snapshotSizeBytes"]
+	event.Metadata["snapshotSHA256"] = consistencyMetadata["snapshotSHA256"]
+	if err := repo.AppendAuditEvent(ctx, event); err != nil {
 		return cp, fmt.Errorf("checkpoint created but audit append failed: %w", err)
 	}
 	return cp, nil

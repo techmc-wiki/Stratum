@@ -34,9 +34,9 @@ func createCheckpoint(ctx context.Context, store *filesystem.Store, agentClient 
 		fmt.Fprintf(stderr, "invalid --consistency-level: %v\n", err)
 		return 2
 	}
-	if consistencyLevel != consistency.LevelMetadataOnly && consistencyLevel != consistency.LevelBestEffort && consistencyLevel != consistency.LevelCommandQuiesced {
-		fmt.Fprintf(stderr, "unsupported --consistency-level %q: only %q, %q and %q are supported\n",
-			consistencyLevel, consistency.LevelMetadataOnly, consistency.LevelBestEffort, consistency.LevelCommandQuiesced)
+	if consistencyLevel != consistency.LevelMetadataOnly && consistencyLevel != consistency.LevelStopped && consistencyLevel != consistency.LevelBestEffort && consistencyLevel != consistency.LevelCommandQuiesced {
+		fmt.Fprintf(stderr, "unsupported --consistency-level %q: only %q, %q, %q and %q are supported\n",
+			consistencyLevel, consistency.LevelMetadataOnly, consistency.LevelStopped, consistency.LevelBestEffort, consistency.LevelCommandQuiesced)
 		return 2
 	}
 	var snapshot *checkpoint.RuntimeStatusSnapshot
@@ -168,6 +168,8 @@ func restoreCheckpoint(ctx context.Context, store *filesystem.Store, agentClient
 	notes := flags.String("notes", "", "")
 	applyWorldProfile := flags.Bool("apply-world-profile", false, "apply world profile from checkpoint to target session")
 	applyWorldProfileFields := flags.String("apply-world-profile-fields", "", "comma-separated fields to apply (seed, level-type, difficulty, view-distance, generate-structures, spawn-radius, generator-settings)")
+	autoStop := flags.Bool("auto-stop", false, "stop target session before restore")
+	autoStart := flags.Bool("auto-start", false, "start target session after restore")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -182,6 +184,14 @@ func restoreCheckpoint(ctx context.Context, store *filesystem.Store, agentClient
 			fields[i] = strings.TrimSpace(f)
 		}
 	}
+
+	if *autoStop {
+		if _, err := agentClient.StopSession(ctx, agent.SessionRequest{SessionID: *targetSessionID}); err != nil {
+			return reportError(stderr, "checkpoint restore auto-stop", err)
+		}
+		fmt.Fprintf(stdout, "Session %s stopped before restore.\n", *targetSessionID)
+	}
+
 	cp, err := checkpointsvc.Restore(ctx, store, checkpointsvc.RestoreRequest{
 		CheckpointID:            *checkpointID,
 		TargetSessionID:         *targetSessionID,
@@ -202,6 +212,21 @@ func restoreCheckpoint(ctx context.Context, store *filesystem.Store, agentClient
 		} else {
 			fmt.Fprintln(stdout, "World profile applied to target session")
 		}
+	}
+
+	if *autoStart {
+		sess, err := store.GetSession(ctx, *targetSessionID)
+		if err != nil {
+			return reportError(stderr, "restore auto-start get session", err)
+		}
+		if sess.RuntimeProfileID == "" {
+			fmt.Fprintln(stderr, "session has no RuntimeProfileID; cannot auto-start after restore")
+			return 2
+		}
+		if _, err := agentClient.StartSession(ctx, agent.SessionRequest{SessionID: *targetSessionID, RuntimeProfileID: sess.RuntimeProfileID}); err != nil {
+			return reportError(stderr, "checkpoint restore auto-start", err)
+		}
+		fmt.Fprintf(stdout, "Session %s started after restore (profile=%s).\n", *targetSessionID, sess.RuntimeProfileID)
 	}
 	return 0
 }
