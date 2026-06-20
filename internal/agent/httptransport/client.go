@@ -528,3 +528,22 @@ func (c *Client) ReadSessionFile(ctx context.Context, sessionID, relativePath st
 	}
 	return io.ReadAll(resp.Body)
 }
+
+func (c *Client) WriteSessionFile(ctx context.Context, sessionID, relativePath string, data []byte) error {
+	path := "/v1/sessions/" + url.PathEscape(sessionID) + "/files/" + relativePath
+	fullURL := c.baseURL.String() + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, fullURL, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("write session file: status %d", resp.StatusCode)
+	}
+	return nil
+}

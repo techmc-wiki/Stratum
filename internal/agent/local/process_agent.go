@@ -498,3 +498,24 @@ func (a *ProcessAgent) ReadSessionFile(_ context.Context, sessionID, relativePat
 	}
 	return data, nil
 }
+
+func (a *ProcessAgent) WriteSessionFile(_ context.Context, sessionID, relativePath string, data []byte) error {
+	if strings.TrimSpace(sessionID) == "" {
+		return agent.Error{AgentID: a.id, Operation: "write_session_file", Message: "session ID is required"}
+	}
+	if strings.TrimSpace(relativePath) == "" {
+		return agent.Error{AgentID: a.id, Operation: "write_session_file", Message: "relative path is required"}
+	}
+	if filepath.IsAbs(relativePath) || strings.Contains(relativePath, "..") {
+		return agent.Error{AgentID: a.id, Operation: "write_session_file", Message: "relative path must be safe"}
+	}
+	sessionRoot := filepath.Join(a.supervisor.RuntimeRoot(), "sessions", sessionID)
+	filePath := filepath.Join(sessionRoot, filepath.FromSlash(relativePath))
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+		return agent.Error{AgentID: a.id, Operation: "write_session_file", Message: fmt.Sprintf("create directory: %v", err)}
+	}
+	if err := os.WriteFile(filePath, data, 0o644); err != nil {
+		return agent.Error{AgentID: a.id, Operation: "write_session_file", Message: fmt.Sprintf("write file: %v", err)}
+	}
+	return nil
+}

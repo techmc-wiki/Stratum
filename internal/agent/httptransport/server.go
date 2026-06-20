@@ -68,6 +68,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/sessions/{id}/world-snapshot", s.createWorldSnapshot)
 	s.mux.HandleFunc("POST /v1/sessions/{id}/world-restore", s.restoreWorldSnapshot)
 	s.mux.HandleFunc("GET /v1/sessions/{id}/files/{path...}", s.readSessionFile)
+	s.mux.HandleFunc("PUT /v1/sessions/{id}/files/{path...}", s.writeSessionFile)
 }
 
 func (s *Server) readSessionFile(w http.ResponseWriter, r *http.Request) {
@@ -81,6 +82,21 @@ func (s *Server) readSessionFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
+}
+
+func (s *Server) writeSessionFile(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	relativePath := r.PathValue("path")
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "write-session-file", err)
+		return
+	}
+	if err := s.client.WriteSessionFile(r.Context(), sessionID, relativePath, data); err != nil {
+		s.writeError(w, r, http.StatusInternalServerError, "write-session-file", err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) verifyMaterializedArtifacts(w http.ResponseWriter, r *http.Request) {

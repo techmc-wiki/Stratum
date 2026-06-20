@@ -378,3 +378,7 @@ func (f *Fake) ReadSessionFile(_ context.Context, sessionID, relativePath string
 	}
 	return nil, fmt.Errorf("file not found: %s", relativePath)
 }
+
+func (f *Fake) WriteSessionFile(_ context.Context, sessionID, relativePath string, data []byte) error {
+	return f.record("write_session_file")
+}
