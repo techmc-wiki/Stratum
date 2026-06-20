@@ -181,9 +181,10 @@ All six priorities of Phase 2 are implemented:
 - **Chunk regeneration** — Not planned for MVP
 
 ### Additional Environments
-- **1.12 support** — Only 1.17 implemented
+- **1.17 Fabric** — Fully implemented (MCDR, Java 17, server jar download, Lucy manifest)
+- **1.12 Forge** — Server jar download + environment + runtime profile implemented; Java 8 via existing detector
 - **Latest version** — Not yet defined
-- **Forge/NeoForge** — Only Fabric implemented
+- **Forge/NeoForge modern** — Only 1.12.2 Forge supported so far
 
 ### Infrastructure
 - **Web UI** — CLI-only currently
