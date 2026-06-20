@@ -185,3 +185,50 @@ func TestCheckpointAfterStartCapturesRuntimeProfile(t *testing.T) {
 		t.Fatalf("checkpoint runtime profile = %q", cp.RuntimeProfileID)
 	}
 }
+
+func TestRestartWithPreOpCheckpoint(t *testing.T) {
+	ctx, store, _, _ := newLifecycleTest(t, resourcepolicy.MVPDefault())
+	value := testSession("session-preop", session.TypeShared, session.StateRunning)
+	value.EnvironmentID = "env-1"
+	createTestSession(t, store, value)
+
+	checkpointCreated := false
+	service := New(store, resourcepolicy.MVPDefault(), local.NewFake())
+	service.WithPreOpCheckpoint(func(ctx context.Context, sessionID, actorID string) error {
+		if sessionID != "session-preop" || actorID != "actor-1" {
+			t.Errorf("pre-op checkpoint called with session=%q actor=%q", sessionID, actorID)
+		}
+		checkpointCreated = true
+		return nil
+	})
+
+	_, _, err := service.RestartWithOptions(ctx, "session-preop", "actor-1", OperationOptions{CreatePreOpCheckpoint: true, RuntimeProfileID: "dummy-process"})
+	if err != nil {
+		t.Fatalf("restart error: %v", err)
+	}
+	if !checkpointCreated {
+		t.Fatal("pre-op checkpoint function was not called")
+	}
+}
+
+func TestRestartWithoutPreOpCheckpointDoesNotCallCallback(t *testing.T) {
+	ctx, store, _, _ := newLifecycleTest(t, resourcepolicy.MVPDefault())
+	value := testSession("session-no-preop", session.TypeShared, session.StateRunning)
+	value.EnvironmentID = "env-1"
+	createTestSession(t, store, value)
+
+	called := false
+	service := New(store, resourcepolicy.MVPDefault(), local.NewFake())
+	service.WithPreOpCheckpoint(func(ctx context.Context, sessionID, actorID string) error {
+		called = true
+		return nil
+	})
+
+	_, _, err := service.RestartWithOptions(ctx, "session-no-preop", "actor-1", OperationOptions{CreatePreOpCheckpoint: false, RuntimeProfileID: "dummy-process"})
+	if err != nil {
+		t.Fatalf("restart error: %v", err)
+	}
+	if called {
+		t.Fatal("pre-op checkpoint should not be called when CreatePreOpCheckpoint=false")
+	}
+}
