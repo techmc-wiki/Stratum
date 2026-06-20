@@ -34,8 +34,9 @@ func createCheckpoint(ctx context.Context, store *filesystem.Store, agentClient 
 		fmt.Fprintf(stderr, "invalid --consistency-level: %v\n", err)
 		return 2
 	}
-	if consistencyLevel != consistency.LevelMetadataOnly && consistencyLevel != consistency.LevelCommandQuiesced {
-		fmt.Fprintf(stderr, "unsupported --consistency-level %q: only %q and %q are supported\n", consistencyLevel, consistency.LevelMetadataOnly, consistency.LevelCommandQuiesced)
+	if consistencyLevel != consistency.LevelMetadataOnly && consistencyLevel != consistency.LevelBestEffort && consistencyLevel != consistency.LevelCommandQuiesced {
+		fmt.Fprintf(stderr, "unsupported --consistency-level %q: only %q, %q and %q are supported\n",
+			consistencyLevel, consistency.LevelMetadataOnly, consistency.LevelBestEffort, consistency.LevelCommandQuiesced)
 		return 2
 	}
 	var snapshot *checkpoint.RuntimeStatusSnapshot

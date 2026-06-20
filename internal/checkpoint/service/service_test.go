@@ -3,11 +3,14 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stratummc/stratum/internal/agent"
+	"github.com/stratummc/stratum/internal/agent/local"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
 	"github.com/stratummc/stratum/internal/audit"
 	"github.com/stratummc/stratum/internal/checkpoint"
@@ -654,6 +657,139 @@ func TestCreateCommandQuiescedRequiresAgent(t *testing.T) {
 	}
 }
 
+func TestCreateBestEffortCreatesWorldSnapshot(t *testing.T) {
+	agent := &mockAgent{}
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	cp, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-be", SessionID: "s-1", ActorID: "actor-1",
+		ConsistencyLevel: consistency.LevelBestEffort,
+		AgentClient:      agent,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.ConsistencyLevel != consistency.LevelBestEffort {
+		t.Fatalf("consistency level = %s", cp.ConsistencyLevel)
+	}
+	if cp.WorldStateRef == "" {
+		t.Fatal("WorldStateRef should be set")
+	}
+	if event := repo.auditEvents[0]; event.Metadata["worldSnapshot"] != "true" || event.Metadata["bestEffort"] != "true" {
+		t.Fatalf("audit metadata: %+v", event.Metadata)
+	}
+}
+
+func TestCreateBestEffortRequiresAgentClient(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	_, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-be-no-agent", SessionID: "s-1", ActorID: "actor-1",
+		ConsistencyLevel: consistency.LevelBestEffort,
+	})
+	if err == nil || !strings.Contains(err.Error(), "agent client") {
+		t.Fatalf("expected agent client required error, got %v", err)
+	}
+}
+
+func TestCreateBestEffortSaveAllFailStillCreatesCheckpoint(t *testing.T) {
+	agent := &mockAgent{failAt: 1}
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	cp, err := Create(context.Background(), repo, CreateRequest{
+		ID: "cp-be-fail", SessionID: "s-1", ActorID: "actor-1",
+		ConsistencyLevel: consistency.LevelBestEffort,
+		AgentClient:      agent,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.WorldStateRef == "" {
+		t.Fatal("WorldStateRef should be set even when save-all fails")
+	}
+}
+
+func TestCLICreateAndRestorePipelineE2E(t *testing.T) {
+	root := t.TempDir()
+	runtimeRoot := filepath.Join(root, "runtime")
+	pa, err := local.NewProcessAgentWithRegistryAndRoot("agent-e2e", runtimeprofile.Builtins(), runtimeRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionRoot := filepath.Join(runtimeRoot, "sessions", "session-create")
+	workDir := filepath.Join(sessionRoot, "work")
+	worldDir := filepath.Join(workDir, "world")
+	if err := os.MkdirAll(worldDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "level.dat"), []byte("e2e-world-data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(worldDir, "region"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "region", "r.0.0.mca"), []byte("region-chunk-data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	snapResult, err := pa.CreateWorldSnapshot(context.Background(), agent.WorldCheckpointRequest{
+		SessionID: "session-create",
+	})
+	if err != nil {
+		t.Fatalf("CreateWorldSnapshot: %v", err)
+	}
+	if snapResult.SizeBytes <= 0 {
+		t.Fatalf("snapshot size should be positive: %d", snapResult.SizeBytes)
+	}
+	if snapResult.SHA256 == "" {
+		t.Fatal("SHA256 should be set")
+	}
+	targetRoot := filepath.Join(runtimeRoot, "sessions", "session-restore")
+	if err := os.MkdirAll(filepath.Join(targetRoot, "work"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	restoreResult, err := pa.RestoreWorldSnapshot(context.Background(), agent.WorldCheckpointRestoreRequest{
+		SessionID:   "session-restore",
+		SnapshotRef: snapResult.SnapshotRef,
+		WorldDirRel: "world",
+	})
+	if err != nil {
+		t.Fatalf("RestoreWorldSnapshot: %v", err)
+	}
+	if restoreResult.EntryCount < 2 {
+		t.Fatalf("expected at least 2 entries, got %d", restoreResult.EntryCount)
+	}
+	restoredLevelDat := filepath.Join(workDir, "..", "..", "session-restore", "work", "world", "level.dat")
+	_ = restoredLevelDat
+	restoredPath := filepath.Join(runtimeRoot, "sessions", "session-restore", "work", "world", "level.dat")
+	data, err := os.ReadFile(restoredPath)
+	if err != nil {
+		t.Fatalf("read restored level.dat: %v", err)
+	}
+	if string(data) != "e2e-world-data" {
+		t.Fatalf("restored level.dat content: %q", string(data))
+	}
+	restoredRegion := filepath.Join(runtimeRoot, "sessions", "session-restore", "work", "world", "region", "r.0.0.mca")
+	regionData, err := os.ReadFile(restoredRegion)
+	if err != nil {
+		t.Fatalf("read restored region file: %v", err)
+	}
+	if string(regionData) != "region-chunk-data" {
+		t.Fatalf("restored region content: %q", string(regionData))
+	}
+}
+
 func TestCreateRejectsUnsupportedNonMetadataOnlyConsistencyLevel(t *testing.T) {
 	repo := &mockRepo{
 		sessions: map[string]session.Session{
@@ -663,7 +799,7 @@ func TestCreateRejectsUnsupportedNonMetadataOnlyConsistencyLevel(t *testing.T) {
 	}
 	_, err := Create(context.Background(), repo, CreateRequest{
 		ID: "cp-1", SessionID: "s-1", ActorID: "actor-1",
-		ConsistencyLevel:    consistency.LevelBestEffort,
+		ConsistencyLevel:    consistency.LevelPluginBackup,
 		ConsistencyMetadata: map[string]string{},
 	})
 	if err == nil {

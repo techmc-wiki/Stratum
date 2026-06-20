@@ -59,8 +59,9 @@ stratum checkpoints create \
 - `--actor` (required): Actor performing the operation
 - `--notes` (optional): Checkpoint notes or description
 - `--consistency-level` (optional): Consistency level (default: `metadata_only`)
-  - `metadata_only`: Capture metadata only
-  - `command_quiesced`: Use `save-all` before snapshot
+  - `metadata_only`: Capture metadata and runtime status only. No world files saved.
+  - `best_effort`: Send `save-all flush`, then capture world snapshot. Best-effort without stopping Minecraft writes.
+  - `command_quiesced`: Send `save-off`, `save-all flush`, capture world snapshot, `save-on`. Stronger consistency than best_effort.
 - `--capture-world-profile` (optional): Capture world configuration from `server.properties`
 
 **Requires:** `--agent-url` when `--capture-world-profile` is used

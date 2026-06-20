@@ -185,13 +185,24 @@ After MCDR executor v0, subsequent tasks may include:
   and is valid.
 - Standard-library tests for core behavior.
 
+## Current Status (Updated)
+
+**Now implemented:**
+- Checkpoint world snapshot with zip and SHA-256 verification (via worldcheckpoint.Worker)
+- Checkpoint world restore from zip with path safety and integrity checks
+- `best_effort` consistency level: save-all flush → world snapshot
+- `command_quiesced` consistency level: save-off → save-all flush → snapshot → save-on
+- World profile capture from `server.properties` and auto-population in runtime status
+- World profile application on checkpoint restore (full and partial field merge)
+- Checkpoint diff command for configuration comparison
+- CLI `--apply-world-profile` and `--apply-world-profile-fields` flags
+
 ## Deferred
 
 - Additional explicit reconciliation actions.
 - MCDR RuntimeProfile v0 and real Minecraft process integration.
 - Production Agent authentication, TLS policy, retries, and reconciliation.
 - Real Lucy resolution and lock verification.
-- Checkpoint filesystem snapshot and restore.
 - Artifact approval UI and sandboxed review execution.
 - Cross-record transactions, cross-process audit locking, and migrations.
 - Full Web UI and WebSocket event streaming.

@@ -592,7 +592,7 @@ func TestCheckpointCreateRejectsUnorchestratedConsistencyLevel(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	code := Run([]string{"--data-dir", dataDirectory, "checkpoints", "create", "--id", "checkpoint-1", "--session", "session-1", "--actor", "test-actor", "--consistency-level", "best_effort"}, &stdout, &stderr)
+	code := Run([]string{"--data-dir", dataDirectory, "checkpoints", "create", "--id", "checkpoint-1", "--session", "session-1", "--actor", "test-actor", "--consistency-level", "plugin_backup"}, &stdout, &stderr)
 	if code != 2 || !strings.Contains(stderr.String(), "unsupported") {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
@@ -603,6 +603,44 @@ func TestCheckpointCreateRejectsUnorchestratedConsistencyLevel(t *testing.T) {
 	}
 	if _, err := store.GetCheckpoint(context.Background(), "checkpoint-1"); err == nil {
 		t.Fatal("unsupported consistency level should not create checkpoint")
+	}
+}
+
+func TestCLICreateBestEffortCheckpoint(t *testing.T) {
+	server := httptest.NewServer(httptransport.NewServer(local.NewFake(), "", nil).Handler())
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	_ = ensureTestEnvironment(dataDirectory)
+	base := []string{"--data-dir", dataDirectory, "--agent-url", server.URL}
+	commands := [][]string{
+		{"projects", "create", "--id", "project-1", "--name", "Project"},
+		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room", "--environment", "env-test"},
+		{"sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
+		{"sessions", "start", "--id", "session-1", "--actor", "actor-1"},
+		{"checkpoints", "create", "--id", "cp-be", "--session", "session-1", "--actor", "actor-1", "--consistency-level", "best_effort"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(append(append([]string{}, base...), command...), &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp, err := store.GetCheckpoint(context.Background(), "cp-be")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.ConsistencyLevel != consistency.LevelBestEffort {
+		t.Fatalf("consistency level = %s", cp.ConsistencyLevel)
+	}
+	if cp.WorldStateRef == "" {
+		t.Fatal("WorldStateRef should be set for best_effort")
 	}
 }
 

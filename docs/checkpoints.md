@@ -75,13 +75,36 @@ RuntimeProfile identity, MCDR layout presence, artifact counts, process state,
 PID, overall diagnostic status, and issue codes. An Agent runtime-status error
 fails creation before checkpoint or audit data is written.
 
+### Consistency Levels
+
+| Level | Description | World Snapshot | Commands |
+|-------|-------------|---------------|----------|
+| `metadata_only` | Metadata and runtime status only | No | None |
+| `best_effort` | `save-all flush` + world snapshot | Yes (zip + SHA-256) | `save-all flush` |
+| `command_quiesced` | `save-off` → `save-all flush` → snapshot → `save-on` | Yes (zip + SHA-256) | `save-off`, `save-all flush`, `save-on` |
+
+**`best_effort`:**
+- Sends `save-all flush` to flush all chunks to disk (best effort, may fail)
+- Takes world snapshot regardless of whether the command succeeded
+- Suitable for quick checkpoints where save-off/save-on overhead is undesirable
+- Does not guarantee full internal consistency (mod state, async tasks)
+
+**`command_quiesced`:**
+- Sends `save-off` to pause Minecraft auto-saves
+- Sends `save-all flush` to flush all chunks
+- Creates world snapshot (zip with SHA-256)
+- Sends `save-on` to resume auto-saves (guaranteed even on snapshot failure)
+- Requires agent with `send-command` capability
+
+**Future levels:** `stopped`, `plugin_backup`, `mc_bridge_prepared` (see architecture.md)
+
 Creation does not:
 
-* Create world backup payloads
 * Modify Session state
 * Copy runtime-status manifests, paths, or logs
 * Stop or pause the runtime
 * Repair artifacts or runtime state
+* (metadata_only) Create world backup payloads
 
 ## Listing
 

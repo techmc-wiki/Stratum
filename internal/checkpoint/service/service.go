@@ -70,13 +70,20 @@ func Create(ctx context.Context, repo Repository, req CreateRequest) (checkpoint
 	}
 	switch consistencyLevel {
 	case consistency.LevelMetadataOnly:
+	case consistency.LevelBestEffort:
+		if err := validateWorldSnapshotCapable(ctx, req, sess, consistencyLevel); err != nil {
+			return checkpoint.Checkpoint{}, err
+		}
+		return createBestEffort(ctx, repo, req, sess)
 	case consistency.LevelCommandQuiesced:
 		if err := validateCommandQuiesced(ctx, req, sess); err != nil {
 			return checkpoint.Checkpoint{}, err
 		}
 		return createCommandQuiesced(ctx, repo, req, sess)
 	default:
-		return checkpoint.Checkpoint{}, fmt.Errorf("checkpoint consistency level %q requires checkpoint orchestration; only %q and %q are supported", consistencyLevel, consistency.LevelMetadataOnly, consistency.LevelCommandQuiesced)
+		return checkpoint.Checkpoint{}, fmt.Errorf(
+			"checkpoint consistency level %q requires checkpoint orchestration; supported: %q, %q, %q",
+			consistencyLevel, consistency.LevelMetadataOnly, consistency.LevelBestEffort, consistency.LevelCommandQuiesced)
 	}
 	cp, err := checkpoint.New(buildCheckpointParams(ctx, repo, req, sess, consistencyLevel))
 	if err != nil {
@@ -117,6 +124,51 @@ func validateCommandQuiesced(ctx context.Context, req CreateRequest, sess sessio
 		return fmt.Errorf("agent %q does not support send-command; command_quiesced requires send-command capability", info.ID)
 	}
 	return nil
+}
+
+func validateWorldSnapshotCapable(ctx context.Context, req CreateRequest, sess session.Session, level consistency.Level) error {
+	if req.AgentClient == nil {
+		return fmt.Errorf("checkpoint consistency level %q requires an agent client", level)
+	}
+	return nil
+}
+
+func createBestEffort(ctx context.Context, repo Repository, req CreateRequest, sess session.Session) (checkpoint.Checkpoint, error) {
+	consistencyMetadata := mergeMetadata(req.ConsistencyMetadata)
+
+	if _, err := req.AgentClient.SendCommand(ctx, req.SessionID, "save-all flush"); err != nil {
+		consistencyMetadata["saveAllError"] = err.Error()
+	}
+
+	snapResult, snapErr := req.AgentClient.CreateWorldSnapshot(ctx, agent.WorldCheckpointRequest{SessionID: req.SessionID})
+	if snapErr != nil {
+		return checkpoint.Checkpoint{}, fmt.Errorf("world snapshot failed: %w", snapErr)
+	}
+
+	consistencyMetadata["worldSnapshot"] = "true"
+	consistencyMetadata["snapshotSizeBytes"] = fmt.Sprintf("%d", snapResult.SizeBytes)
+	consistencyMetadata["snapshotSHA256"] = snapResult.SHA256
+
+	params := buildCheckpointParams(ctx, repo, req, sess, consistency.LevelBestEffort)
+	params.ConsistencyMetadata = consistencyMetadata
+	params.WorldStateRef = snapResult.SnapshotRef
+	cp, err := checkpoint.New(params)
+	if err != nil {
+		return checkpoint.Checkpoint{}, err
+	}
+	if err := repo.CreateCheckpoint(ctx, cp); err != nil {
+		return checkpoint.Checkpoint{}, err
+	}
+
+	event := buildAuditEvent(req, cp)
+	event.Metadata["worldSnapshot"] = "true"
+	event.Metadata["bestEffort"] = "true"
+	event.Metadata["snapshotSizeBytes"] = consistencyMetadata["snapshotSizeBytes"]
+	event.Metadata["snapshotSHA256"] = consistencyMetadata["snapshotSHA256"]
+	if err := repo.AppendAuditEvent(ctx, event); err != nil {
+		return cp, fmt.Errorf("checkpoint created but audit append failed: %w", err)
+	}
+	return cp, nil
 }
 
 func createCommandQuiesced(ctx context.Context, repo Repository, req CreateRequest, sess session.Session) (checkpoint.Checkpoint, error) {
