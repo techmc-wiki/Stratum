@@ -48,7 +48,7 @@ type InstallMCDRRequest struct {
 }
 
 func NewManager() *Manager {
-	return &Manager{Run: defaultRun}
+	return &Manager{Run: defaultRun, ManagerType: ManagerUV}
 }
 
 func (m *Manager) CreateVenv(ctx context.Context, req VenvRequest) (VenvResult, error) {
@@ -127,10 +127,6 @@ func (m *Manager) createVenvWithUV(ctx context.Context, req VenvRequest) error {
 }
 
 func (m *Manager) InstallMCDR(ctx context.Context, req InstallMCDRRequest) error {
-	if strings.TrimSpace(req.Venv.PipExec) == "" {
-		return fmt.Errorf("venv pip executable is required")
-	}
-
 	managerType := req.ManagerType
 	if managerType == "" {
 		managerType = m.ManagerType
@@ -148,6 +144,9 @@ func (m *Manager) InstallMCDR(ctx context.Context, req InstallMCDRRequest) error
 }
 
 func (m *Manager) installMCDRWithPip(ctx context.Context, req InstallMCDRRequest) error {
+	if strings.TrimSpace(req.Venv.PipExec) == "" {
+		return fmt.Errorf("venv pip executable is required")
+	}
 	args := []string{"install"}
 	if req.IndexURL != "" {
 		args = append(args, "-i", req.IndexURL)

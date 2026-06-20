@@ -722,51 +722,44 @@ func (s *Supervisor) materializeMCDRRuntime(ctx context.Context, layout SessionR
 	if err := mcdrLayout.WriteManifest(); err != nil {
 		return nil, fmt.Errorf("write MCDR layout manifest: %w", err)
 	}
+	requestedVersion := "latest"
+	if err := writeMCDRUVProject(mcdrLayout.MCDRConfigDir, requestedVersion); err != nil {
+		return nil, err
+	}
 	pythonInstall, err := detector.SelectForMCDR(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("select Python for MCDR: %w", err)
 	}
-	if executable, lookupErr := exec.LookPath("mcdreforged"); lookupErr == nil {
-		installedVersion, verifyErr := manager.VerifyMCDRExecutable(ctx, executable)
-		if verifyErr == nil {
-			return map[string]string{
-				"mcdrMaterializationStatus": "ready",
-				"mcdrInstallStatus":         "skipped-global-existing",
-				"mcdrVersion":               installedVersion,
-				"mcdrExecutable":            executable,
-				"pythonExecutable":          pythonInstall.ExecutablePath,
-				"pythonVersion":             pythonInstall.Version,
-				"pythonHasVenv":             fmt.Sprintf("%t", pythonInstall.HasVenv),
-				"pythonHasPip":              fmt.Sprintf("%t", pythonInstall.HasPip),
-			}, nil
-		}
-	}
+	managerType := agentpython.ManagerUV
 	venvPath := filepath.Join(mcdrLayout.MCDRRoot, "venv")
 	venv, err := manager.CreateVenv(ctx, agentpython.VenvRequest{
-		SessionID: request.SessionID,
-		VenvPath:  venvPath,
-		Python:    pythonInstall,
+		SessionID:   request.SessionID,
+		VenvPath:    venvPath,
+		Python:      pythonInstall,
+		ManagerType: managerType,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("create MCDR Python venv: %w", err)
+		return nil, fmt.Errorf("create MCDR Python environment with %s: %w", managerType, err)
 	}
-	requestedVersion := "latest"
 	proxyURL := os.Getenv("STRATUM_HTTP_PROXY")
 	installReq := agentpython.InstallMCDRRequest{
-		Venv:     venv,
-		Version:  requestedVersion,
-		ProxyURL: proxyURL,
+		Venv:        venv,
+		Version:     requestedVersion,
+		ProxyURL:    proxyURL,
+		ManagerType: managerType,
 	}
 	if installedVersion, verifyErr := manager.VerifyMCDR(ctx, venv); verifyErr == nil {
 		return map[string]string{
 			"mcdrMaterializationStatus": "ready",
-			"mcdrInstallStatus":         "skipped-venv-existing",
+			"mcdrInstallStatus":         "skipped-uv-existing",
+			"mcdrLaunchMode":            "trusted-runtime-profile",
+			"mcdrUVProjectPath":         filepath.Join(mcdrLayout.MCDRConfigDir, "pyproject.toml"),
+			"mcdrUVRunCommand":          "uv run mcdreforged",
 			"mcdrRequestedVersion":      requestedVersion,
 			"mcdrVersion":               installedVersion,
-			"mcdrExecutable":            venv.MCDRExecutable,
-			"mcdrVenvPath":              venv.VenvPath,
+			"pythonManager":             string(managerType),
+			"mcdrEnvironmentPath":       venv.VenvPath,
 			"mcdrPythonExecutable":      venv.PythonExec,
-			"mcdrPipExecutable":         venv.PipExec,
 			"pythonExecutable":          pythonInstall.ExecutablePath,
 			"pythonVersion":             pythonInstall.Version,
 			"pythonHasVenv":             fmt.Sprintf("%t", pythonInstall.HasVenv),
@@ -782,17 +775,38 @@ func (s *Supervisor) materializeMCDRRuntime(ctx context.Context, layout SessionR
 	}
 	return map[string]string{
 		"mcdrMaterializationStatus": "ready",
+		"mcdrInstallStatus":         "installed-uv",
+		"mcdrLaunchMode":            "trusted-runtime-profile",
+		"mcdrUVProjectPath":         filepath.Join(mcdrLayout.MCDRConfigDir, "pyproject.toml"),
+		"mcdrUVRunCommand":          "uv run mcdreforged",
 		"mcdrRequestedVersion":      requestedVersion,
 		"mcdrVersion":               installedVersion,
-		"mcdrExecutable":            venv.MCDRExecutable,
-		"mcdrVenvPath":              venv.VenvPath,
+		"pythonManager":             string(managerType),
+		"mcdrEnvironmentPath":       venv.VenvPath,
 		"mcdrPythonExecutable":      venv.PythonExec,
-		"mcdrPipExecutable":         venv.PipExec,
 		"pythonExecutable":          pythonInstall.ExecutablePath,
 		"pythonVersion":             pythonInstall.Version,
 		"pythonHasVenv":             fmt.Sprintf("%t", pythonInstall.HasVenv),
 		"pythonHasPip":              fmt.Sprintf("%t", pythonInstall.HasPip),
 	}, nil
+}
+
+func writeMCDRUVProject(configDir, requestedVersion string) error {
+	if err := os.MkdirAll(configDir, 0o750); err != nil {
+		return fmt.Errorf("create MCDR config directory: %w", err)
+	}
+	dependency := agentpython.MCDRPackageSpec(requestedVersion)
+	content := "[project]\n" +
+		"name = \"stratum-mcdr-runtime\"\n" +
+		"version = \"0.0.0\"\n" +
+		"requires-python = \">=3.8\"\n" +
+		"dependencies = [\n" +
+		fmt.Sprintf("  %q,\n", dependency) +
+		"]\n"
+	if err := os.WriteFile(filepath.Join(configDir, "pyproject.toml"), []byte(content), 0o640); err != nil {
+		return fmt.Errorf("write MCDR uv project: %w", err)
+	}
+	return nil
 }
 
 func (s *Supervisor) materializeJavaAndServerJar(ctx context.Context, layout SessionRuntimeLayout, request agent.EnvironmentMaterializationRequest, detector javaRuntimeDetector, deployer serverJarMaterializer) map[string]string {

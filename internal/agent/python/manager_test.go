@@ -41,7 +41,7 @@ func TestMCDRPackageSpec(t *testing.T) {
 
 func TestCreateVenvRunsExpectedCommands(t *testing.T) {
 	var commands []recordedCommand
-	manager := &Manager{Run: func(_ context.Context, path string, args ...string) (string, error) {
+	manager := &Manager{ManagerType: ManagerVenv, Run: func(_ context.Context, path string, args ...string) (string, error) {
 		commands = append(commands, recordedCommand{Path: path, Args: append([]string(nil), args...)})
 		return "ok", nil
 	}}
@@ -74,6 +74,13 @@ func TestCreateVenvRunsExpectedCommands(t *testing.T) {
 	}
 }
 
+func TestNewManagerDefaultsToUV(t *testing.T) {
+	manager := NewManager()
+	if manager.ManagerType != ManagerUV {
+		t.Fatalf("manager type=%q want %q", manager.ManagerType, ManagerUV)
+	}
+}
+
 func TestCreateVenvValidatesInput(t *testing.T) {
 	manager := NewManager()
 	_, err := manager.CreateVenv(context.Background(), VenvRequest{})
@@ -84,7 +91,7 @@ func TestCreateVenvValidatesInput(t *testing.T) {
 
 func TestInstallMCDRBuildsPipCommand(t *testing.T) {
 	var command recordedCommand
-	manager := &Manager{Run: func(_ context.Context, path string, args ...string) (string, error) {
+	manager := &Manager{ManagerType: ManagerVenv, Run: func(_ context.Context, path string, args ...string) (string, error) {
 		command = recordedCommand{Path: path, Args: append([]string(nil), args...)}
 		return "ok", nil
 	}}
@@ -109,7 +116,7 @@ func TestInstallMCDRBuildsPipCommand(t *testing.T) {
 }
 
 func TestInstallMCDRRequiresPip(t *testing.T) {
-	err := NewManager().InstallMCDR(context.Background(), InstallMCDRRequest{})
+	err := (&Manager{ManagerType: ManagerVenv}).InstallMCDR(context.Background(), InstallMCDRRequest{})
 	if err == nil || !strings.Contains(err.Error(), "pip") {
 		t.Fatalf("expected pip error, got %v", err)
 	}

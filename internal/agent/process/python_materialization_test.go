@@ -21,11 +21,16 @@ func (fakePythonDetector) SelectForMCDR(context.Context) (agentpython.Installati
 
 type fakePythonManager struct{}
 
+var fakePythonManagerLastVenvType agentpython.ManagerType
+var fakePythonManagerLastInstallType agentpython.ManagerType
+
 func (fakePythonManager) CreateVenv(_ context.Context, req agentpython.VenvRequest) (agentpython.VenvResult, error) {
+	fakePythonManagerLastVenvType = req.ManagerType
 	return agentpython.BuildVenvResult(req.SessionID, req.VenvPath), nil
 }
 
-func (fakePythonManager) InstallMCDR(context.Context, agentpython.InstallMCDRRequest) error {
+func (fakePythonManager) InstallMCDR(_ context.Context, req agentpython.InstallMCDRRequest) error {
+	fakePythonManagerLastInstallType = req.ManagerType
 	return nil
 }
 
@@ -66,6 +71,8 @@ func (d fakeServerJarDeployer) Deploy(_ context.Context, req serverjar.DeployReq
 }
 
 func TestMaterializeEnvironmentPreparesMCDRPythonRuntime(t *testing.T) {
+	fakePythonManagerLastVenvType = ""
+	fakePythonManagerLastInstallType = ""
 	root := t.TempDir()
 	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
 	if err != nil {
@@ -95,8 +102,27 @@ func TestMaterializeEnvironmentPreparesMCDRPythonRuntime(t *testing.T) {
 	if result.Metadata["mcdrVersion"] != "MCDReforged v2.15.7" {
 		t.Fatalf("mcdrVersion=%q", result.Metadata["mcdrVersion"])
 	}
-	if result.Metadata["mcdrExecutable"] == "" || result.Metadata["mcdrVenvPath"] == "" {
+	if result.Metadata["pythonManager"] != string(agentpython.ManagerUV) {
+		t.Fatalf("python manager metadata=%+v", result.Metadata)
+	}
+	if fakePythonManagerLastVenvType != agentpython.ManagerUV {
+		t.Fatalf("venv manager type=%q want %q", fakePythonManagerLastVenvType, agentpython.ManagerUV)
+	}
+	if result.Metadata["mcdrEnvironmentPath"] == "" || result.Metadata["mcdrPythonExecutable"] == "" {
 		t.Fatalf("missing MCDR runtime metadata: %+v", result.Metadata)
+	}
+	if result.Metadata["mcdrUVRunCommand"] != "uv run mcdreforged" {
+		t.Fatalf("uv run metadata=%+v", result.Metadata)
+	}
+	uvProjectPath := result.Metadata["mcdrUVProjectPath"]
+	if uvProjectPath == "" {
+		t.Fatalf("missing uv project metadata: %+v", result.Metadata)
+	}
+	if _, err := os.Stat(uvProjectPath); err != nil {
+		t.Fatalf("uv project not written: %v", err)
+	}
+	if result.Metadata["mcdrExecutable"] != "" || result.Metadata["mcdrVenvPath"] != "" {
+		t.Fatalf("uv materialization should not expose direct MCDR executable metadata: %+v", result.Metadata)
 	}
 }
 
