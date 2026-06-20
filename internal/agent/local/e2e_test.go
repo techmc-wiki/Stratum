@@ -15,6 +15,7 @@ import (
 	agentpython "github.com/stratummc/stratum/internal/agent/python"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
 	"github.com/stratummc/stratum/internal/agent/serverjar"
+	"github.com/stratummc/stratum/internal/agent/serverproperties"
 )
 
 type e2ePythonDetector struct{}
@@ -61,6 +62,50 @@ func (d e2eServerJarDeployer) Deploy(_ context.Context, req serverjar.DeployRequ
 		return serverjar.DeployResult{}, err
 	}
 	return serverjar.DeployResult{DeployedPath: target, JarName: jarName, SHA256: "e2e-abc", SizeBytes: 99, Source: "e2e-test"}, nil
+}
+
+func TestE2EReadSessionFileServerProperties(t *testing.T) {
+	root := t.TempDir()
+	sessionID := "e2e-readfile-1"
+	sessionDir := filepath.Join(root, "sessions", sessionID)
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	serverProps := `# Minecraft server properties
+level-seed=777888
+level-type=amplified
+difficulty=hard
+generate-structures=true
+spawn-protection=12
+view-distance=16
+`
+	if err := os.WriteFile(filepath.Join(sessionDir, "server.properties"), []byte(serverProps), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sup, err := agentprocess.NewSupervisorWithRoot("e2e-agent", root, 1024*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pa := &ProcessAgent{
+		id:         "e2e-agent",
+		supervisor: sup,
+	}
+
+	data, err := pa.ReadSessionFile(context.Background(), sessionID, "server.properties")
+	if err != nil {
+		t.Fatalf("ReadSessionFile: %v", err)
+	}
+
+	if string(data) != serverProps {
+		t.Errorf("ReadSessionFile returned unexpected content:\n%s", string(data))
+	}
+
+	_, err = pa.ReadSessionFile(context.Background(), sessionID, "../etc/passwd")
+	if err == nil {
+		t.Fatal("Expected error for path traversal, got nil")
+	}
 }
 
 func TestE2EMCDRSessionMaterializeAndStart(t *testing.T) {
@@ -271,5 +316,87 @@ func TestE2EMCDRHelperProcess(t *testing.T) {
 			os.Stdout.WriteString("e2e-mcdr-helper-stopped\n")
 			os.Exit(0)
 		}
+	}
+}
+
+func TestE2ECheckpointCaptureServerProperties(t *testing.T) {
+	root := t.TempDir()
+	sessionID := "e2e-checkpoint-1"
+	sessionDir := filepath.Join(root, "sessions", sessionID)
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	serverProps := `# Minecraft server properties
+level-seed=987654321
+level-type=flat
+difficulty=easy
+generate-structures=false
+spawn-protection=8
+view-distance=10
+`
+	if err := os.WriteFile(filepath.Join(sessionDir, "server.properties"), []byte(serverProps), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sup, err := agentprocess.NewSupervisorWithRoot("e2e-agent", root, 1024*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pa := &ProcessAgent{
+		id:         "e2e-agent",
+		supervisor: sup,
+	}
+
+	data, err := pa.ReadSessionFile(context.Background(), sessionID, "server.properties")
+	if err != nil {
+		t.Fatalf("ReadSessionFile: %v", err)
+	}
+
+	cfg, err := serverproperties.Parse(strings.NewReader(string(data)))
+	if err != nil {
+		t.Fatalf("Parse server.properties: %v", err)
+	}
+
+	if cfg.LevelSeed != "987654321" {
+		t.Errorf("LevelSeed = %q, want 987654321", cfg.LevelSeed)
+	}
+	if cfg.LevelType != "flat" {
+		t.Errorf("LevelType = %q, want flat", cfg.LevelType)
+	}
+	if cfg.Difficulty != "easy" {
+		t.Errorf("Difficulty = %q, want easy", cfg.Difficulty)
+	}
+	if cfg.GenerateStructures != false {
+		t.Errorf("GenerateStructures = %v, want false", cfg.GenerateStructures)
+	}
+	if cfg.SpawnProtection != 8 {
+		t.Errorf("SpawnProtection = %d, want 8", cfg.SpawnProtection)
+	}
+	if cfg.ViewDistance != 10 {
+		t.Errorf("ViewDistance = %d, want 10", cfg.ViewDistance)
+	}
+
+	snapshot := serverproperties.ToWorldProfileSnapshot(cfg, "1.17.1")
+	if snapshot.Seed != "987654321" {
+		t.Errorf("Snapshot Seed = %q", snapshot.Seed)
+	}
+	if snapshot.LevelType != "flat" {
+		t.Errorf("Snapshot LevelType = %q", snapshot.LevelType)
+	}
+	if snapshot.Difficulty != "easy" {
+		t.Errorf("Snapshot Difficulty = %q", snapshot.Difficulty)
+	}
+	if snapshot.SpawnRadius != 8 {
+		t.Errorf("Snapshot SpawnRadius = %d", snapshot.SpawnRadius)
+	}
+	if snapshot.ViewDistance != 10 {
+		t.Errorf("Snapshot ViewDistance = %d", snapshot.ViewDistance)
+	}
+	if snapshot.MinecraftVersion != "1.17.1" {
+		t.Errorf("Snapshot MinecraftVersion = %q", snapshot.MinecraftVersion)
+	}
+	if snapshot.CapturedFrom != "server.properties" {
+		t.Errorf("Snapshot CapturedFrom = %q", snapshot.CapturedFrom)
 	}
 }
