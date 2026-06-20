@@ -12,7 +12,8 @@ import (
 type CommandRunner func(context.Context, string, ...string) (string, error)
 
 type Manager struct {
-	Run CommandRunner
+	Run         CommandRunner
+	ManagerType ManagerType
 }
 
 type VenvRequest struct {
@@ -20,6 +21,7 @@ type VenvRequest struct {
 	VenvPath      string
 	Python        Installation
 	ClearExisting bool
+	ManagerType   ManagerType
 }
 
 type VenvResult struct {
@@ -37,11 +39,12 @@ type MCDRExecutable struct {
 }
 
 type InstallMCDRRequest struct {
-	Venv      VenvResult
-	Version   string
-	IndexURL  string
-	ProxyURL  string
-	ExtraArgs []string
+	Venv        VenvResult
+	Version     string
+	IndexURL    string
+	ProxyURL    string
+	ExtraArgs   []string
+	ManagerType ManagerType
 }
 
 func NewManager() *Manager {
@@ -67,13 +70,28 @@ func (m *Manager) CreateVenv(ctx context.Context, req VenvRequest) (VenvResult, 
 	if err := os.MkdirAll(filepath.Dir(venvPath), 0o755); err != nil {
 		return VenvResult{}, fmt.Errorf("create venv parent directory: %w", err)
 	}
-	run := m.runner()
-	args := append([]string{}, req.Python.PrefixArgs...)
-	args = append(args, "-m", "venv", venvPath)
-	if _, err := run(ctx, req.Python.ExecutablePath, args...); err != nil {
-		return VenvResult{}, fmt.Errorf("create python venv: %w", err)
+
+	managerType := req.ManagerType
+	if managerType == "" {
+		managerType = m.ManagerType
 	}
+	if managerType == "" {
+		managerType = ManagerVenv
+	}
+
+	var err error
+	switch managerType {
+	case ManagerUV:
+		err = m.createVenvWithUV(ctx, req)
+	default:
+		err = m.createVenvWithStandard(ctx, req)
+	}
+	if err != nil {
+		return VenvResult{}, err
+	}
+
 	result := BuildVenvResult(req.SessionID, venvPath)
+	run := m.runner()
 	if _, err := run(ctx, result.PythonExec, "--version"); err != nil {
 		return VenvResult{}, fmt.Errorf("verify venv python: %w", err)
 	}
@@ -83,10 +101,47 @@ func (m *Manager) CreateVenv(ctx context.Context, req VenvRequest) (VenvResult, 
 	return result, nil
 }
 
+func (m *Manager) createVenvWithStandard(ctx context.Context, req VenvRequest) error {
+	run := m.runner()
+	args := append([]string{}, req.Python.PrefixArgs...)
+	args = append(args, "-m", "venv", req.VenvPath)
+	if _, err := run(ctx, req.Python.ExecutablePath, args...); err != nil {
+		return fmt.Errorf("create python venv: %w", err)
+	}
+	return nil
+}
+
+func (m *Manager) createVenvWithUV(ctx context.Context, req VenvRequest) error {
+	run := m.runner()
+	args := []string{"venv", req.VenvPath, "--python", req.Python.ExecutablePath}
+	if _, err := run(ctx, "uv", args...); err != nil {
+		return fmt.Errorf("create uv venv: %w", err)
+	}
+	return nil
+}
+
 func (m *Manager) InstallMCDR(ctx context.Context, req InstallMCDRRequest) error {
 	if strings.TrimSpace(req.Venv.PipExec) == "" {
 		return fmt.Errorf("venv pip executable is required")
 	}
+
+	managerType := req.ManagerType
+	if managerType == "" {
+		managerType = m.ManagerType
+	}
+	if managerType == "" {
+		managerType = ManagerVenv
+	}
+
+	switch managerType {
+	case ManagerUV:
+		return m.installMCDRWithUV(ctx, req)
+	default:
+		return m.installMCDRWithPip(ctx, req)
+	}
+}
+
+func (m *Manager) installMCDRWithPip(ctx context.Context, req InstallMCDRRequest) error {
 	args := []string{"install"}
 	if req.IndexURL != "" {
 		args = append(args, "-i", req.IndexURL)
@@ -98,6 +153,19 @@ func (m *Manager) InstallMCDR(ctx context.Context, req InstallMCDRRequest) error
 	args = append(args, MCDRPackageSpec(req.Version))
 	if _, err := m.runner()(ctx, req.Venv.PipExec, args...); err != nil {
 		return fmt.Errorf("install MCDR: %w", err)
+	}
+	return nil
+}
+
+func (m *Manager) installMCDRWithUV(ctx context.Context, req InstallMCDRRequest) error {
+	args := []string{"pip", "install"}
+	if req.IndexURL != "" {
+		args = append(args, "--index-url", req.IndexURL)
+	}
+	args = append(args, req.ExtraArgs...)
+	args = append(args, MCDRPackageSpec(req.Version))
+	if _, err := m.runner()(ctx, "uv", args...); err != nil {
+		return fmt.Errorf("install MCDR with uv: %w", err)
 	}
 	return nil
 }
