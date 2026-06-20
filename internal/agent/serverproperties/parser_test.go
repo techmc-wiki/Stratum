@@ -3,6 +3,8 @@ package serverproperties
 import (
 	"strings"
 	"testing"
+
+	"github.com/stratummc/stratum/internal/checkpoint"
 )
 
 func TestParseBasicProperties(t *testing.T) {
@@ -140,5 +142,40 @@ func TestToWorldProfileSnapshotDefaults(t *testing.T) {
 	}
 	if snapshot.Difficulty != "normal" {
 		t.Errorf("Difficulty default = %q, want normal", snapshot.Difficulty)
+	}
+}
+
+func TestFromWorldProfileSnapshot(t *testing.T) {
+	snapshot := &checkpoint.WorldProfileSnapshot{
+		Seed:               "12345",
+		LevelType:          "flat",
+		GeneratorSettings:  `{"layers":[{"block":"stone","height":1}]}`,
+		GenerateStructures: false,
+		SpawnRadius:        8,
+		Difficulty:         "hard",
+		ViewDistance:       12,
+		MinecraftVersion:   "1.17.1",
+	}
+	props := FromWorldProfileSnapshot(snapshot)
+	if !strings.Contains(props, "level-seed=12345") {
+		t.Errorf("missing level-seed")
+	}
+	if !strings.Contains(props, "level-type=flat") {
+		t.Errorf("missing level-type")
+	}
+	if !strings.Contains(props, `generator-settings={"layers":[{"block":"stone","height":1}]}`) {
+		t.Errorf("missing generator-settings")
+	}
+	if !strings.Contains(props, "generate-structures=false") {
+		t.Errorf("missing generate-structures")
+	}
+	if !strings.Contains(props, "spawn-protection=8") {
+		t.Errorf("missing spawn-protection")
+	}
+	if !strings.Contains(props, "difficulty=hard") {
+		t.Errorf("missing difficulty")
+	}
+	if !strings.Contains(props, "view-distance=12") {
+		t.Errorf("missing view-distance")
 	}
 }

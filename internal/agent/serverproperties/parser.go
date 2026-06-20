@@ -2,6 +2,7 @@ package serverproperties
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -91,4 +92,24 @@ func ToWorldProfileSnapshot(cfg WorldConfig, minecraftVersion string) *checkpoin
 		MinecraftVersion:   minecraftVersion,
 		CapturedFrom:       "server.properties",
 	}
+}
+
+func FromWorldProfileSnapshot(snapshot *checkpoint.WorldProfileSnapshot) string {
+	var b strings.Builder
+	b.WriteString("# Minecraft server properties\n")
+	b.WriteString("# Applied from checkpoint world profile snapshot\n")
+	if snapshot.Seed != "" {
+		b.WriteString(fmt.Sprintf("level-seed=%s\n", snapshot.Seed))
+	}
+	b.WriteString(fmt.Sprintf("level-type=%s\n", snapshot.LevelType))
+	if snapshot.GeneratorSettings != "" {
+		b.WriteString(fmt.Sprintf("generator-settings=%s\n", snapshot.GeneratorSettings))
+	}
+	b.WriteString(fmt.Sprintf("generate-structures=%t\n", snapshot.GenerateStructures))
+	b.WriteString(fmt.Sprintf("spawn-protection=%d\n", snapshot.SpawnRadius))
+	b.WriteString(fmt.Sprintf("difficulty=%s\n", snapshot.Difficulty))
+	if snapshot.ViewDistance > 0 {
+		b.WriteString(fmt.Sprintf("view-distance=%d\n", snapshot.ViewDistance))
+	}
+	return b.String()
 }
