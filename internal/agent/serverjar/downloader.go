@@ -61,6 +61,8 @@ func (d *Downloader) Download(ctx context.Context, req DownloadRequest) (Downloa
 		return d.downloadFabric(ctx, req.MinecraftVersion, req.LoaderVersion)
 	case "paper":
 		return d.downloadPaper(ctx, req.MinecraftVersion)
+	case "forge":
+		return d.downloadForge(ctx, req.MinecraftVersion, req.LoaderVersion)
 	default:
 		return DownloadResult{}, fmt.Errorf("unsupported server core for download: %s (use custom for uploaded jars)", req.ServerCore)
 	}
@@ -215,6 +217,43 @@ func (d *Downloader) downloadPaper(ctx context.Context, mcVersion string) (Downl
 		return DownloadResult{}, err
 	}
 	result.Version = fmt.Sprintf("%s-b%d", mcVersion, build)
+	return result, nil
+}
+
+func (d *Downloader) downloadForge(ctx context.Context, mcVersion, loaderVersion string) (DownloadResult, error) {
+	forgeVersion := loaderVersion
+	if forgeVersion == "" || forgeVersion == "latest" {
+		promoURL := "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json"
+		promoData, err := fetchJSON(ctx, promoURL)
+		if err != nil {
+			return DownloadResult{}, fmt.Errorf("fetch Forge promotions: %w", err)
+		}
+		promos, ok := promoData["promos"].(map[string]interface{})
+		if !ok {
+			return DownloadResult{}, errors.New("invalid Forge promotions data")
+		}
+		latestKey := mcVersion + "-latest"
+		if v, ok := promos[latestKey].(string); ok && v != "" {
+			forgeVersion = v
+		}
+		if forgeVersion == "" {
+			recommendedKey := mcVersion + "-recommended"
+			if v, ok := promos[recommendedKey].(string); ok && v != "" {
+				forgeVersion = v
+			}
+		}
+		if forgeVersion == "" {
+			return DownloadResult{}, fmt.Errorf("no Forge build found for Minecraft %s", mcVersion)
+		}
+	}
+	fullVersion := mcVersion + "-" + forgeVersion
+	downloadURL := fmt.Sprintf("https://maven.minecraftforge.net/net/minecraftforge/forge/%s/forge-%s-universal.jar", fullVersion, fullVersion)
+	jarName := fmt.Sprintf("forge-%s-universal.jar", fullVersion)
+	result, err := d.downloadFile(ctx, downloadURL, jarName)
+	if err != nil {
+		return DownloadResult{}, err
+	}
+	result.Version = fullVersion
 	return result, nil
 }
 
