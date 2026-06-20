@@ -186,7 +186,7 @@ Example trusted MCDR profile shape:
       "id": "mcdr-fabric-1.17",
       "name": "MCDR Fabric 1.17",
       "runtime_type": "mcdr-python",
-      "command_argv": ["mcdreforged", "--start"],
+      "command_argv": ["uv", "run", "mcdreforged"],
       "working_dir": ".",
       "stop_strategy": "stdin",
       "stop_stdin_command": "!!MCDR stop",
@@ -213,7 +213,7 @@ local dependencies:
 
 1. Java compatible with the target Minecraft version.
 2. Python compatible with MCDR.
-3. `mcdreforged` available, or a tested venv installation path.
+3. `uv` available on PATH. MCDR is resolved through the generated uv project.
 4. Network access to Mojang/Fabric/Paper endpoints, unless cache is already
    populated.
 5. Optional proxy configuration for restricted networks.
@@ -225,7 +225,7 @@ Useful commands:
 ```powershell
 java -version
 python --version
-mcdreforged --version
+uv --version
 ```
 
 Proxy environment variables used by current code paths:
@@ -320,7 +320,9 @@ server bootstrap lines and a readiness message.
 ### MCDR Executable Is Accidentally Used in Mock Tests
 
 Mock e2e tests should not use a global `mcdreforged` binary. The local e2e mock
-manager rejects global MCDR verification so the test remains deterministic.
+manager rejects global MCDR verification so the test remains deterministic. The
+production path records `pythonManager=uv` and expects the trusted RuntimeProfile
+to launch MCDR with `uv run mcdreforged` from the generated MCDR config project.
 
 ### Temp Directory Cleanup Fails on Windows
 
