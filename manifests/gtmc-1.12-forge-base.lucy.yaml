@@ -1,0 +1,14 @@
+format_version: "1"
+environment:
+  game_version: "1.12.2"
+  server_core: "forge"
+  server_core_version: "14.23.5.2859"
+  modding_platform: "forge"
+  modding_platform_version: "14.23.5.2859"
+  mcdr: false
+packages:
+  - id: modrinth/just-enough-items-jei
+    version: "4.16.1.301"
+    source: modrinth
+    role: optional
+    side: server

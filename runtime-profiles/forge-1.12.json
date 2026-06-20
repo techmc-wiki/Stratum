@@ -1,0 +1,23 @@
+{
+  "runtime_profiles": [
+    {
+      "id": "forge-1.12",
+      "name": "Forge 1.12.2 Terminal",
+      "runtime_type": "terminal",
+      "command_argv": ["java", "-jar", "forge-server.jar", "nogui"],
+      "working_dir": "",
+      "stop_strategy": "stdin",
+      "stop_stdin_command": "stop",
+      "graceful_stop_timeout": "60s",
+      "force_kill_timeout": "15s",
+      "log_mode": "combined",
+      "enabled": true,
+      "notes": "Direct Forge 1.12.2 runtime. Agent supervises the JVM process directly. Forge mods are loaded from the mods/ directory.",
+      "readiness_check": {
+        "type": "log-pattern",
+        "pattern": "Done (",
+        "timeout": "300s"
+      }
+    }
+  ]
+}

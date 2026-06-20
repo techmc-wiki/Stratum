@@ -1,0 +1,25 @@
+{
+  "id": "gtmc-1-12-forge",
+  "name": "GTMC 1.12.2 Forge Technical Testing",
+  "description": "Forge 1.12.2 environment for GTMC technical testing.",
+  "minecraftVersion": "1.12.2",
+  "javaVersion": "8",
+  "loaderType": "forge",
+  "loaderVersion": "14.23.5.2859",
+  "serverCore": "forge",
+  "mcdrRequired": false,
+  "carpetRequired": false,
+  "lucyManifestRef": "manifests/gtmc-1.12-forge-base.lucy.yaml",
+  "lucyLockRef": "",
+  "runtimeProfileId": "forge-1.12",
+  "runtimeProfileRequired": true,
+  "artifactPolicyId": "",
+  "pythonManagerType": "",
+  "notes": "Forge 1.12.2 with JEI. MCDR not used for 1.12 (mods loaded directly by Forge). Java 8 required.",
+  "createdAt": "2026-06-20T00:00:00Z",
+  "updatedAt": "2026-06-20T00:00:00Z",
+  "metadata": {
+    "targetCommunity": "GTMC",
+    "forgeBuild": "14.23.5.2859"
+  }
+}
