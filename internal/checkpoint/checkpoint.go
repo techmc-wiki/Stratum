@@ -57,6 +57,7 @@ type WorldProfileSnapshot struct {
 	GenerateStructures bool   `json:"generateStructures"`
 	SpawnRadius        int    `json:"spawnRadius"`
 	Difficulty         string `json:"difficulty"`
+	ViewDistance       int    `json:"viewDistance,omitempty"`
 	MinecraftVersion   string `json:"minecraftVersion,omitempty"`
 	SourceProfileID    string `json:"sourceProfileId,omitempty"`
 	CapturedFrom       string `json:"capturedFrom,omitempty"`

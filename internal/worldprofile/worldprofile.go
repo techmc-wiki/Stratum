@@ -37,6 +37,7 @@ type WorldProfile struct {
 	GenerateStructures bool              `json:"generateStructures"`
 	SpawnRadius        int               `json:"spawnRadius"`
 	Difficulty         Difficulty        `json:"difficulty"`
+	ViewDistance       int               `json:"viewDistance,omitempty"`
 	MinecraftVersion   string            `json:"minecraftVersion,omitempty"`
 	CreatedAt          time.Time         `json:"createdAt"`
 	Metadata           map[string]string `json:"metadata,omitempty"`
@@ -52,6 +53,7 @@ type CreateParams struct {
 	GenerateStructures bool
 	SpawnRadius        int
 	Difficulty         Difficulty
+	ViewDistance       int
 	MinecraftVersion   string
 	Metadata           map[string]string
 }
@@ -79,6 +81,7 @@ func New(params CreateParams) (WorldProfile, error) {
 		GenerateStructures: params.GenerateStructures,
 		SpawnRadius:        spawnRadius,
 		Difficulty:         params.Difficulty,
+		ViewDistance:       params.ViewDistance,
 		MinecraftVersion:   params.MinecraftVersion,
 		CreatedAt:          time.Now().UTC(),
 		Metadata:           cloneMap(params.Metadata),
