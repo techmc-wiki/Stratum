@@ -184,6 +184,8 @@ An Environment may describe:
 
 Environment references are validated at Room and Session creation boundaries. StratumMC does not auto-create or seed Environments unless explicitly requested through a service.
 
+See [World Profile documentation](world-profile.md) for world configuration capture and restore workflows.
+
 ### World Manager
 
 The World Manager will own world templates, world profiles, world cloning, reset, import, export, restore, and fork behavior.
