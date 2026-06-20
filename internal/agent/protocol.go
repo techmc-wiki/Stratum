@@ -504,6 +504,7 @@ type AgentClient interface {
 	SendCommand(context.Context, string, string) (CommandResult, error)
 	CreateWorldSnapshot(context.Context, WorldCheckpointRequest) (WorldCheckpointResult, error)
 	RestoreWorldSnapshot(context.Context, WorldCheckpointRestoreRequest) (WorldCheckpointRestoreResult, error)
+	ReadSessionFile(context.Context, string, string) ([]byte, error)
 }
 
 type RuntimeAgent interface {

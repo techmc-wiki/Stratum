@@ -3,6 +3,7 @@ package local
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -477,4 +478,23 @@ func (a *ProcessAgent) RestoreWorldSnapshot(ctx context.Context, request agent.W
 		RestoredDir: restoreResult.RestoredDir,
 		RestoredAt:  restoredAt,
 	}, nil
+}
+
+func (a *ProcessAgent) ReadSessionFile(_ context.Context, sessionID, relativePath string) ([]byte, error) {
+	if strings.TrimSpace(sessionID) == "" {
+		return nil, agent.Error{AgentID: a.id, Operation: "read_session_file", Message: "session ID is required"}
+	}
+	if strings.TrimSpace(relativePath) == "" {
+		return nil, agent.Error{AgentID: a.id, Operation: "read_session_file", Message: "relative path is required"}
+	}
+	if filepath.IsAbs(relativePath) || strings.Contains(relativePath, "..") {
+		return nil, agent.Error{AgentID: a.id, Operation: "read_session_file", Message: "relative path must be safe"}
+	}
+	sessionRoot := filepath.Join(a.supervisor.RuntimeRoot(), "sessions", sessionID)
+	filePath := filepath.Join(sessionRoot, filepath.FromSlash(relativePath))
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, agent.Error{AgentID: a.id, Operation: "read_session_file", Message: fmt.Sprintf("read file: %v", err)}
+	}
+	return data, nil
 }

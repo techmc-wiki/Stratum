@@ -368,3 +368,13 @@ func (f *Fake) RestoreWorldSnapshot(_ context.Context, request agent.WorldCheckp
 		RestoredAt:  f.now(),
 	}, nil
 }
+
+func (f *Fake) ReadSessionFile(_ context.Context, sessionID, relativePath string) ([]byte, error) {
+	if err := f.record("read_session_file"); err != nil {
+		return nil, err
+	}
+	if relativePath == "server.properties" {
+		return []byte("level-seed=123\nlevel-type=default\ndifficulty=normal\n"), nil
+	}
+	return nil, fmt.Errorf("file not found: %s", relativePath)
+}

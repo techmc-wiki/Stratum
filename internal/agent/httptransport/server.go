@@ -67,6 +67,20 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/sessions/{id}/send-command", s.sendCommand)
 	s.mux.HandleFunc("POST /v1/sessions/{id}/world-snapshot", s.createWorldSnapshot)
 	s.mux.HandleFunc("POST /v1/sessions/{id}/world-restore", s.restoreWorldSnapshot)
+	s.mux.HandleFunc("GET /v1/sessions/{id}/files/{path...}", s.readSessionFile)
+}
+
+func (s *Server) readSessionFile(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	relativePath := r.PathValue("path")
+	data, err := s.client.ReadSessionFile(r.Context(), sessionID, relativePath)
+	if err != nil {
+		s.writeError(w, r, http.StatusNotFound, "read-session-file", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.WriteHeader(http.StatusOK)
+	w.Write(data)
 }
 
 func (s *Server) verifyMaterializedArtifacts(w http.ResponseWriter, r *http.Request) {

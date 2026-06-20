@@ -510,3 +510,21 @@ func (c *Client) RestoreWorldSnapshot(ctx context.Context, request agent.WorldCh
 	}
 	return agent.WorldCheckpointRestoreResult{SessionID: response.SessionID, RestoredRef: response.RestoredRef, EntryCount: response.EntryCount, SizeBytes: response.SizeBytes, RestoredAt: response.RestoredAt}, nil
 }
+
+func (c *Client) ReadSessionFile(ctx context.Context, sessionID, relativePath string) ([]byte, error) {
+	path := "/v1/sessions/" + url.PathEscape(sessionID) + "/files/" + relativePath
+	fullURL := c.baseURL.String() + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("read session file: status %d", resp.StatusCode)
+	}
+	return io.ReadAll(resp.Body)
+}
