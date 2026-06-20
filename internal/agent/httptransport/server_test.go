@@ -292,3 +292,28 @@ func TestServerRestoreWorldSnapshotFailure(t *testing.T) {
 		t.Fatalf("status=%d", response.StatusCode)
 	}
 }
+
+func TestServerGetSessionRuntimeStatusWithWorldProfile(t *testing.T) {
+	server := httptest.NewServer(NewServer(local.NewFake(), "", nil).Handler())
+	defer server.Close()
+	client, err := NewClient(server.URL, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err := client.GetSessionRuntimeStatus(context.Background(), "test-session")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status.WorldProfile == nil {
+		t.Fatalf("world profile should be populated")
+	}
+	if status.WorldProfile.Seed != "12345" {
+		t.Errorf("wrong seed: got %q", status.WorldProfile.Seed)
+	}
+	if status.WorldProfile.LevelType != "flat" {
+		t.Errorf("wrong level-type: got %q", status.WorldProfile.LevelType)
+	}
+	if status.WorldProfile.Difficulty != "hard" {
+		t.Errorf("wrong difficulty: got %q", status.WorldProfile.Difficulty)
+	}
+}

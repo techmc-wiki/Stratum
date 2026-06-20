@@ -344,7 +344,18 @@ type SessionRuntimeStatusResponse struct {
 	MaterializedArtifacts *MaterializedArtifactsStatusDTO `json:"materializedArtifacts,omitempty"`
 	AppliedArtifacts      *AppliedArtifactsStatusDTO      `json:"appliedArtifacts,omitempty"`
 	ProcessStatus         *ProcessStatusSummaryDTO        `json:"processStatus,omitempty"`
+	WorldProfile          *WorldProfileStatusDTO          `json:"worldProfile,omitempty"`
 	RequestID             string                          `json:"requestId"`
+}
+
+type WorldProfileStatusDTO struct {
+	Seed               string `json:"seed,omitempty"`
+	LevelType          string `json:"levelType"`
+	GeneratorSettings  string `json:"generatorSettings,omitempty"`
+	GenerateStructures bool   `json:"generateStructures"`
+	SpawnRadius        int    `json:"spawnRadius"`
+	Difficulty         string `json:"difficulty"`
+	ViewDistance       int    `json:"viewDistance,omitempty"`
 }
 
 type EnvironmentManifestStatusDTO struct {
@@ -486,6 +497,17 @@ func sessionRuntimeStatusResponse(status agent.SessionRuntimeStatus, requestID s
 			Crashed:          status.ProcessStatus.Crashed,
 			StartedAt:        status.ProcessStatus.StartedAt,
 			StoppedAt:        status.ProcessStatus.StoppedAt,
+		}
+	}
+	if status.WorldProfile != nil {
+		response.WorldProfile = &WorldProfileStatusDTO{
+			Seed:               status.WorldProfile.Seed,
+			LevelType:          status.WorldProfile.LevelType,
+			GeneratorSettings:  status.WorldProfile.GeneratorSettings,
+			GenerateStructures: status.WorldProfile.GenerateStructures,
+			SpawnRadius:        status.WorldProfile.SpawnRadius,
+			Difficulty:         status.WorldProfile.Difficulty,
+			ViewDistance:       status.WorldProfile.ViewDistance,
 		}
 	}
 	return response

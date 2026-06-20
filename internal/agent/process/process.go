@@ -1,6 +1,7 @@
 package process
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,6 +20,7 @@ import (
 	agentpython "github.com/stratummc/stratum/internal/agent/python"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
 	"github.com/stratummc/stratum/internal/agent/serverjar"
+	"github.com/stratummc/stratum/internal/agent/serverproperties"
 	"github.com/stratummc/stratum/internal/integration/lucy"
 )
 
@@ -1276,6 +1278,22 @@ func (s *Supervisor) GetSessionRuntimeStatus(ctx context.Context, sessionID stri
 			Crashed:          processModel.Crashed,
 			StartedAt:        processModel.StartedAt,
 			StoppedAt:        processModel.StoppedAt,
+		}
+	}
+	serverPropsPath := filepath.Join(sessionRoot, "work", "server.properties")
+	if data, err := os.ReadFile(serverPropsPath); err == nil {
+		if cfg, err := serverproperties.Parse(bytes.NewReader(data)); err == nil {
+			if snapshot := serverproperties.ToWorldProfileSnapshot(cfg, ""); snapshot != nil {
+				status.WorldProfile = &agent.WorldProfileStatus{
+					Seed:               snapshot.Seed,
+					LevelType:          snapshot.LevelType,
+					GeneratorSettings:  snapshot.GeneratorSettings,
+					GenerateStructures: snapshot.GenerateStructures,
+					SpawnRadius:        snapshot.SpawnRadius,
+					Difficulty:         snapshot.Difficulty,
+					ViewDistance:       snapshot.ViewDistance,
+				}
+			}
 		}
 	}
 	return status, nil

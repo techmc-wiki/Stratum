@@ -437,6 +437,17 @@ func (c *Client) GetSessionRuntimeStatus(ctx context.Context, sessionID string) 
 			StoppedAt:        response.ProcessStatus.StoppedAt,
 		}
 	}
+	if response.WorldProfile != nil {
+		status.WorldProfile = &agent.WorldProfileStatus{
+			Seed:               response.WorldProfile.Seed,
+			LevelType:          response.WorldProfile.LevelType,
+			GeneratorSettings:  response.WorldProfile.GeneratorSettings,
+			GenerateStructures: response.WorldProfile.GenerateStructures,
+			SpawnRadius:        response.WorldProfile.SpawnRadius,
+			Difficulty:         response.WorldProfile.Difficulty,
+			ViewDistance:       response.WorldProfile.ViewDistance,
+		}
+	}
 	return status, nil
 }
 

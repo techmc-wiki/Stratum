@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -9,7 +8,6 @@ import (
 	"time"
 
 	"github.com/stratummc/stratum/internal/agent"
-	"github.com/stratummc/stratum/internal/agent/serverproperties"
 	"github.com/stratummc/stratum/internal/checkpoint"
 	"github.com/stratummc/stratum/internal/checkpoint/consistency"
 	checkpointsvc "github.com/stratummc/stratum/internal/checkpoint/service"
@@ -217,45 +215,40 @@ func diffCheckpoint(ctx context.Context, store *filesystem.Store, agentClient ag
 	if err != nil {
 		return reportError(stderr, "checkpoint diff", err)
 	}
-	data, err := agentClient.ReadSessionFile(ctx, *sessionID, "server.properties")
+	status, err := agentClient.GetSessionRuntimeStatus(ctx, *sessionID)
 	if err != nil {
-		fmt.Fprintf(stderr, "failed to read session server.properties: %v\n", err)
+		fmt.Fprintf(stderr, "failed to get session runtime status: %v\n", err)
 		return 1
 	}
-	cfg, err := serverproperties.Parse(bytes.NewReader(data))
-	if err != nil {
-		fmt.Fprintf(stderr, "failed to parse server.properties: %v\n", err)
-		return 1
-	}
-	sessWP := serverproperties.ToWorldProfileSnapshot(cfg, "")
-	if sessWP == nil {
-		fmt.Fprintln(stderr, "failed to extract world profile from session server.properties")
+	if status.WorldProfile == nil {
+		fmt.Fprintln(stderr, "session has no world profile available")
 		return 1
 	}
 	fmt.Fprintf(stdout, "World Profile Diff:\n\n")
 	fmt.Fprintf(stdout, "  Checkpoint: %s\n", cp.ID)
 	fmt.Fprintf(stdout, "  Session:    %s\n\n", sess.ID)
 	cpw := cp.WorldProfileSnapshot
-	if cpw.Seed != sessWP.Seed {
-		fmt.Fprintf(stdout, "  level-seed:          %q -> %q\n", cpw.Seed, sessWP.Seed)
+	sessw := status.WorldProfile
+	if cpw.Seed != sessw.Seed {
+		fmt.Fprintf(stdout, "  level-seed:          %q -> %q\n", cpw.Seed, sessw.Seed)
 	}
-	if cpw.LevelType != sessWP.LevelType {
-		fmt.Fprintf(stdout, "  level-type:          %q -> %q\n", cpw.LevelType, sessWP.LevelType)
+	if cpw.LevelType != sessw.LevelType {
+		fmt.Fprintf(stdout, "  level-type:          %q -> %q\n", cpw.LevelType, sessw.LevelType)
 	}
-	if cpw.Difficulty != sessWP.Difficulty {
-		fmt.Fprintf(stdout, "  difficulty:          %q -> %q\n", cpw.Difficulty, sessWP.Difficulty)
+	if cpw.Difficulty != sessw.Difficulty {
+		fmt.Fprintf(stdout, "  difficulty:          %q -> %q\n", cpw.Difficulty, sessw.Difficulty)
 	}
-	if cpw.ViewDistance != sessWP.ViewDistance {
-		fmt.Fprintf(stdout, "  view-distance:       %d -> %d\n", cpw.ViewDistance, sessWP.ViewDistance)
+	if cpw.ViewDistance != sessw.ViewDistance {
+		fmt.Fprintf(stdout, "  view-distance:       %d -> %d\n", cpw.ViewDistance, sessw.ViewDistance)
 	}
-	if cpw.GenerateStructures != sessWP.GenerateStructures {
-		fmt.Fprintf(stdout, "  generate-structures: %v -> %v\n", cpw.GenerateStructures, sessWP.GenerateStructures)
+	if cpw.GenerateStructures != sessw.GenerateStructures {
+		fmt.Fprintf(stdout, "  generate-structures: %v -> %v\n", cpw.GenerateStructures, sessw.GenerateStructures)
 	}
-	if cpw.SpawnRadius != sessWP.SpawnRadius {
-		fmt.Fprintf(stdout, "  spawn-radius:        %d -> %d\n", cpw.SpawnRadius, sessWP.SpawnRadius)
+	if cpw.SpawnRadius != sessw.SpawnRadius {
+		fmt.Fprintf(stdout, "  spawn-radius:        %d -> %d\n", cpw.SpawnRadius, sessw.SpawnRadius)
 	}
-	if cpw.GeneratorSettings != sessWP.GeneratorSettings {
-		fmt.Fprintf(stdout, "  generator-settings:  %q -> %q\n", cpw.GeneratorSettings, sessWP.GeneratorSettings)
+	if cpw.GeneratorSettings != sessw.GeneratorSettings {
+		fmt.Fprintf(stdout, "  generator-settings:  %q -> %q\n", cpw.GeneratorSettings, sessw.GeneratorSettings)
 	}
 	return 0
 }

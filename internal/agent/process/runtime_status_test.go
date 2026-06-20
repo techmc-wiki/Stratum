@@ -187,3 +187,52 @@ func TestGetSessionRuntimeStatusWithProcessRunning(t *testing.T) {
 		t.Errorf("wrong runtime profile: got %q", status.ProcessStatus.RuntimeProfileID)
 	}
 }
+
+func TestGetSessionRuntimeStatusWithWorldProfile(t *testing.T) {
+	tmp := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", tmp, 64*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	sessionRoot := filepath.Join(tmp, "sessions", "test-session")
+	workDir := filepath.Join(sessionRoot, "work")
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	serverProps := `level-seed=12345
+level-type=flat
+difficulty=hard
+view-distance=10
+generate-structures=false
+spawn-protection=16
+`
+	if err := os.WriteFile(filepath.Join(workDir, "server.properties"), []byte(serverProps), 0644); err != nil {
+		t.Fatal(err)
+	}
+	status, err := supervisor.GetSessionRuntimeStatus(ctx, "test-session")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status.WorldProfile == nil {
+		t.Fatalf("world profile should be populated")
+	}
+	if status.WorldProfile.Seed != "12345" {
+		t.Errorf("wrong seed: got %q", status.WorldProfile.Seed)
+	}
+	if status.WorldProfile.LevelType != "flat" {
+		t.Errorf("wrong level-type: got %q", status.WorldProfile.LevelType)
+	}
+	if status.WorldProfile.Difficulty != "hard" {
+		t.Errorf("wrong difficulty: got %q", status.WorldProfile.Difficulty)
+	}
+	if status.WorldProfile.ViewDistance != 10 {
+		t.Errorf("wrong view-distance: got %d", status.WorldProfile.ViewDistance)
+	}
+	if status.WorldProfile.GenerateStructures != false {
+		t.Errorf("wrong generate-structures: got %v", status.WorldProfile.GenerateStructures)
+	}
+	if status.WorldProfile.SpawnRadius != 16 {
+		t.Errorf("wrong spawn-radius: got %d", status.WorldProfile.SpawnRadius)
+	}
+}
