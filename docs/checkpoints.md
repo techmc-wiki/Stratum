@@ -167,13 +167,33 @@ work directory, creates a new checkpoint record, and writes an audit event.
 
 Restore does not modify the source checkpoint.
 
+## Pre-Operation Checkpoints
+
+Dangerous operations can automatically create a world snapshot before proceeding:
+
+```bash
+stratum sessions restart --id <session_id> --actor <actor> --pre-op-checkpoint
+```
+
+When `--pre-op-checkpoint` is set on a session restart:
+1. Session is stopped (normal restart behavior)
+2. Agent creates a world snapshot while the session is stopped
+3. A `KindPreOperation` checkpoint is created with the snapshot reference
+4. Session proceeds with normal restart flow
+
+If the checkpoint creation fails, the restart continues (best-effort). The failure is recorded in the operation metadata.
+
+**Supported operations:**
+- `sessions restart --pre-op-checkpoint`
+
+**Future support:** `sessions start`, `artifacts apply`
+
 ## Future Phases
 
 Future checkpoint phases may add:
 
 * Artifact snapshot references
-* Pre-operation automatic checkpoint creation
 * Checkpoint promotion to project milestones
-* Rollback workflows
-* Cross-agent restore support
 * Incremental/differential backups
+* Cross-agent restore support
+* Integration with Lucy lock hash diff on restore
