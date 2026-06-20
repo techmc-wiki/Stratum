@@ -44,6 +44,7 @@ type Environment struct {
 	RuntimeProfileID       string            `json:"runtimeProfileId"`
 	RuntimeProfileRequired bool              `json:"runtimeProfileRequired"`
 	ArtifactPolicyID       string            `json:"artifactPolicyId"`
+	PythonManagerType      string            `json:"pythonManagerType"`
 	Notes                  string            `json:"notes"`
 	CreatedAt              time.Time         `json:"createdAt"`
 	UpdatedAt              time.Time         `json:"updatedAt"`

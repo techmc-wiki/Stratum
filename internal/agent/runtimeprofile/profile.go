@@ -75,6 +75,7 @@ type Profile struct {
 	ReadinessCheck      *ReadinessCheckConfig `json:"readinessCheck,omitempty"`
 	HealthCheck         *HealthCheckConfig    `json:"healthCheck,omitempty"`
 	GracefulStopSteps   []GracefulStopStep    `json:"gracefulStopSteps,omitempty"`
+	PythonManagerType   string                `json:"pythonManagerType,omitempty"`
 }
 
 func DummyProcess() Profile {
