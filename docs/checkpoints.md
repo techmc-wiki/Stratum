@@ -80,6 +80,7 @@ fails creation before checkpoint or audit data is written.
 | Level | Description | World Snapshot | Commands |
 |-------|-------------|---------------|----------|
 | `metadata_only` | Metadata and runtime status only | No | None |
+| `stopped` | Stop session → snapshot → restart | Yes (zip + SHA-256) | `save-all flush` (implicit, session stopped first) |
 | `best_effort` | `save-all flush` + world snapshot | Yes (zip + SHA-256) | `save-all flush` |
 | `command_quiesced` | `save-off` → `save-all flush` → snapshot → `save-on` | Yes (zip + SHA-256) | `save-off`, `save-all flush`, `save-on` |
 
@@ -96,14 +97,20 @@ fails creation before checkpoint or audit data is written.
 - Sends `save-on` to resume auto-saves (guaranteed even on snapshot failure)
 - Requires agent with `send-command` capability
 
-**Future levels:** `stopped`, `plugin_backup`, `mc_bridge_prepared` (see architecture.md)
+**Future levels:** `plugin_backup`, `mc_bridge_prepared` (see architecture.md)
+
+**`stopped`:**
+- Calls `agent.StopSession` to stop the running session
+- Creates world snapshot while session is stopped (guarantees consistent filesystem state)
+- Calls `agent.StartSession` with the session's stored `RuntimeProfileID` to restart
+- Requires agent client and running session
+- Fails if stop fails, snapshot fails, or restart fails
+- Suitable for critical pre-operation checkpoints where world consistency is paramount
 
 Creation does not:
 
-* Modify Session state
+* Modify Session state (except `stopped` level, which stops and restarts)
 * Copy runtime-status manifests, paths, or logs
-* Stop or pause the runtime
-* Repair artifacts or runtime state
 * (metadata_only) Create world backup payloads
 
 ## Listing
@@ -126,19 +133,47 @@ RuntimeProfile, creator, kind, status, notes, creation time, and whether a
 runtime-status snapshot exists. Compact snapshot diagnostics are shown when
 present.
 
+## Restore
+
+```bash
+stratum checkpoints restore --checkpoint <checkpoint_id> --target-session <session_id> --actor <actor>
+stratum checkpoints restore --checkpoint <checkpoint_id> --target-session <session_id> --actor <actor> --world-dir world
+stratum checkpoints restore --checkpoint <checkpoint_id> --target-session <session_id> --actor <actor> --apply-world-profile
+stratum checkpoints restore --checkpoint <checkpoint_id> --target-session <session_id> --actor <actor> --auto-stop --auto-start
+```
+
+Restore extracts the checkpoint's world snapshot zip into the target session's
+work directory, creates a new checkpoint record, and writes an audit event.
+
+**CLI flags:**
+- `--checkpoint` — source checkpoint ID (required)
+- `--target-session` — target session ID (must be stopped; use `--auto-stop` to auto-stop)
+- `--world-dir` — target world directory name (default: `world_restored`)
+- `--actor` — user performing the restore (required)
+- `--notes` — optional notes for the restored checkpoint
+- `--apply-world-profile` — apply the checkpoint's world profile to `server.properties`
+- `--apply-world-profile-fields` — comma-separated list of fields for partial merge
+- `--auto-stop` — stop the target session before restore
+- `--auto-start` — start the target session after restore (uses stored RuntimeProfileID)
+
+**Restore lifecycle:**
+
+1. Restore validates the source checkpoint has `WorldStateRef`
+2. Target session must be `stopped` (or use `--auto-stop`)
+3. `agent.RestoreWorldSnapshot` unzips to `<session-root>/work/<world-dir>`
+4. If `--apply-world-profile`, writes `server.properties` from checkpoint
+5. Creates a new `metadata_only` checkpoint entry recording the restore
+6. Writes `checkpoint.restored` audit event
+
+Restore does not modify the source checkpoint.
+
 ## Future Phases
 
 Future checkpoint phases may add:
 
-* World state backup and restore
 * Artifact snapshot references
-* Lucy lock hash capture
-* RuntimeProfile validation
 * Pre-operation automatic checkpoint creation
 * Checkpoint promotion to project milestones
 * Rollback workflows
-
-These features are explicitly deferred. Future world checkpoint phases may use
-the optional runtime-status snapshot for validation and restore planning. The
-current metadata-only implementation does not affect Session lifecycle or
-runtime directories.
+* Cross-agent restore support
+* Incremental/differential backups

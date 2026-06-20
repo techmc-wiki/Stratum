@@ -21,218 +21,75 @@
 
 ---
 
-## 🚧 Phase 2: Runtime Execution (In Progress)
+## ✅ Phase 2: Runtime Execution (Complete)
 
-### Priority 1: MCDR RuntimeProfile Executor v0
+### ✅ Priority 1: MCDR RuntimeProfile Executor v0
 
-**Goal:** Agent can launch and supervise MCDR processes (no real Minecraft yet).
+**Status: Complete.** Implementation: `mcdr.Supervisor.Start` -> `process.Supervisor.StartProcess` -> `startTerminal` (real OS `exec.Command`).
 
-**Tasks:**
-1. Implement `process.Supervisor.startMCDR` method
-   - Read MCDR bridge launch plan from `work/mcdr/mcdr-launch-plan.json`
-   - Execute `mcdreforged --start` (from RuntimeProfile command_argv)
-   - Apply stdin stop strategy: `!!MCDR stop`
-   - Capture stdout/stderr logs
-   - Track process PID and exit code
+**Key files:**
+- `internal/agent/mcdr/supervisor.go` — MCDR lifecycle (Start/Stop/Restart/SendCommand)
+- `internal/agent/process/process.go` — `startTerminal` (OS process launch), `waitTerminal` (exit monitoring), `StopProcess` (graceful stop via stdin/signal/kill)
+- `internal/agent/local/process_agent.go` — routes `StartSession` to `a.mcdr.Start()` for MCDR profiles
+- `runtime-profiles/mcdr-fabric-1.17.json` — stop_strategy: stdin, readiness: log-pattern "Done ("
 
-2. Create test MCDR configuration
-   - Stub config.yml with `start_command: echo "stub Minecraft"`
-   - Verify Agent can start/stop/observe MCDR process lifecycle
-
-3. Integrate into Session lifecycle
-   - Session start selects `mcdr-fabric-1.17` RuntimeProfile
-   - Environment materialization calls MCDR bridge BuildLaunchPlan
-   - Agent executes MCDR process and reports status
-
-**Verification:**
-```bash
-stratum sessions create --id test --project p1 --room r1
-stratum sessions start --id test --runtime-profile mcdr-fabric-1.17
-stratum sessions inspect --id test  # runtimeMessage shows MCDR process
-stratum sessions logs --id test     # shows MCDR logs
-stratum sessions stop --id test     # graceful MCDR stop
+**Tests:**
+```
+TestMCDRSupervisorStartStop          — real OS process lifecycle
+TestMCDRSupervisorRestart            — new PID after restart
+TestMCDRSupervisorSendCommand        — stdin command injection
+TestStartCommandUsesJavaExecutable   — config.yml generation
 ```
 
-**Atomic commits:**
-- `runtime: implement MCDR RuntimeProfile executor v0`
-- `test: add MCDR stub config for supervision tests`
-- `lifecycle: integrate MCDR executor into session start/stop`
+### ✅ Priority 2: Proxy Configuration for ServerJar Downloads
 
-**Estimated effort:** 2-3 days
+**Status: Complete.** `serverjar.SetProxy()` in `process.go:203`, `--http-proxy` CLI flag in `cmd/stratum-agent/main.go`.
+
+### ✅ Priority 3: Environment → Lucy Manifest Generation
+
+**Status: Complete.** `process.go:935-1001` MaterializeEnvironment writes `lucy.yaml` and `lucy-lock.yaml`.
+
+### ✅ Priority 4: Lucy Package Installation
+
+**Status: Complete.** `process.go:1003-1026` calls Lucy `InstallPackages`, `process.go:1028-1061` calls `VerifyIntegrity`.
+
+### ✅ Priority 5: Java Runtime Detection
+
+**Status: Complete.** `internal/agent/java/detector.go` — detects installed JVM, validates compatibility.
+
+### ✅ Priority 6: Server Jar Provisioning
+
+**Status: Complete.** `internal/agent/serverjar/downloader.go` — Vanilla/Fabric/Paper downloads.
 
 ---
 
-### Priority 2: Proxy Configuration for ServerJar Downloads
+## 🚧 Phase 3: World Management (In Progress)
 
-**Goal:** Support HTTP proxy for Mojang/Fabric/Paper API access in restricted networks.
+### ✅ Priority 7: World Checkpoint Backup/Restore
 
-**Tasks:**
-1. Add proxy configuration to Agent config
-   - `--http-proxy` CLI flag (e.g., `http://127.0.0.1:10808`)
-   - Environment variable `STRATUM_HTTP_PROXY`
-   - Call `serverjar.SetProxy()` during Agent init
+**Status: Core complete. CLI orchestration added.**
 
-2. Update serverjar downloader documentation
-   - Document proxy configuration in README
-   - Add network requirements section
+**Implemented:**
+- World snapshot creation (zip + SHA-256) — `internal/agent/worldcheckpoint/checkpoint.go`
+- World snapshot restore (unzip with zip-slip protection) — `internal/agent/worldcheckpoint/checkpoint.go`
+- Three consistency levels: `metadata_only`, `stopped`, `best_effort`, `command_quiesced`
+- `stopped` level: Stop session → snapshot → restart — `internal/checkpoint/service/service.go`
+- CLI restore orchestration: `--auto-stop` and `--auto-start` flags — `internal/cli/handlers_checkpoints.go`
+- World profile application during restore (full or partial merge)
+- Agent-local snapshot reference scheme (`agent-local://agent/sessions/...`)
+- Checkpoint diff for comparing world profiles
 
-**Verification:**
-```bash
-stratum-agent serve --http-proxy http://127.0.0.1:10808
-# Verify ServerJar downloads succeed through proxy
-```
+**Key files:**
+- `internal/agent/worldcheckpoint/checkpoint.go` — `Worker.Create` (zip+hash), `Worker.Restore` (unzip)
+- `internal/agent/worldcheckpoint/ref.go` — Snapshot reference building/parsing
+- `internal/checkpoint/service/service.go` — `createStopped`, `createBestEffort`, `createCommandQuiesced`, `Restore`
+- `internal/cli/handlers_checkpoints.go` — create/list/inspect/restore/diff commands
 
-**Atomic commit:**
-- `agent: add HTTP proxy configuration for serverjar downloads`
-
-**Estimated effort:** 0.5 day
-
----
-
-### Priority 3: Environment → Lucy Manifest Generation
-
-**Goal:** Environment writes lucy.yaml and generates lucy-lock.yaml.
-
-**Tasks:**
-1. Add `environment.WriteManifest()` method
-   - Convert Environment metadata to Lucy manifest format
-   - Write to `<session-runtime-dir>/lucy.yaml`
-
-2. Session start integration
-   - After materialization, call Lucy `PlanEnvironment`
-   - Generate and persist lucy-lock.yaml
-   - Record lock hash in Environment materialization manifest
-
-3. Checkpoint integration
-   - Read lucy-lock.yaml during checkpoint creation
-   - Store lock hash in Checkpoint metadata
-   - Verify lock hash consistency on restore
-
-**Verification:**
-```bash
-stratum environments create --id env-1 --minecraft-version 1.17.1 --loader fabric
-stratum sessions start --id test --environment env-1
-# Check <runtime-root>/test/lucy.yaml exists
-# Check <runtime-root>/test/lucy-lock.yaml exists
-stratum checkpoints create --session test --id cp1
-stratum checkpoints inspect --id cp1 | grep lockHash
-```
-
-**Atomic commits:**
-- `environment: add Lucy manifest generation from Environment metadata`
-- `lifecycle: generate Lucy lock during session start`
-- `checkpoint: record and verify Lucy lock hash`
-
-**Estimated effort:** 2 days
-
----
-
-### Priority 4: Lucy Package Installation
-
-**Goal:** Environment materialization actually downloads and installs mods/plugins.
-
-**Tasks:**
-1. Call Lucy `InstallPackages` during materialization
-   - Read lucy-lock.yaml packages
-   - Install to `<session-runtime-dir>/mods/`
-   - Record installation result in materialization manifest
-
-2. Integrity verification
-   - Session start readiness calls Lucy `VerifyIntegrity`
-   - Report missing or corrupted packages
-   - Block session start when integrity fails
-
-**Verification:**
-```bash
-# With lucy.yaml containing fabric-api and carpet
-stratum sessions start --id test
-# Check <runtime-root>/test/mods/ contains downloaded jars
-stratum sessions inspect --id test | grep integrityStatus
-```
-
-**Atomic commits:**
-- `lucy: call InstallPackages during environment materialization`
-- `readiness: add Lucy integrity verification to start gate`
-
-**Estimated effort:** 1-2 days
-
----
-
-### Priority 5: Java Runtime Detection
-
-**Goal:** Discover installed Java versions and validate compatibility.
-
-**Tasks:**
-1. Implement `internal/agent/java` real detection
-   - Check JAVA_HOME
-   - Scan common installation paths (Windows: Program Files, Linux: /usr/lib/jvm)
-   - Parse `java -version` output
-
-2. Environment compatibility validation
-   - Session start verifies Java version matches Environment requirement
-   - Report incompatible Java versions with actionable error
-
-**Verification:**
-```bash
-stratum-agent serve
-# Agent startup logs discovered Java versions
-stratum sessions start --id test --environment env-1
-# Start fails with clear error if Java version mismatch
-```
-
-**Atomic commits:**
-- `java: implement JVM discovery and version parsing`
-- `readiness: add Java version compatibility check`
-
-**Estimated effort:** 1-2 days
-
----
-
-### Priority 6: Server Jar Provisioning
-
-**Goal:** Download and verify Minecraft server jars.
-
-**Tasks:**
-1. Complete serverjar download implementations
-   - Vanilla: Mojang version manifest (partially done)
-   - Fabric: Fabric maven repository
-   - Paper: Paper API (partially done)
-
-2. Deploy to session runtime directory
-   - Write to `<session-runtime-dir>/server.jar`
-   - Verify SHA-256 checksum
-   - Record jar metadata in materialization manifest
-
-**Verification:**
-```bash
-stratum sessions start --id test
-# Check <runtime-root>/test/server.jar exists
-# Verify checksum matches official source
-```
-
-**Atomic commits:**
-- `serverjar: complete Vanilla and Fabric download implementation`
-- `lifecycle: deploy server jar during environment materialization`
-
-**Estimated effort:** 2 days
-
----
-
-## 🔮 Phase 3: World Management
-
-### Priority 7: World Checkpoint Backup/Restore
-
-**Goal:** Actually copy and restore world files.
-
-**Tasks:**
-1. Implement world backup
-   - Copy `<session-runtime-dir>/world/` to `<checkpoints-dir>/<checkpoint-id>/world/`
-   - Record world size and file count
-
-2. Implement world restore
-   - Stop Session
-   - Replace world/ directory from checkpoint
-   - Restart Session
+**Remaining:**
+- Cross-agent snapshot restore (currently rejected)
+- Incremental/differential backup (always full-world zip)
+- Pre-operation automatic checkpoint creation
+- Chunk regeneration (explicitly out of scope)
 
 **Verification:**
 ```bash

@@ -101,20 +101,16 @@
 ## ⚠️ Not Yet Implemented
 
 ### Runtime Execution
-- **MCDR RuntimeProfile executor** — Agent does not yet launch MCDR processes
-- **Real JVM process** — No actual Minecraft server started
-- **Java runtime detection** — Version validation exists but no real JVM discovery
-- **Server jar provisioning** — Fabric/Forge download not implemented
-
-### Lucy Environment Integration
-- **Manifest generation** — Environment does not yet write lucy.yaml
-- **Lock file generation** — Environment does not yet write lucy-lock.yaml
-- **Package installation** — Materialization does not yet call Lucy InstallPackages
-- **Dependency updates** — No workflow for updating locked packages
+- **Real JVM/Minecraft process** — No actual Minecraft server started by MCDR (tests use helper process stub)
+- **ReadinessCheck with real MCDR** — Log-pattern readiness check defined but not tested with real Minecraft boot
 
 ### World Management
-- **Checkpoint backup** — No world file copy/archive
-- **Checkpoint restore** — No world rollback
+- **World snapshot creation** — zip + SHA-256 implemented (`worldcheckpoint.Worker.Create`)
+- **World snapshot restore** — unzip with zip-slip protection (`worldcheckpoint.Worker.Restore`)
+- **Stopped consistency level** — stop→snapshot→restart implemented
+- **Restore orchestration** — `--auto-stop` / `--auto-start` CLI flags
+- **Cross-agent restore** — Not supported (agent-ownership validation)
+- **Incremental backup** — Not implemented (full-world zip only)
 - **Chunk regeneration** — Not planned for MVP
 
 ### Additional Environments
@@ -215,4 +211,4 @@ go test ./internal/agent/process/...     # ✅ ok 1.151s
 go test ./internal/agent/runtimeprofile/...  # ✅ ok 0.290s
 ```
 
-Last updated: 2026-06-19
+Last updated: 2026-06-20
