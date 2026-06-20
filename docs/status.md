@@ -1,5 +1,9 @@
 # Implementation Status
 
+Last updated: 2026-06-20
+
+---
+
 ## ✅ Core Infrastructure
 
 ### Domain Models
@@ -19,102 +23,165 @@
 
 ### Controller
 - HTTP API for all domain entities
-- Standard-library CLI (no external frameworks)
+- Standard-library CLI (cobra-free, flag-based)
 - Resource-aware session scheduling
 
 ### Agent
 - HTTP transport for Controller-Agent communication
 - Per-session runtime directory allocation
 - RuntimeProfile registry and validation
-- Process supervision with dummy RuntimeProfile
-- Terminal executor with bounded logs and exit tracking
+- Real OS process supervision (dummy, terminal, MCDR)
+- Bounded log capture with circular buffer
+- Process crash detection and graceful stop
+
+---
 
 ## ✅ Lucy Integration
 
-### Status: **Production-ready as Go library**
+### Status: Production-ready as Go library
 
 - Embedded as `github.com/mclucy/lucy` direct dependency
 - `internal/integration/lucy` adapter layer isolates domain model
-- `EmbeddedAdapter` calls Lucy library functions directly
-- All tests passing
+- `EmbeddedAdapter` calls Lucy library functions directly (default)
+- `NoopAdapter` available when Lucy is disabled (`STRATUM_LUCY_WORKSPACE=none`)
 
 ### Capabilities
 
 | Feature | Status | Implementation |
 |---------|--------|----------------|
 | Manifest parsing | ✅ Complete | `ManifestService` |
+| Manifest generation | ✅ Complete | `MaterializeEnvironment` writes `lucy.yaml` |
 | Dependency resolution | ✅ Complete | `PlanEnvironment` |
-| Lock generation | ✅ Complete | `LockEnvironment` |
-| Package installation | ✅ Complete | `InstallPackages` |
-| Integrity verification | ✅ Complete | `VerifyIntegrity` |
+| Lock generation | ✅ Complete | `LockEnvironment` → `lucy-lock.yaml` |
+| Package installation | ✅ Complete | `InstallPackages` during materialization |
+| Integrity verification | ✅ Complete | `VerifyIntegrity` at start readiness |
 | Status checking | ✅ Complete | `CheckStatus` |
 | Artifact analysis | ✅ Complete | `artifact.go` |
 
 ### Integration Points
 
-- Environment materialization calls Lucy for package planning
-- Session start validates Lucy lock files
+- Environment materialization calls Lucy for package planning, lock, install, and integrity
+- Session start validates Lucy lock files and integrity
 - Checkpoint metadata includes Lucy lock hash
-- CLI exposes `environments validate-manifest` command
+- CLI exposes `lucy validate-manifest`, `lucy plan`, `lucy lock`, `lucy install` commands
 
-### Limitations
-
-- Lucy does not manage JVM processes
-- Lucy does not start Minecraft or MCDR
-- Lucy does not perform runtime lifecycle operations
-- Manifest/lock file writing not yet integrated into Environment service
+---
 
 ## ✅ MCDR Integration
 
-### Status: **Planning contract complete, executor pending**
+### Status: Fully implemented
 
-- `internal/agent/mcdrbridge` defines launch plan contract
-- RuntimeProfile `mcdr-fabric-1.17.json` exists in `runtime-profiles/`
-- MCDR layout helpers implemented in `internal/agent/process`
-- All bridge tests passing
+- `internal/agent/mcdr/supervisor.go` — MCDR lifecycle (Start/Stop/Restart/SendCommand)
+- `internal/agent/process/process.go` — `startTerminal` launches real OS processes, `waitTerminal` monitors exit, `StopProcess` performs graceful stop
+- `internal/agent/local/process_agent.go` — routes `StartSession` to `a.mcdr.Start()` for MCDR profiles
+- `runtime-profiles/mcdr-fabric-1.17.json` — declarative profile with stdin stop strategy and log-pattern readiness check
+- `internal/agent/mcdrbridge` — launch plan contract and validation
 
 ### Capabilities
 
 | Feature | Status | Implementation |
 |---------|--------|----------------|
-| Launch plan construction | ✅ Complete | `BuildLaunchPlan` |
-| Launch plan validation | ✅ Complete | `ValidateLaunchPlan` |
-| Launch plan inspection | ✅ Complete | `InspectLaunchPlan` |
-| MCDR layout derivation | ✅ Complete | `MCDRRuntimeLayout` |
-| Directory preparation | ✅ Complete | `process.MaterializeEnvironment` |
-| RuntimeProfile executor | ⚠️ Pending | Future task |
-
-### Launch Plan Manifest
-
-- Persisted at `work/mcdr/mcdr-launch-plan.json`
-- Records environment identity, canonical paths, launch command, stop strategy
-- Validated during Session start readiness check
-- Agent reads plan but does not yet execute it
+| MCDR process start/stop | ✅ Complete | `mcdr.Supervisor.Start/Stop` |
+| stdin command injection | ✅ Complete | `mcdr.Supervisor.SendCommand` |
+| Log-pattern readiness check | ✅ Complete | `process.Supervisor.WaitForLog` |
+| Graceful stop (stdin→force kill) | ✅ Complete | `process.Supervisor.StopProcess` |
+| Crash detection | ✅ Complete | `waitTerminal` goroutine |
+| MCDR config.yml generation | ✅ Complete | `config_writer.go` |
+| Launch plan construction | ✅ Complete | `mcdrbridge.BuildLaunchPlan` |
+| Python venv + MCDR install | ✅ Complete | `process.materializeMCDRRuntime` |
 
 ### Ownership Boundaries
 
 - Agent owns MCDR process supervision (start, stop, logs, exit)
-- MCDR manages Minecraft internally via config.yml start_command
+- MCDR manages Minecraft internally via config.yml `start_command`
 - Controller owns Session metadata and lifecycle decisions
-- MCDR bridge is planning-only; does not start processes
+
+---
+
+## ✅ Java Runtime Detection
+
+### Status: Fully implemented
+
+- `internal/agent/java/detector.go` — `SelectForMinecraftVersion` detects installed JVMs
+- `internal/agent/process/process.go` — `materializeJavaAndServerJar` wires detection into materialization
+- Detected metadata: executable path, version, major version, JAVA_HOME
+- Fallback handling when detection fails
+
+---
+
+## ✅ Server Jar Provisioning
+
+### Status: Fully implemented
+
+- `internal/agent/serverjar/downloader.go` — Vanilla, Fabric, and Paper downloads
+- SHA-256 checksum verification on deploy
+- Proxy support via `STRATUM_PROXY` / `--http-proxy`
+- Local cache directory (`<runtime-root>/cache/serverjars`)
+- Deploys to session work directory during materialization
+
+---
+
+## ✅ Phase 2 — Runtime Execution (Complete)
+
+All six priorities of Phase 2 are implemented:
+
+1. **MCDR RuntimeProfile Executor v0** — Real OS process execution via `startTerminal`
+2. **Proxy Configuration** — `SetProxy()` + `--http-proxy` CLI flag
+3. **Lucy Manifest Generation** — `lucy.yaml` written during materialization
+4. **Lucy Package Installation** — `InstallPackages` + `VerifyIntegrity`
+5. **Java Runtime Detection** — JVM discovery and version validation
+6. **Server Jar Provisioning** — Vanilla/Fabric/Paper downloads with SHA-256 checksums
+
+---
+
+## ✅ Phase 3 — World Management (Complete)
+
+### World Checkpoint Backup/Restore
+
+- `internal/agent/worldcheckpoint/checkpoint.go` — `Worker.Create` (zip + SHA-256), `Worker.Restore` (unzip with slip protection)
+- `internal/agent/worldcheckpoint/ref.go` — Agent-local snapshot reference scheme
+- `internal/checkpoint/service/service.go` — Full orchestration for all four consistency levels
+- `internal/cli/handlers_checkpoints.go` — create/list/inspect/restore/diff commands
+
+### Four Consistency Levels
+
+| Level | Behavior | Status |
+|-------|----------|--------|
+| `metadata_only` | Metadata and runtime status only | ✅ |
+| `stopped` | Stop session → snapshot → restart | ✅ |
+| `best_effort` | `save-all flush` + world snapshot | ✅ |
+| `command_quiesced` | `save-off` → `save-all flush` → snapshot → `save-on` | ✅ |
+
+### Restore Orchestration
+
+- `--auto-stop` / `--auto-start` CLI flags for full lifecycle management
+- World Profile application during restore (full or partial field merge)
+- Checkpoint diff command for world profile comparison
+- Zip-slip protection on restore
+
+### Pre-Operation Checkpoints
+
+- `sessions restart --pre-op-checkpoint` — creates world snapshot before restart
+- `artifacts apply execute --pre-op-checkpoint` — creates world snapshot before file copy
+- Shared `createPreOpCheckpoint` helper in `internal/cli/handlers_shared.go`
+- KindPreOperation checkpoints with WorldStateRef and audit trail
+- Best-effort: checkpoint failure logs warning but does not block the operation
+
+---
 
 ## ⚠️ Not Yet Implemented
 
 ### Runtime Execution
-- **Real JVM/Minecraft process** — No actual Minecraft server started by MCDR (tests use helper process stub)
+- **Real Minecraft server** — No actual Minecraft server started by MCDR (tests use helper process stubs)
 - **ReadinessCheck with real MCDR** — Log-pattern readiness check defined but not tested with real Minecraft boot
 
 ### World Management
-- **World snapshot creation** — zip + SHA-256 implemented (`worldcheckpoint.Worker.Create`)
-- **World snapshot restore** — unzip with zip-slip protection (`worldcheckpoint.Worker.Restore`)
-- **Stopped consistency level** — stop→snapshot→restart implemented
-- **Restore orchestration** — `--auto-stop` / `--auto-start` CLI flags
-- **Cross-agent restore** — Not supported (agent-ownership validation)
-- **Incremental backup** — Not implemented (full-world zip only)
+- **Cross-agent restore** — Currently rejected (agent-ownership validation)
+- **Incremental backup** — Full-world zip only; no differential backup
 - **Chunk regeneration** — Not planned for MVP
 
 ### Additional Environments
-- **1.12 support** — Only 1.17 planned for MVP
+- **1.12 support** — Only 1.17 implemented
 - **Latest version** — Not yet defined
 - **Forge/NeoForge** — Only Fabric implemented
 
@@ -123,6 +190,8 @@
 - **Container orchestration** — No deployment tooling
 - **Multi-Agent coordination** — Single local Agent only
 - **Authentication** — Shared-token only, no user accounts
+
+---
 
 ## 🔐 Safety Status
 
@@ -134,81 +203,37 @@
 - Artifact payloads verified with SHA-256 before materialization
 - Artifact approval workflow enforced before apply
 - Session runtime directories isolated under `--runtime-root`
-- All tests use process stubs; no real JVM/shell execution
+- World zip-restore has zip-slip protection (symlinks, `..`, absolute paths rejected)
+- Pre-operation checkpoints before dangerous operations (restart, artifact apply)
+- Checkpoint restore requires session in stopped state (JVM file lock safety)
+- Best-effort and command_quiesced levels flush chunks before snapshot
 
 ### Test Coverage
-
-```
-go test ./...
-```
 
 All core packages have passing tests:
 - Domain model validation
 - Repository CRUD operations
 - Operation idempotency and correlation
-- RuntimeProfile validation
+- RuntimeProfile validation and registry
 - Artifact staging and apply workflows
-- Lucy adapter integration
-- MCDR bridge planning
+- Lucy adapter integration (embedded, noop, CLI modes)
+- MCDR bridge planning and supervision
+- World checkpoint create/restore with zip-slip protection
+- Session lifecycle with pre-op checkpoints
+- CLI command handlers with HTTP transport
 
-## 📋 Next Atomic Tasks
-
-1. **MCDR RuntimeProfile executor v0**
-   - Agent `process.Supervisor` executes MCDR command_argv
-   - Reads MCDR bridge launch plan
-   - Supervises MCDR process (start, stop, logs, exit)
-   - MCDR launches Minecraft via config.yml
-   - Tests use stub MCDR config (no real Minecraft)
-
-2. **Environment → Lucy manifest generation**
-   - Environment service writes lucy.yaml from Environment metadata
-   - Session start calls Lucy PlanEnvironment
-   - Lock file persisted in session runtime directory
-   - Checkpoint includes Lucy lock hash
-
-3. **Java runtime detection**
-   - Detect installed Java versions on Agent machine
-   - Validate Environment.JavaVersion against detected runtimes
-   - RuntimeProfile includes Java path in launch command
-
-4. **Server jar provisioning**
-   - Download Fabric/Forge server jar
-   - Verify checksum
-   - Place in session runtime directory
-
-5. **World checkpoint backup**
-   - Copy world/ directory to checkpoint storage
-   - Record world snapshot metadata
-   - Checkpoint restore copies world/ back
+---
 
 ## 📊 Verification Status
 
-**All verification passed:**
-
-```powershell
+```
 gofmt -l .                     # ✅ No formatting issues
-go test -count=1 ./...         # ✅ All tests passing
-git diff --check               # ✅ No whitespace errors
+go test -count=1 ./...         # ✅ All tests passing (54 packages)
+go vet ./...                   # ✅ No issues
 ```
 
-**Lucy integration verified:**
+---
 
-```powershell
-.\lucy.exe --version           # ✅ Commit 3247a5840b
-go test ./internal/integration/lucy/...  # ✅ ok 0.563s
-```
+## 📋 Suggested Next Task
 
-**MCDR bridge verified:**
-
-```powershell
-go test ./internal/agent/mcdrbridge/...  # ✅ ok 0.394s
-go test ./internal/agent/process/...     # ✅ ok 1.151s
-```
-
-**RuntimeProfile registry verified:**
-
-```powershell
-go test ./internal/agent/runtimeprofile/...  # ✅ ok 0.290s
-```
-
-Last updated: 2026-06-20
+**Phase 4: 1.12 Support** — implement Forge 1.12.2 loader support, legacy Carpet mod compatibility, Lucy manifest compatibility for 1.12 ecosystem.

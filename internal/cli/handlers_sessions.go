@@ -8,9 +8,6 @@ import (
 
 	"github.com/stratummc/stratum/internal/agent"
 	artifactstagingsvc "github.com/stratummc/stratum/internal/artifact/stagingservice"
-	"github.com/stratummc/stratum/internal/checkpoint"
-	"github.com/stratummc/stratum/internal/checkpoint/consistency"
-	"github.com/stratummc/stratum/internal/idgen"
 	"github.com/stratummc/stratum/internal/operation"
 	"github.com/stratummc/stratum/internal/resourcepolicy"
 	"github.com/stratummc/stratum/internal/session"
@@ -108,7 +105,7 @@ func runSessionLifecycle(ctx context.Context, store *filesystem.Store, blobRoot 
 		service.WithArtifactReadinessGate(sessionArtifactReadinessGate{service: artifactstagingsvc.NewPreStartService(store, blobs, agentClient)})
 	}
 	if *preOpCheckpoint && hasAgentURL {
-		service.WithPreOpCheckpoint(makePreOpCheckpointFunc(store, agentClient))
+		service.WithPreOpCheckpoint(makePreOpSessionCheckpointFunc(store, agentClient))
 	}
 	options := sessionsvc.OperationOptions{IdempotencyKey: *idempotencyKey, RequestID: *requestID, Timeout: *operationTimeout, RuntimeProfileID: *runtimeProfileID, CreatePreOpCheckpoint: *preOpCheckpoint}
 	var operationValue operation.Operation
@@ -147,40 +144,4 @@ type sessionArtifactReadinessGate struct {
 func (g sessionArtifactReadinessGate) Check(ctx context.Context, sessionID string) (map[string]string, error) {
 	result, err := g.service.Check(ctx, sessionID)
 	return result.Metadata(), err
-}
-
-func makePreOpCheckpointFunc(store *filesystem.Store, agentClient agent.AgentClient) sessionsvc.PreOpCheckpointFunc {
-	return func(ctx context.Context, sessionID, actorID string) error {
-		sess, err := store.GetSession(ctx, sessionID)
-		if err != nil {
-			return fmt.Errorf("get session for pre-op checkpoint: %w", err)
-		}
-		snapResult, err := agentClient.CreateWorldSnapshot(ctx, agent.WorldCheckpointRequest{SessionID: sessionID})
-		if err != nil {
-			return fmt.Errorf("create world snapshot: %w", err)
-		}
-		cpID, idErr := idgen.NewID("cp")
-		if idErr != nil {
-			return fmt.Errorf("generate checkpoint id: %w", idErr)
-		}
-		cp := checkpoint.Checkpoint{
-			ID:               cpID,
-			ProjectID:        sess.ProjectID,
-			RoomID:           sess.RoomID,
-			SourceSessionID:  sessionID,
-			CreatorID:        actorID,
-			Kind:             checkpoint.KindPreOperation,
-			Status:           checkpoint.StatusMetadataOnly,
-			ConsistencyLevel: consistency.LevelMetadataOnly,
-			EnvironmentID:    sess.EnvironmentID,
-			RuntimeProfileID: sess.RuntimeProfileID,
-			WorldStateRef:    snapResult.SnapshotRef,
-			Notes:            "Pre-operation checkpoint before session restart",
-			CreatedAt:        time.Now().UTC(),
-		}
-		if err := store.CreateCheckpoint(ctx, cp); err != nil {
-			return fmt.Errorf("save pre-op checkpoint: %w", err)
-		}
-		return nil
-	}
 }

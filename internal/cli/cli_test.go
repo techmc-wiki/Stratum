@@ -2128,3 +2128,45 @@ func TestCLISendCommandRejectsMissingSession(t *testing.T) {
 		t.Fatalf("code=%d stderr=%q", code, stderr.String())
 	}
 }
+
+func TestCreatePreOpCheckpointCreatesRecord(t *testing.T) {
+	server := httptest.NewServer(httptransport.NewServer(local.NewFake(), "", nil).Handler())
+	defer server.Close()
+
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	setupTestProjectRoomEnvironment(t, dataDirectory)
+
+	var stdout, stderr bytes.Buffer
+	createArgs := []string{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-preop-artifact", "--project", "project-1", "--room", "room-1"}
+	if code := Run(createArgs, &stdout, &stderr); code != 0 {
+		t.Fatalf("create session: code=%d stderr=%q", code, stderr.String())
+	}
+
+	store, err := filesystem.New(dataDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createPreOpCheckpoint(context.Background(), store, local.NewFake(), "session-preop-artifact", "actor-1", "Test pre-op")
+	if err != nil {
+		t.Fatalf("createPreOpCheckpoint: %v", err)
+	}
+
+	checkpoints, err := store.ListCheckpointsBySession(context.Background(), "session-preop-artifact")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, cp := range checkpoints {
+		if cp.Kind == checkpoint.KindPreOperation && cp.SourceSessionID == "session-preop-artifact" && cp.CreatorID == "actor-1" && cp.Notes == "Test pre-op" {
+			found = true
+			if cp.WorldStateRef == "" {
+				t.Fatal("WorldStateRef is empty")
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("pre-op checkpoint not found in %d checkpoints", len(checkpoints))
+	}
+}

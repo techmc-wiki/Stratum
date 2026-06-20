@@ -185,8 +185,7 @@ If the checkpoint creation fails, the restart continues (best-effort). The failu
 
 **Supported operations:**
 - `sessions restart --pre-op-checkpoint`
-
-**Future support:** `sessions start`, `artifacts apply`
+- `artifacts apply execute --pre-op-checkpoint`
 
 ## Future Phases
 

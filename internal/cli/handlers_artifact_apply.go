@@ -156,6 +156,7 @@ func artifactApplyDryRun(ctx context.Context, store *filesystem.Store, agentClie
 func artifactApplyExecute(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {
 	flags := newFlagSet("artifacts apply execute", stderr)
 	planID := flags.String("plan", "", "apply plan ID")
+	preOpCheckpoint := flags.Bool("pre-op-checkpoint", false, "create world snapshot before execution")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -172,6 +173,15 @@ func artifactApplyExecute(ctx context.Context, store *filesystem.Store, agentCli
 		fmt.Fprintf(stderr, "apply plan status is %s, not planned\n", plan.Status)
 		return 1
 	}
+
+	if *preOpCheckpoint {
+		if cpErr := createPreOpCheckpoint(ctx, store, agentClient, plan.SessionID, plan.ActorID, "Pre-operation checkpoint before artifact apply"); cpErr != nil {
+			fmt.Fprintf(stderr, "pre-op checkpoint failed: %v (continuing with apply)\n", cpErr)
+		} else {
+			fmt.Fprintf(stdout, "Pre-operation checkpoint created for session %s.\n", plan.SessionID)
+		}
+	}
+
 	req := agent.ArtifactApplyExecuteRequest{ApplyPlanID: plan.ID, SessionID: plan.SessionID, StagingPlanID: plan.SourceStagingPlanID, ArtifactID: plan.ArtifactID, TargetRoot: string(plan.TargetRoot), TargetRelativePath: plan.TargetRelativePath, ExpectedHash: plan.MaterializedArtifactHash}
 	result, err := agentClient.ExecuteArtifactApply(ctx, req)
 	if err != nil {

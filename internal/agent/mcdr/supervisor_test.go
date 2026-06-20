@@ -370,3 +370,103 @@ func TestMCDRSupervisorStartWithReadinessCheckExit(t *testing.T) {
 		t.Fatal("process should not be running after crash during readiness")
 	}
 }
+
+func TestMCDRSupervisorCrashedProcessExitCode(t *testing.T) {
+	root := t.TempDir()
+	ps, err := agentprocess.NewSupervisorWithRoot("agent-test", root, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms := NewSupervisor(ps)
+	profile := mcdrTestProfile(t, "exit")
+	state, err := ms.Start(context.Background(), "mcdr-crash-ec", profile)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if state.Status != StatusRunning {
+		t.Fatalf("expected running, got %s", state.Status)
+	}
+	time.Sleep(500 * time.Millisecond)
+	final := ms.Inspect("mcdr-crash-ec")
+	if final.Status != StatusCrashed {
+		t.Fatalf("expected crashed, got %s", final.Status)
+	}
+	if final.ExitCode == nil || *final.ExitCode != 7 {
+		t.Fatalf("exit code: got %v, want 7", final.ExitCode)
+	}
+}
+
+func TestMCDRSupervisorCrashedProcessIsReported(t *testing.T) {
+	root := t.TempDir()
+	ps, err := agentprocess.NewSupervisorWithRoot("agent-test", root, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms := NewSupervisor(ps)
+	profile := mcdrTestProfile(t, "exit")
+	state, err := ms.Start(context.Background(), "mcdr-crash-report", profile)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if state.Status != StatusRunning {
+		t.Fatalf("expected running, got %s", state.Status)
+	}
+	time.Sleep(500 * time.Millisecond)
+	final := ms.Inspect("mcdr-crash-report")
+	if final.Status != StatusCrashed {
+		t.Fatalf("expected crashed, got status=%s", final.Status)
+	}
+	if !final.Crashed {
+		t.Fatal("expected crashed=true")
+	}
+}
+
+func TestMCDRSupervisorForceKill(t *testing.T) {
+	root := t.TempDir()
+	ps, err := agentprocess.NewSupervisorWithRoot("agent-test", root, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms := NewSupervisor(ps)
+	profile := mcdrTestProfile(t, "long")
+	_, err = ms.Start(context.Background(), "mcdr-force-kill", profile)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	stopped, err := ms.Stop(context.Background(), "mcdr-force-kill")
+	if err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if stopped.Status != StatusStopped {
+		t.Fatalf("expected stopped, got %s", stopped.Status)
+	}
+	if ms.IsRunning("mcdr-force-kill") {
+		t.Fatal("process should not be running after force kill")
+	}
+}
+
+func TestMCDRSupervisorCollectLogs(t *testing.T) {
+	root := t.TempDir()
+	ps, err := agentprocess.NewSupervisorWithRoot("agent-test", root, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms := NewSupervisor(ps)
+	profile := mcdrTestProfile(t, "stdin")
+	state, err := ms.Start(context.Background(), "mcdr-logs", profile)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if state.Status != StatusRunning {
+		t.Fatalf("expected running, got %s", state.Status)
+	}
+	waitForLog(t, ps, "mcdr-logs", "helper-ready")
+	logs := ms.CollectLogs("mcdr-logs", 0)
+	if !containsLog(logs, "helper-ready") {
+		t.Fatalf("logs missing helper-ready: %v", logs)
+	}
+	if !containsLog(logs, "helper-stderr") {
+		t.Fatalf("logs missing helper-stderr: %v", logs)
+	}
+	ms.Stop(context.Background(), "mcdr-logs")
+}
