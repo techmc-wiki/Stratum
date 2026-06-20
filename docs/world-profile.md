@@ -4,6 +4,8 @@
 
 WorldProfile captures Minecraft world generation and gameplay configuration as semantic metadata. It enables reproducible environment restoration and explicit configuration management for technical testing.
 
+See [Workflows](workflows/) for end-to-end usage examples including reproducible testing and configuration rollback.
+
 ## Domain Model
 
 ### WorldProfile
@@ -359,5 +361,6 @@ Controller/service layers never directly touch session filesystems.
 - `AGENTS.md` - Project rules and architecture boundaries
 - `docs/architecture.md` - Overall system design
 - `docs/checkpoints.md` - Checkpoint domain concepts
+- `docs/cli-reference.md` - CLI commands including checkpoint restore with world profile
 - `docs/agent.md` - Agent protocol and responsibilities
 - `docs/security.md` - Security boundaries and validation

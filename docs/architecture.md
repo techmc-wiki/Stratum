@@ -1,6 +1,6 @@
 # Architecture
 
-StratumMC is a Minecraft technical-testing control plane organized around long-lived Projects, shared Rooms, semantic Checkpoints, and isolated Sessions. It is not a generic server panel and does not treat a Minecraft server process as the top-level product object. The primary domain flow is:
+StratumMC is a CLI-first Minecraft technical-testing control plane organized around long-lived Projects, shared Rooms, semantic Checkpoints, and isolated Sessions. It is not a generic server panel and does not treat a Minecraft server process as the top-level product object. The primary domain flow is:
 
 ```text
 Project -> Room -> Session -> Checkpoint / Fork / Artifact / Environment
@@ -9,6 +9,8 @@ Project -> Room -> Session -> Checkpoint / Fork / Artifact / Environment
 A Project represents a long-term collaboration unit such as a lab or engineering group. A Room represents a shared testing workspace inside a Project. A Session is an actual runnable server instance. Checkpoints capture semantic experiment snapshots that can later be restored, compared, or forked into isolated test sessions.
 
 Domain packages contain policy and metadata only. Process execution, container management, filesystem mutation, MCDR daemon control, Minecraft-side bridge operations, and checkpoint packing live behind Agent-side integration interfaces.
+
+See [CLI Reference](cli-reference.md) for complete command documentation.
 
 ## Core principles
 

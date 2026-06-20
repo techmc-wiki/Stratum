@@ -114,12 +114,15 @@ For shared-token authentication, add matching `--token` and `--agent-token` flag
 
 ## Documentation
 
+- [docs/cli-reference.md](docs/cli-reference.md) — complete CLI command reference
+- [docs/workflows/](docs/workflows/) — end-to-end workflow examples
 - [docs/lucy-integration.md](docs/lucy-integration.md) — Lucy dependency management integration
 - [docs/architecture.md](docs/architecture.md) — component boundaries and ownership rules
 - [docs/runtime.md](docs/runtime.md) — Agent runtime supervision and profiles
 - [docs/operations.md](docs/operations.md) — durable operation lifecycle and correlation
 - [docs/storage.md](docs/storage.md) — repository abstractions and metadata durability
 - [docs/checkpoints.md](docs/checkpoints.md) — checkpoint creation and rollback semantics
+- [docs/world-profile.md](docs/world-profile.md) — world configuration capture and restore
 - [docs/security.md](docs/security.md) — safety rules and artifact isolation
 - [docs/mvp.md](docs/mvp.md) — MVP scope and non-goals
 - [docs/workflow.md](docs/workflow.md) — development and review conventions

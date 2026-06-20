@@ -2,6 +2,8 @@
 
 Checkpoints are semantic experiment snapshots that record project state at a specific point in time.
 
+See [Workflows](workflows/) for end-to-end checkpoint usage examples.
+
 ## Current Implementation
 
 Checkpoints capture:
@@ -24,6 +26,8 @@ Checkpoints support:
 * Consistency-level metadata
 
 See [World Profile documentation](world-profile.md) for world configuration capture and restore workflows.
+
+See [CLI Reference](cli-reference.md) for complete checkpoint command documentation.
 
 ## Service Layer
 
