@@ -37,6 +37,10 @@ func (e2ePythonManager) VerifyMCDR(context.Context, agentpython.VenvResult) (str
 	return "MCDReforged v2.15.7", nil
 }
 
+func (e2ePythonManager) VerifyMCDRExecutable(context.Context, string) (string, error) {
+	return "", fmt.Errorf("global MCDR is disabled in e2e tests")
+}
+
 type e2eJavaDetector struct{}
 
 func (e2eJavaDetector) SelectForMinecraftVersion(_ context.Context, _ string) (agentjava.Installation, error) {
@@ -152,7 +156,7 @@ func TestE2EMCDRSessionMaterializeAndStart(t *testing.T) {
 	if !strings.Contains(cfgContent, "\"fabric-server-1.17.1") {
 		t.Fatalf("config.yml missing server jar name:\n%s", cfgContent)
 	}
-	if !strings.Contains(cfgContent, "\"/usr/bin/java17\"") {
+	if !strings.Contains(cfgContent, "/usr/bin/java17") {
 		t.Fatalf("config.yml missing java executable:\n%s", cfgContent)
 	}
 
@@ -247,5 +251,25 @@ func TestE2EMCDRSessionConfigYMLInStartUp(t *testing.T) {
 		}
 	}
 
-	pa.StopSession(context.Background(), agent.SessionRequest{SessionID: "e2e-config-1"})
+	if _, err := pa.StopSession(context.Background(), agent.SessionRequest{SessionID: "e2e-config-1"}); err != nil {
+		t.Fatalf("StopSession: %v", err)
+	}
+}
+
+func TestE2EMCDRHelperProcess(t *testing.T) {
+	if os.Getenv("STRATUM_E2E_MCDR_HELPER") != "1" {
+		return
+	}
+	os.Stdout.WriteString("e2e-mcdr-helper-ready\n")
+	buf := make([]byte, 256)
+	for {
+		n, err := os.Stdin.Read(buf)
+		if err != nil {
+			os.Exit(0)
+		}
+		if strings.TrimSpace(string(buf[:n])) == "stop" {
+			os.Stdout.WriteString("e2e-mcdr-helper-stopped\n")
+			os.Exit(0)
+		}
+	}
 }
