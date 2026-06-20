@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -48,12 +49,13 @@ func newServeCommand() *cobra.Command {
 	var runtimeRoot string
 	var runtimeProfiles string
 	var httpProxy string
+	var controllerURL string
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Serve the Stratum Agent HTTP API",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return serve(listen, token, runtimeMode, runtimeRoot, runtimeProfiles, httpProxy)
+			return serve(listen, token, runtimeMode, runtimeRoot, runtimeProfiles, httpProxy, controllerURL)
 		},
 	}
 	cmd.Flags().StringVar(&listen, "listen", "127.0.0.1:8787", "listen address")
@@ -62,10 +64,11 @@ func newServeCommand() *cobra.Command {
 	cmd.Flags().StringVar(&runtimeRoot, "runtime-root", ".stratum/runtime", "trusted runtime working root")
 	cmd.Flags().StringVar(&runtimeProfiles, "runtime-profiles", "", "trusted local RuntimeProfile JSON configuration")
 	cmd.Flags().StringVar(&httpProxy, "http-proxy", os.Getenv("STRATUM_HTTP_PROXY"), "HTTP proxy for downloads (e.g., http://127.0.0.1:10808)")
+	cmd.Flags().StringVar(&controllerURL, "controller-url", os.Getenv("STRATUM_CONTROLLER_URL"), "Controller URL for agent registration")
 	return cmd
 }
 
-func serve(listen, token, runtimeMode, runtimeRoot, runtimeProfiles, httpProxy string) error {
+func serve(listen, token, runtimeMode, runtimeRoot, runtimeProfiles, httpProxy, controllerURL string) error {
 	switch runtimeMode {
 	case "dummy-process", "process", "mcdr":
 	default:
@@ -115,6 +118,13 @@ func serve(listen, token, runtimeMode, runtimeRoot, runtimeProfiles, httpProxy s
 	if err != nil {
 		return err
 	}
+
+	if controllerURL != "" {
+		if err := registerWithController(controllerURL, token, listen, runtimeMode, logger); err != nil {
+			logger.Printf("controller registration failed: %v", err)
+		}
+	}
+
 	server := httptransport.NewServer(runtimeAgent, token, logger)
 	logger.Printf("listening on %s with %s supervision (auth=%t)", listen, runtimeMode, token != "")
 	if err := http.ListenAndServe(listen, server.Handler()); err != nil {
@@ -125,4 +135,45 @@ func serve(listen, token, runtimeMode, runtimeRoot, runtimeProfiles, httpProxy s
 
 func setHTTPProxy(proxyURL string) error {
 	return serverjar.SetProxy(proxyURL)
+}
+
+func registerWithController(controllerURL, token, listen, runtimeMode string, logger *log.Logger) error {
+	controllerURL = strings.TrimSuffix(controllerURL, "/")
+	registerURL := controllerURL + "/v1/agents/register"
+	req, err := http.NewRequest("POST", registerURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("X-Agent-Listen", listen)
+	req.Header.Set("X-Agent-Mode", runtimeMode)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("register request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("controller returned HTTP %d", resp.StatusCode)
+	}
+	logger.Printf("registered with controller at %s (agent listen=%s)", controllerURL, listen)
+
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			heartURL := controllerURL + "/v1/agents/heartbeat"
+			req, _ := http.NewRequest("POST", heartURL, nil)
+			if token != "" {
+				req.Header.Set("Authorization", "Bearer "+token)
+			}
+			req.Header.Set("X-Agent-Listen", listen)
+			if resp, err := http.DefaultClient.Do(req); err == nil {
+				resp.Body.Close()
+			}
+		}
+	}()
+	return nil
 }
