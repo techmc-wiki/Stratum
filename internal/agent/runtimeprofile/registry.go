@@ -84,3 +84,36 @@ func (r *Registry) ListEnabled() []Profile {
 	sort.Slice(values, func(i, j int) bool { return values[i].ID < values[j].ID })
 	return values
 }
+
+func (r *Registry) Upsert(value Profile) error {
+	if err := Validate(value); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.profiles[value.ID] = value
+	return nil
+}
+
+func (r *Registry) Remove(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.profiles, id)
+}
+
+func (r *Registry) Reload(profiles []Profile) error {
+	pending := make(map[string]Profile, len(profiles))
+	for _, value := range profiles {
+		if err := Validate(value); err != nil {
+			return fmt.Errorf("profile %q: %w", value.ID, err)
+		}
+		if _, exists := pending[value.ID]; exists {
+			return fmt.Errorf("runtime profile %q is duplicated", value.ID)
+		}
+		pending[value.ID] = value
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.profiles = pending
+	return nil
+}
