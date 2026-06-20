@@ -16,14 +16,14 @@ import (
 	"github.com/stratummc/stratum/internal/integration/lucy"
 )
 
-func TestDefaultLucyAdapterIsNoop(t *testing.T) {
+func TestDefaultLucyAdapterIsEmbedded(t *testing.T) {
 	root := t.TempDir()
 	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
 	if err != nil {
 		t.Fatal(err)
 	}
 	request := agent.EnvironmentMaterializationRequest{
-		SessionID:        "session-noop",
+		SessionID:        "session-embedded",
 		EnvironmentID:    "env-117-fabric",
 		EnvironmentName:  "1.17 Fabric Carpet",
 		MinecraftVersion: "1.17.1",
@@ -39,32 +39,26 @@ func TestDefaultLucyAdapterIsNoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("materialize environment: %v", err)
 	}
-	if result.Metadata["lucyAdapterMode"] != "noop" {
-		t.Errorf("lucy adapter mode: got %q, want %q", result.Metadata["lucyAdapterMode"], "noop")
+	if result.Metadata["lucyAdapterMode"] != "embedded" {
+		t.Errorf("lucy adapter mode: got %q, want %q", result.Metadata["lucyAdapterMode"], "embedded")
 	}
-	if result.Metadata["lucyResolutionStatus"] != "not_requested" {
-		t.Errorf("lucy resolution status: got %q, want %q", result.Metadata["lucyResolutionStatus"], "not_requested")
-	}
-	if result.Metadata["lucyAdapterConfigured"] != "false" {
-		t.Errorf("lucy adapter configured: got %q, want %q", result.Metadata["lucyAdapterConfigured"], "false")
+	if result.Metadata["lucyAdapterConfigured"] != "true" {
+		t.Errorf("lucy adapter configured: got %q, want %q", result.Metadata["lucyAdapterConfigured"], "true")
 	}
 }
 
 func TestDetectLucyAdapterNoop(t *testing.T) {
 	t.Setenv("STRATUM_LUCY_WORKSPACE", "")
-	adapter := detectLucyAdapter(filepath.Join(t.TempDir(), "missing"))
-	if _, ok := adapter.(lucy.NoopAdapter); !ok {
-		t.Fatalf("adapter = %T, want lucy.NoopAdapter", adapter)
+	adapter := createDefaultLucyAdapter(filepath.Join(t.TempDir(), "missing"))
+	if _, ok := adapter.(*lucy.EmbeddedAdapter); !ok {
+		t.Fatalf("adapter = %T, want *lucy.EmbeddedAdapter (default is now always EmbeddedAdapter)", adapter)
 	}
 }
 
 func TestDetectLucyAdapterEmbedded(t *testing.T) {
 	t.Setenv("STRATUM_LUCY_WORKSPACE", "")
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "lucy.yaml"), []byte("format_version: v1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	adapter := detectLucyAdapter(root)
+	adapter := createDefaultLucyAdapter(root)
 	if _, ok := adapter.(*lucy.EmbeddedAdapter); !ok {
 		t.Fatalf("adapter = %T, want *lucy.EmbeddedAdapter", adapter)
 	}
@@ -73,10 +67,7 @@ func TestDetectLucyAdapterEmbedded(t *testing.T) {
 func TestDetectLucyAdapterEnvNone(t *testing.T) {
 	t.Setenv("STRATUM_LUCY_WORKSPACE", "none")
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "lucy.yaml"), []byte("format_version: v1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	adapter := detectLucyAdapter(root)
+	adapter := createDefaultLucyAdapter(root)
 	if _, ok := adapter.(lucy.NoopAdapter); !ok {
 		t.Fatalf("adapter = %T, want lucy.NoopAdapter", adapter)
 	}

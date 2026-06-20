@@ -164,6 +164,7 @@ type pythonEnvironmentManager interface {
 	CreateVenv(context.Context, agentpython.VenvRequest) (agentpython.VenvResult, error)
 	InstallMCDR(context.Context, agentpython.InstallMCDRRequest) error
 	VerifyMCDR(context.Context, agentpython.VenvResult) (string, error)
+	VerifyMCDRExecutable(context.Context, string) (string, error)
 }
 
 type javaRuntimeDetector interface {
@@ -199,20 +200,17 @@ func NewSupervisorWithRoot(agentID, root string, maxLogBytes int) (*Supervisor, 
 	}
 	_ = serverjar.SetProxy(os.Getenv("STRATUM_PROXY"))
 	cacheDir := filepath.Join(root, "cache", "serverjars")
-	return &Supervisor{agentID: agentID, runtimeRoot: filepath.Clean(root), now: func() time.Time { return time.Now().UTC() }, processes: map[string]*managedProcess{}, maxLogBytes: maxLogBytes, lucyAdapter: detectLucyAdapter(root), pythonDetector: agentpython.NewDetector(), pythonManager: agentpython.NewManager(), javaDetector: agentjava.NewDetector(), serverJarDeployer: serverjar.NewDeployer(cacheDir)}, nil
+	adapter := createDefaultLucyAdapter(root)
+	return &Supervisor{agentID: agentID, runtimeRoot: filepath.Clean(root), now: func() time.Time { return time.Now().UTC() }, processes: map[string]*managedProcess{}, maxLogBytes: maxLogBytes, lucyAdapter: adapter, pythonDetector: agentpython.NewDetector(), pythonManager: agentpython.NewManager(), javaDetector: agentjava.NewDetector(), serverJarDeployer: serverjar.NewDeployer(cacheDir)}, nil
 }
 
-func detectLucyAdapter(workDir string) lucy.Adapter {
+func createDefaultLucyAdapter(workDir string) lucy.Adapter {
 	configured := strings.TrimSpace(os.Getenv("STRATUM_LUCY_WORKSPACE"))
 	if strings.EqualFold(configured, "none") {
 		return lucy.NoopAdapter{}
 	}
 	if configured != "" {
 		workDir = configured
-	}
-	manifestPath := filepath.Join(workDir, "lucy.yaml")
-	if _, err := os.Stat(manifestPath); err != nil {
-		return lucy.NoopAdapter{}
 	}
 	adapter, err := lucy.NewEmbeddedAdapter(lucy.NewLucyProjectBackend(workDir))
 	if err != nil {
@@ -728,6 +726,21 @@ func (s *Supervisor) materializeMCDRRuntime(ctx context.Context, layout SessionR
 	if err != nil {
 		return nil, fmt.Errorf("select Python for MCDR: %w", err)
 	}
+	if executable, lookupErr := exec.LookPath("mcdreforged"); lookupErr == nil {
+		installedVersion, verifyErr := manager.VerifyMCDRExecutable(ctx, executable)
+		if verifyErr == nil {
+			return map[string]string{
+				"mcdrMaterializationStatus": "ready",
+				"mcdrInstallStatus":         "skipped-global-existing",
+				"mcdrVersion":               installedVersion,
+				"mcdrExecutable":            executable,
+				"pythonExecutable":          pythonInstall.ExecutablePath,
+				"pythonVersion":             pythonInstall.Version,
+				"pythonHasVenv":             fmt.Sprintf("%t", pythonInstall.HasVenv),
+				"pythonHasPip":              fmt.Sprintf("%t", pythonInstall.HasPip),
+			}, nil
+		}
+	}
 	venvPath := filepath.Join(mcdrLayout.MCDRRoot, "venv")
 	venv, err := manager.CreateVenv(ctx, agentpython.VenvRequest{
 		SessionID: request.SessionID,
@@ -738,7 +751,29 @@ func (s *Supervisor) materializeMCDRRuntime(ctx context.Context, layout SessionR
 		return nil, fmt.Errorf("create MCDR Python venv: %w", err)
 	}
 	requestedVersion := "latest"
-	if err := manager.InstallMCDR(ctx, agentpython.InstallMCDRRequest{Venv: venv, Version: requestedVersion}); err != nil {
+	proxyURL := os.Getenv("STRATUM_HTTP_PROXY")
+	installReq := agentpython.InstallMCDRRequest{
+		Venv:     venv,
+		Version:  requestedVersion,
+		ProxyURL: proxyURL,
+	}
+	if installedVersion, verifyErr := manager.VerifyMCDR(ctx, venv); verifyErr == nil {
+		return map[string]string{
+			"mcdrMaterializationStatus": "ready",
+			"mcdrInstallStatus":         "skipped-venv-existing",
+			"mcdrRequestedVersion":      requestedVersion,
+			"mcdrVersion":               installedVersion,
+			"mcdrExecutable":            venv.MCDRExecutable,
+			"mcdrVenvPath":              venv.VenvPath,
+			"mcdrPythonExecutable":      venv.PythonExec,
+			"mcdrPipExecutable":         venv.PipExec,
+			"pythonExecutable":          pythonInstall.ExecutablePath,
+			"pythonVersion":             pythonInstall.Version,
+			"pythonHasVenv":             fmt.Sprintf("%t", pythonInstall.HasVenv),
+			"pythonHasPip":              fmt.Sprintf("%t", pythonInstall.HasPip),
+		}, nil
+	}
+	if err := manager.InstallMCDR(ctx, installReq); err != nil {
 		return nil, fmt.Errorf("install MCDR: %w", err)
 	}
 	installedVersion, err := manager.VerifyMCDR(ctx, venv)

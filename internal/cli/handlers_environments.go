@@ -25,8 +25,10 @@ func createEnvironment(ctx context.Context, store *filesystem.Store, args []stri
 	id := flags.String("id", "", "")
 	name := flags.String("name", "", "")
 	minecraftVersion := flags.String("minecraft-version", "", "")
+	javaVersion := flags.String("java-version", "", "")
 	loaderType := flags.String("loader", string(environment.LoaderNone), "")
 	serverCore := flags.String("server-core", string(environment.ServerVanilla), "")
+	mcdrRequired := flags.Bool("mcdr-required", false, "")
 	runtimeProfile := flags.String("runtime-profile", "", "")
 	runtimeProfileRequired := flags.Bool("runtime-profile-required", false, "")
 	if err := flags.Parse(args); err != nil {
@@ -36,8 +38,10 @@ func createEnvironment(ctx context.Context, store *filesystem.Store, args []stri
 		ID:                     *id,
 		Name:                   *name,
 		MinecraftVersion:       *minecraftVersion,
+		JavaVersion:            *javaVersion,
 		LoaderType:             environment.LoaderType(*loaderType),
 		ServerCore:             environment.ServerCore(*serverCore),
+		MCDRRequired:           *mcdrRequired,
 		RuntimeProfileID:       *runtimeProfile,
 		RuntimeProfileRequired: *runtimeProfileRequired,
 		CreatedAt:              time.Now().UTC(),
