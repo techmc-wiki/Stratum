@@ -142,6 +142,11 @@ World Profile Diff:
 - Verify session configuration matches checkpoint
 - Identify configuration drift
 
+**Implementation:**
+- Reads checkpoint's `WorldProfileSnapshot` from controller store
+- Calls `GetSessionRuntimeStatus` to obtain session's auto-populated `WorldProfile` from `work/server.properties`
+- Compares field-by-field and outputs differences
+
 **See also:** [Checkpoints documentation](checkpoints.md), [World Profile documentation](world-profile.md)
 
 ---
@@ -225,7 +230,8 @@ stratum checkpoints restore \
   --actor <actor-id> \
   [--world-dir <relative-dir>] \
   [--notes <notes>] \
-  [--apply-world-profile]
+  [--apply-world-profile] \
+  [--apply-world-profile-fields <fields>]
 ```
 
 **Flags:**
@@ -235,7 +241,19 @@ stratum checkpoints restore \
 - `--world-dir` (optional): Relative world directory name (default: `world_restored`)
 - `--notes` (optional): Notes for the restore operation
 - `--apply-world-profile` (optional): Apply world profile (`server.properties` configuration) from checkpoint
+- `--apply-world-profile-fields` (optional): Comma-separated fields to apply when using `--apply-world-profile`. Valid values: `seed`, `level-type`, `difficulty`, `view-distance`, `generate-structures`, `spawn-radius`, `generator-settings`. When omitted, all fields are applied.
 
+**Partial Application Example:**
+```bash
+# Restore only seed and level-type, keep current difficulty and view-distance
+stratum --data-dir ./data --agent-url http://127.0.0.1:8787 \
+  checkpoints restore \
+  --checkpoint cp-experiment-1 \
+  --target-session session-test \
+  --actor user-1 \
+  --apply-world-profile \
+  --apply-world-profile-fields "seed,level-type"
+```
 **Requires:** `--agent-url`
 
 **Requirements:**
@@ -396,6 +414,39 @@ stratum --data-dir ./data --agent-url http://127.0.0.1:8787 \
   sessions inspect --id session-test
 ```
 
+---
+
+### sessions runtime-status
+
+Inspect session runtime layout including WorldProfile.
+
+**Usage:**
+```bash
+stratum sessions runtime-status --id <session-id>
+```
+
+**Flags:**
+- `--id` (required): Session ID
+
+**Requires:** `--agent-url`
+
+**Returns:**
+- Runtime directory structure (root, session, work, config, logs, etc.)
+- Environment manifest status
+- MCDR layout status
+- Materialized and applied artifacts counts
+- Process status (PID, runtime profile, running/crashed)
+- **WorldProfile** — current server.properties values (seed, level-type, difficulty, view-distance, generate-structures, spawn-protection, generator-settings)
+
+The Agent auto-populates WorldProfile by reading and parsing `work/server.properties`. This is the same source consumed by `checkpoints diff` and `checkpoints create --capture-world-profile`.
+
+**Example:**
+```bash
+stratum --data-dir ./data --agent-url http://127.0.0.1:8787 \
+  sessions runtime-status --id session-test
+```
+
+**See also:** [CLI Reference](cli-reference.md), [World Profile documentation](world-profile.md)
 ---
 
 ## projects

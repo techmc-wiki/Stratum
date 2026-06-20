@@ -242,9 +242,15 @@ ApplyWorldProfileFields: []string{"seed", "level-type"}
 - `internal/agent/serverproperties/parser_test.go`
   - Parse all fields from server.properties
   - Generate server.properties from snapshot
+  - TestFromWorldProfileSnapshot — reverse conversion
 - `internal/checkpoint/service/service_test.go`
   - Capture WorldProfile during create
   - Apply WorldProfile during restore
+  - TestRestoreAppliesWorldProfile
+- `internal/agent/process/runtime_status_test.go`
+  - TestGetSessionRuntimeStatusWithWorldProfile — auto-population from work/server.properties
+- `internal/agent/httptransport/server_test.go`
+  - TestServerGetSessionRuntimeStatusWithWorldProfile — WorldProfile over HTTP
 
 ### E2E Tests
 
@@ -253,7 +259,7 @@ ApplyWorldProfileFields: []string{"seed", "level-type"}
   - `TestE2ECheckpointCaptureServerProperties`
   - `TestE2EWriteSessionFileServerProperties`
 
-Full pipeline coverage: file read → parse → snapshot → generate → file write.
+Full pipeline coverage: file read → parse → snapshot → generate → file write → runtime status auto-population.
 
 ## Security Considerations
 
@@ -335,6 +341,47 @@ Location: `internal/agent/serverproperties/`
 **FromWorldProfileSnapshot:** WorldProfileSnapshot → server.properties text
 
 **Design:** Pure functions, no I/O. File operations in agent layer.
+
+### Agent Runtime Integration
+
+**Location:** `internal/agent/process/process.go` (`GetSessionRuntimeStatus`)
+
+The Agent automatically populates `WorldProfile` in `SessionRuntimeStatus` by reading and parsing `work/server.properties`:
+
+```go
+func (s *Supervisor) GetSessionRuntimeStatus(ctx context.Context, sessionID string) (agent.SessionRuntimeStatus, error) {
+    // ... existing logic ...
+
+    serverPropsPath := filepath.Join(sessionRoot, "work", "server.properties")
+    if data, err := os.ReadFile(serverPropsPath); err == nil {
+        if cfg, err := serverproperties.Parse(bytes.NewReader(data)); err == nil {
+            if snapshot := serverproperties.ToWorldProfileSnapshot(cfg, ""); snapshot != nil {
+                status.WorldProfile = &agent.WorldProfileStatus{
+                    Seed: snapshot.Seed, LevelType: snapshot.LevelType,
+                    GeneratorSettings: snapshot.GeneratorSettings,
+                    GenerateStructures: snapshot.GenerateStructures,
+                    SpawnRadius: snapshot.SpawnRadius, Difficulty: snapshot.Difficulty,
+                    ViewDistance: snapshot.ViewDistance,
+                }
+            }
+        }
+    }
+    return status, nil
+}
+```
+
+**Conditions:**
+- WorldProfile is populated only when `work/server.properties` exists and is parseable
+- If the file is missing or malformed, `WorldProfile` remains `nil`
+- No caching — re-parsed on every `GetSessionRuntimeStatus` call
+
+**Consumers:**
+- `checkpoints diff` — compares checkpoint WorldProfile with current session WorldProfile via a single `GetSessionRuntimeStatus` call
+- `sessions runtime-status` — displays WorldProfile in session runtime inspection output
+
+**HTTP Transport:**
+- `WorldProfileStatusDTO` carries the 7 fields as JSON in `SessionRuntimeStatusResponse`
+- Converted bidirectionally in `dto.go` → `client.go`
 
 ### Checkpoint Service Integration
 

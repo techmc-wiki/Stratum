@@ -309,23 +309,42 @@ stratum --data-dir $DATA_DIR --agent-url $AGENT_URL \
 
 ## Advanced: Partial Configuration Restore
 
-**Future capability: restore only specific configuration fields.**
+**Restore only specific configuration fields, leaving others unchanged:**
 
-**Hypothetical usage:**
 ```bash
-# Restore only seed and level-type, keep current difficulty
+# Restore only seed and level-type, keep current difficulty and view-distance
+stratum --data-dir $DATA_DIR --agent-url $AGENT_URL \
+  sessions stop --id $SESSION_ID --actor member-1
+
 stratum --data-dir $DATA_DIR --agent-url $AGENT_URL \
   checkpoints restore \
   --checkpoint cp-stable-config \
   --target-session $SESSION_ID \
   --actor admin-1 \
-  --apply-world-profile-fields seed,level-type
+  --apply-world-profile \
+  --apply-world-profile-fields "seed,level-type"
 ```
 
-**Current workaround:**
-- Restore full configuration
-- Manually edit server.properties for specific fields
-- Restart session
+**Output:**
+```
+World state restored: checkpoint=cp-stable-config target=lab-main restoredRef=...
+World profile fields applied: [seed level-type]
+```
+
+**Valid field values:**
+- `seed` — level-seed
+- `level-type` — level-type
+- `difficulty` — difficulty
+- `view-distance` — view-distance
+- `generate-structures` — generate-structures
+- `spawn-radius` — spawn-protection
+- `generator-settings` — generator-settings
+
+**How it works:**
+- Reads current `server.properties` from target session
+- Appends specified fields from checkpoint's WorldProfileSnapshot
+- Minecraft uses "last occurrence wins" for properties, so appended values override existing ones
+- Fields not listed are left unchanged
 
 ---
 

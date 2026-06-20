@@ -40,6 +40,7 @@ Current endpoints:
 GET  /health
 GET  /v1/agent
 GET  /v1/agent/resources
+GET  /v1/agent/runtime-profiles
 POST /v1/sessions/{id}/prepare
 POST /v1/sessions/{id}/start
 POST /v1/sessions/{id}/stop
@@ -48,10 +49,37 @@ POST /v1/sessions/{id}/freeze
 POST /v1/sessions/{id}/unfreeze
 GET  /v1/sessions/{id}/inspect
 GET  /v1/sessions/{id}/logs
+GET  /v1/sessions/{id}/runtime-status
+GET  /v1/sessions/{id}/ready-for-start
+POST /v1/sessions/{id}/world-snapshot
+POST /v1/sessions/{id}/world-restore
+GET  /v1/sessions/{id}/files/{path}
+PUT  /v1/sessions/{id}/files/{path}
 POST /v1/environments/materialize
-POST /v1/checkpoints/create-stub
-POST /v1/checkpoints/restore-stub
 ```
+
+### Session Runtime Status and World Profile
+
+`GET /v1/sessions/{id}/runtime-status` returns a SessionRuntimeStatus including:
+
+- Directory existence checks (root, session, work, config, logs, etc.)
+- Environment manifest status (from `config/environment-materialization.json`)
+- MCDR layout status
+- Materialized and applied artifacts counts
+- Process status (PID, runtime profile, exit state)
+- **WorldProfile** — automatically populated from `work/server.properties`
+
+The Agent reads and parses `work/server.properties` on every runtime status call, extracting `level-seed`, `level-type`, `difficulty`, `view-distance`, `generate-structures`, `spawn-protection`, and `generator-settings`. These values are returned as a `WorldProfile` field in the response.
+
+CLI commands such as `checkpoints diff` and `sessions runtime-status` consume this WorldProfile directly. Checkpoint creation uses `ReadSessionFile` to read the raw `server.properties` content.
+
+### Session File Access
+
+`GET /v1/sessions/{id}/files/{path}` reads a file from the session directory. `PUT /v1/sessions/{id}/files/{path}` writes a file. Both enforce path safety: relative paths only, no `..` traversal, no absolute paths.
+
+Used by:
+- Checkpoint creation (`--capture-world-profile`) to read `server.properties`
+- Checkpoint restore (`--apply-world-profile`) to write `server.properties`
 
 Run the development agent with:
 
