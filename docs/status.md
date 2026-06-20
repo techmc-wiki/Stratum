@@ -29,10 +29,12 @@ Last updated: 2026-06-20
 ### Agent
 - HTTP transport for Controller-Agent communication
 - Per-session runtime directory allocation
-- RuntimeProfile registry and validation
+- RuntimeProfile registry with validation and **hot-reload** via file watcher
 - Real OS process supervision (dummy, terminal, MCDR)
 - Bounded log capture with circular buffer
 - Process crash detection and graceful stop
+- **Minecraft version polling** — `serverjar.VersionCache` polls Mojang manifest every 6h for auto-latest resolution
+- **Runtime profile watcher** — `runtimeprofile.Watcher` detects JSON file changes and reloads registry without restart
 
 ---
 
@@ -183,7 +185,7 @@ All six priorities of Phase 2 are implemented:
 ### Additional Environments
 - **1.17 Fabric** — Fully implemented (MCDR, Java 17, server jar download, Lucy manifest)
 - **1.12 Forge** — Server jar download + environment + runtime profile implemented; Java 8 via existing detector
-- **Latest version** — Not yet defined
+- **Latest Fabric** — Auto-resolves to Mojang latest release; runtime profile + manifest + environment ready
 - **Forge/NeoForge modern** — Only 1.12.2 Forge supported so far
 
 ### Infrastructure
