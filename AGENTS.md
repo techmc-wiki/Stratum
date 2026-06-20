@@ -18,6 +18,8 @@ StratumMC is **not** a generic Minecraft hosting panel. It is a Project/Room-cen
 
 Prioritize correctness, reproducibility, safe boundaries, and clean architecture over rapid feature accumulation.
 
+**StratumMC is a CLI-first tool.** The CLI provides the primary UX. Web UI is a secondary interface. Always design for CLI workflow first, then consider Web UI as a convenience layer. Command-line operations should be complete, scriptable, and self-sufficient.
+
 ---
 
 ## Project Skills
