@@ -11,10 +11,10 @@ import (
 )
 
 type AgentRegistryStore struct {
-	mu      sync.RWMutex
-	dir     string
-	agents  map[string]agentregistry.Agent
-	loaded  bool
+	mu     sync.RWMutex
+	dir    string
+	agents map[string]agentregistry.Agent
+	loaded bool
 }
 
 func NewAgentRegistryStore(dir string) *AgentRegistryStore {

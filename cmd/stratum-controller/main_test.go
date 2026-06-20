@@ -6,15 +6,15 @@ import (
 	"testing"
 )
 
-func TestRootCommandPrintsMVPStub(t *testing.T) {
+func TestRootCommandShowsHelp(t *testing.T) {
 	cmd := newRootCommand()
 	var stdout bytes.Buffer
 	cmd.SetOut(&stdout)
-	cmd.SetArgs(nil)
+	cmd.SetArgs([]string{"--help"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout.String(), "stratum-controller MVP stub") {
+	if !strings.Contains(stdout.String(), "serve") {
 		t.Fatalf("stdout=%q", stdout.String())
 	}
 }
