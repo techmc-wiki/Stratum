@@ -166,6 +166,7 @@ func restoreCheckpoint(ctx context.Context, store *filesystem.Store, agentClient
 	actor := flags.String("actor", "", "")
 	notes := flags.String("notes", "", "")
 	applyWorldProfile := flags.Bool("apply-world-profile", false, "apply world profile from checkpoint to target session")
+	applyWorldProfileFields := flags.String("apply-world-profile-fields", "", "comma-separated fields to apply (seed, level-type, difficulty, view-distance, generate-structures, spawn-radius, generator-settings)")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -173,21 +174,33 @@ func restoreCheckpoint(ctx context.Context, store *filesystem.Store, agentClient
 		fmt.Fprintln(stderr, "--checkpoint, --target-session, and --actor are required")
 		return 2
 	}
+	var fields []string
+	if *applyWorldProfileFields != "" {
+		fields = strings.Split(*applyWorldProfileFields, ",")
+		for i, f := range fields {
+			fields[i] = strings.TrimSpace(f)
+		}
+	}
 	cp, err := checkpointsvc.Restore(ctx, store, checkpointsvc.RestoreRequest{
-		CheckpointID:      *checkpointID,
-		TargetSessionID:   *targetSessionID,
-		WorldDirRel:       *worldDir,
-		ActorID:           *actor,
-		Notes:             *notes,
-		AgentClient:       agentClient,
-		ApplyWorldProfile: *applyWorldProfile,
+		CheckpointID:            *checkpointID,
+		TargetSessionID:         *targetSessionID,
+		WorldDirRel:             *worldDir,
+		ActorID:                 *actor,
+		Notes:                   *notes,
+		AgentClient:             agentClient,
+		ApplyWorldProfile:       *applyWorldProfile,
+		ApplyWorldProfileFields: fields,
 	})
 	if err != nil {
 		return reportError(stderr, "checkpoint restore", err)
 	}
 	fmt.Fprintf(stdout, "World state restored: checkpoint=%s target=%s restoredRef=%s\n", cp.ID, *targetSessionID, cp.WorldStateRef)
 	if *applyWorldProfile {
-		fmt.Fprintln(stdout, "World profile applied to target session")
+		if len(fields) > 0 {
+			fmt.Fprintf(stdout, "World profile fields applied: %v\n", fields)
+		} else {
+			fmt.Fprintln(stdout, "World profile applied to target session")
+		}
 	}
 	return 0
 }

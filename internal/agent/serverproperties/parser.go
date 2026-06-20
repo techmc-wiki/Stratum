@@ -98,18 +98,75 @@ func FromWorldProfileSnapshot(snapshot *checkpoint.WorldProfileSnapshot) string 
 	var b strings.Builder
 	b.WriteString("# Minecraft server properties\n")
 	b.WriteString("# Applied from checkpoint world profile snapshot\n")
-	if snapshot.Seed != "" {
-		b.WriteString(fmt.Sprintf("level-seed=%s\n", snapshot.Seed))
+	writeSnapshotFields(&b, snapshot, nil)
+	return b.String()
+}
+
+func MergeWithWorldProfileSnapshot(current []byte, snapshot *checkpoint.WorldProfileSnapshot, fields []string) string {
+	fieldSet := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		fieldSet[f] = true
 	}
-	b.WriteString(fmt.Sprintf("level-type=%s\n", snapshot.LevelType))
-	if snapshot.GeneratorSettings != "" {
-		b.WriteString(fmt.Sprintf("generator-settings=%s\n", snapshot.GeneratorSettings))
+	var b strings.Builder
+	b.WriteString("# Minecraft server properties\n")
+	b.WriteString("# Merged with checkpoint world profile fields\n")
+	b.WriteString(string(current))
+	if fieldSet["seed"] {
+		if snapshot.Seed != "" {
+			b.WriteString(fmt.Sprintf("level-seed=%s\n", snapshot.Seed))
+		}
 	}
-	b.WriteString(fmt.Sprintf("generate-structures=%t\n", snapshot.GenerateStructures))
-	b.WriteString(fmt.Sprintf("spawn-protection=%d\n", snapshot.SpawnRadius))
-	b.WriteString(fmt.Sprintf("difficulty=%s\n", snapshot.Difficulty))
-	if snapshot.ViewDistance > 0 {
-		b.WriteString(fmt.Sprintf("view-distance=%d\n", snapshot.ViewDistance))
+	if fieldSet["level-type"] {
+		b.WriteString(fmt.Sprintf("level-type=%s\n", snapshot.LevelType))
+	}
+	if fieldSet["generator-settings"] {
+		if snapshot.GeneratorSettings != "" {
+			b.WriteString(fmt.Sprintf("generator-settings=%s\n", snapshot.GeneratorSettings))
+		}
+	}
+	if fieldSet["generate-structures"] {
+		b.WriteString(fmt.Sprintf("generate-structures=%t\n", snapshot.GenerateStructures))
+	}
+	if fieldSet["spawn-radius"] {
+		b.WriteString(fmt.Sprintf("spawn-protection=%d\n", snapshot.SpawnRadius))
+	}
+	if fieldSet["difficulty"] {
+		b.WriteString(fmt.Sprintf("difficulty=%s\n", snapshot.Difficulty))
+	}
+	if fieldSet["view-distance"] {
+		if snapshot.ViewDistance > 0 {
+			b.WriteString(fmt.Sprintf("view-distance=%d\n", snapshot.ViewDistance))
+		}
 	}
 	return b.String()
+}
+
+func writeSnapshotFields(b *strings.Builder, snapshot *checkpoint.WorldProfileSnapshot, fields map[string]bool) {
+	if fields == nil || fields["seed"] {
+		if snapshot.Seed != "" {
+			b.WriteString(fmt.Sprintf("level-seed=%s\n", snapshot.Seed))
+		}
+	}
+	if fields == nil || fields["level-type"] {
+		b.WriteString(fmt.Sprintf("level-type=%s\n", snapshot.LevelType))
+	}
+	if fields == nil || fields["generator-settings"] {
+		if snapshot.GeneratorSettings != "" {
+			b.WriteString(fmt.Sprintf("generator-settings=%s\n", snapshot.GeneratorSettings))
+		}
+	}
+	if fields == nil || fields["generate-structures"] {
+		b.WriteString(fmt.Sprintf("generate-structures=%t\n", snapshot.GenerateStructures))
+	}
+	if fields == nil || fields["spawn-radius"] {
+		b.WriteString(fmt.Sprintf("spawn-protection=%d\n", snapshot.SpawnRadius))
+	}
+	if fields == nil || fields["difficulty"] {
+		b.WriteString(fmt.Sprintf("difficulty=%s\n", snapshot.Difficulty))
+	}
+	if fields == nil || fields["view-distance"] {
+		if snapshot.ViewDistance > 0 {
+			b.WriteString(fmt.Sprintf("view-distance=%d\n", snapshot.ViewDistance))
+		}
+	}
 }

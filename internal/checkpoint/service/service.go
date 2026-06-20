@@ -317,13 +317,14 @@ func ListBySession(ctx context.Context, repo Repository, sessionID string) ([]ch
 }
 
 type RestoreRequest struct {
-	CheckpointID      string
-	TargetSessionID   string
-	WorldDirRel       string
-	ActorID           string
-	Notes             string
-	AgentClient       agent.AgentClient
-	ApplyWorldProfile bool
+	CheckpointID            string
+	TargetSessionID         string
+	WorldDirRel             string
+	ActorID                 string
+	Notes                   string
+	AgentClient             agent.AgentClient
+	ApplyWorldProfile       bool
+	ApplyWorldProfileFields []string
 }
 
 // Restore restores a checkpoint's world state to a target session.
@@ -369,9 +370,20 @@ func Restore(ctx context.Context, repo Repository, req RestoreRequest) (checkpoi
 		return checkpoint.Checkpoint{}, fmt.Errorf("restore world snapshot: %w", err)
 	}
 	if req.ApplyWorldProfile && sourceCP.WorldProfileSnapshot != nil {
-		propsContent := serverproperties.FromWorldProfileSnapshot(sourceCP.WorldProfileSnapshot)
-		if err := req.AgentClient.WriteSessionFile(ctx, req.TargetSessionID, "server.properties", []byte(propsContent)); err != nil {
-			return checkpoint.Checkpoint{}, fmt.Errorf("write server.properties: %w", err)
+		if len(req.ApplyWorldProfileFields) > 0 {
+			data, err := req.AgentClient.ReadSessionFile(ctx, req.TargetSessionID, "server.properties")
+			if err != nil {
+				return checkpoint.Checkpoint{}, fmt.Errorf("read session server.properties for partial merge: %w", err)
+			}
+			propsContent := serverproperties.MergeWithWorldProfileSnapshot(data, sourceCP.WorldProfileSnapshot, req.ApplyWorldProfileFields)
+			if err := req.AgentClient.WriteSessionFile(ctx, req.TargetSessionID, "server.properties", []byte(propsContent)); err != nil {
+				return checkpoint.Checkpoint{}, fmt.Errorf("write server.properties (partial): %w", err)
+			}
+		} else {
+			propsContent := serverproperties.FromWorldProfileSnapshot(sourceCP.WorldProfileSnapshot)
+			if err := req.AgentClient.WriteSessionFile(ctx, req.TargetSessionID, "server.properties", []byte(propsContent)); err != nil {
+				return checkpoint.Checkpoint{}, fmt.Errorf("write server.properties: %w", err)
+			}
 		}
 	}
 	checkpointID, idErr := idgen.NewID("cp")

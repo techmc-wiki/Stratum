@@ -245,6 +245,7 @@ func (m *mockAgent) RestoreWorldSnapshot(ctx context.Context, request agent.Worl
 }
 
 func (m *mockAgent) ReadSessionFile(ctx context.Context, sessionID, relativePath string) ([]byte, error) {
+	m.calls = append(m.calls, "read_session_file")
 	if relativePath == "server.properties" && m.serverProperties != "" {
 		return []byte(m.serverProperties), nil
 	}
@@ -1270,5 +1271,59 @@ func TestRestoreAppliesWorldProfile(t *testing.T) {
 	}
 	if cp.ID == "" {
 		t.Fatal("checkpoint ID is empty")
+	}
+}
+
+func TestRestoreAppliesPartialWorldProfile(t *testing.T) {
+	worldSnapshot := &checkpoint.WorldProfileSnapshot{
+		Seed:         "888",
+		LevelType:    "flat",
+		Difficulty:   "hard",
+		ViewDistance: 12,
+	}
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-source": {ID: "s-source", ProjectID: "p-1", EnvironmentID: "env-1", State: session.StateStopped},
+			"s-target": {ID: "s-target", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1", State: session.StateStopped},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{
+			"cp-source": {
+				ID: "cp-source", ProjectID: "p-1", SourceSessionID: "s-source", CreatorID: "creator-1",
+				Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+				ConsistencyLevel: consistency.LevelCommandQuiesced, EnvironmentID: "env-1",
+				WorldStateRef:        "agent-local://mock/sessions/s-source/checkpoints/world.zip",
+				WorldProfileSnapshot: worldSnapshot,
+			},
+		},
+	}
+	agent := &mockAgent{
+		serverProperties: "level-seed=original\nlevel-type=default\ndifficulty=easy\n",
+	}
+	cp, err := Restore(context.Background(), repo, RestoreRequest{
+		CheckpointID:            "cp-source",
+		TargetSessionID:         "s-target",
+		ActorID:                 "actor-1",
+		AgentClient:             agent,
+		ApplyWorldProfile:       true,
+		ApplyWorldProfileFields: []string{"seed", "level-type"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.ID == "" {
+		t.Fatal("checkpoint ID is empty")
+	}
+	writeFound := false
+	for _, call := range agent.calls {
+		if call == "write_session_file" {
+			writeFound = true
+			break
+		}
+	}
+	if !writeFound {
+		t.Fatalf("write_session_file not called, calls: %v", agent.calls)
+	}
+	if len(agent.calls) != 3 {
+		t.Fatalf("expected 3 calls (read+restore+write), got %d: %v", len(agent.calls), agent.calls)
 	}
 }

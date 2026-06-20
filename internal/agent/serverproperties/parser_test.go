@@ -179,3 +179,50 @@ func TestFromWorldProfileSnapshot(t *testing.T) {
 		t.Errorf("missing view-distance")
 	}
 }
+
+func TestMergeWithWorldProfileSnapshotPartialFields(t *testing.T) {
+	snapshot := &checkpoint.WorldProfileSnapshot{
+		Seed:         "999",
+		LevelType:    "amplified",
+		Difficulty:   "hard",
+		ViewDistance: 16,
+	}
+	current := []byte("level-seed=123\nlevel-type=flat\ndifficulty=normal\n")
+	result := MergeWithWorldProfileSnapshot(current, snapshot, []string{"seed", "difficulty"})
+
+	if !strings.Contains(result, "level-seed=123") {
+		t.Errorf("should contain original seed line")
+	}
+	if !strings.Contains(result, "level-seed=999") {
+		t.Errorf("should contain merged seed line")
+	}
+	if !strings.Contains(result, "level-type=flat") {
+		t.Errorf("should contain original level-type")
+	}
+	if strings.Contains(result, "amplified") {
+		t.Errorf("should NOT contain amplified level-type (not in fields)")
+	}
+	if !strings.Contains(result, "difficulty=hard") {
+		t.Errorf("should contain merged difficulty")
+	}
+	if strings.Contains(result, "view-distance") {
+		t.Errorf("should NOT contain view-distance (not in fields)")
+	}
+}
+
+func TestMergeWithWorldProfileSnapshotEmptyFields(t *testing.T) {
+	snapshot := &checkpoint.WorldProfileSnapshot{
+		Seed:       "1",
+		LevelType:  "default",
+		Difficulty: "normal",
+	}
+	current := []byte("level-seed=old\n")
+	result := MergeWithWorldProfileSnapshot(current, snapshot, nil)
+
+	if !strings.Contains(result, "level-seed=old") {
+		t.Errorf("should contain original content")
+	}
+	if strings.Contains(result, "level-seed=1") {
+		t.Errorf("should NOT contain merged seed (no fields specified)")
+	}
+}
