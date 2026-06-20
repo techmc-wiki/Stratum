@@ -53,16 +53,46 @@ func NewDownloader(cacheDir string) *Downloader {
 	return &Downloader{CacheDir: cacheDir}
 }
 
+func ResolveLatestVersion(ctx context.Context) (string, error) {
+	manifest, err := fetchJSON(ctx, "https://launchermeta.mojang.com/mc/game/version_manifest.json")
+	if err != nil {
+		return "", fmt.Errorf("fetch version manifest: %w", err)
+	}
+	latest, ok := manifest["latest"].(map[string]interface{})
+	if !ok {
+		return "", errors.New("invalid version manifest: missing latest")
+	}
+	release, ok := latest["release"].(string)
+	if !ok || release == "" {
+		return "", errors.New("latest release version not found")
+	}
+	return release, nil
+}
+
 func (d *Downloader) Download(ctx context.Context, req DownloadRequest) (DownloadResult, error) {
+	mcVersion := req.MinecraftVersion
+	if mcVersion == "latest" {
+		latest := DefaultVersionCache().Latest()
+		if latest != "" {
+			mcVersion = latest
+		} else {
+			var err error
+			latest, err = ResolveLatestVersion(ctx)
+			if err != nil {
+				return DownloadResult{}, fmt.Errorf("resolve latest Minecraft version: %w", err)
+			}
+			mcVersion = latest
+		}
+	}
 	switch strings.ToLower(req.ServerCore) {
 	case "minecraft", "vanilla":
-		return d.downloadVanilla(ctx, req.MinecraftVersion)
+		return d.downloadVanilla(ctx, mcVersion)
 	case "fabric":
-		return d.downloadFabric(ctx, req.MinecraftVersion, req.LoaderVersion)
+		return d.downloadFabric(ctx, mcVersion, req.LoaderVersion)
 	case "paper":
-		return d.downloadPaper(ctx, req.MinecraftVersion)
+		return d.downloadPaper(ctx, mcVersion)
 	case "forge":
-		return d.downloadForge(ctx, req.MinecraftVersion, req.LoaderVersion)
+		return d.downloadForge(ctx, mcVersion, req.LoaderVersion)
 	default:
 		return DownloadResult{}, fmt.Errorf("unsupported server core for download: %s (use custom for uploaded jars)", req.ServerCore)
 	}

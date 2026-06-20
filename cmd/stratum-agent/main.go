@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/stratummc/stratum/internal/agent/httptransport"
@@ -81,6 +83,19 @@ func serve(listen, token, runtimeMode, runtimeRoot, runtimeProfiles, httpProxy s
 	}
 
 	logger := log.New(os.Stderr, "stratum-agent ", log.LstdFlags)
+
+	serverjar.DefaultVersionCache().Start()
+	logger.Printf("started Minecraft version poller (interval=6h)")
+	if runtimeProfiles == "-" {
+		runtimeAgent, err := local.NewProcessAgentWithRegistryAndRoot(local.DefaultAgentID, runtimeprofile.Builtins(), runtimeRoot)
+		if err != nil {
+			return err
+		}
+		server := httptransport.NewServer(runtimeAgent, token, logger)
+		logger.Printf("listening on %s with %s supervision (auth=%t)", listen, runtimeMode, token != "")
+		return http.ListenAndServe(listen, server.Handler())
+	}
+
 	registry := runtimeprofile.Builtins()
 	if runtimeProfiles != "" {
 		profiles, err := runtimeprofile.LoadTrustedFile(runtimeProfiles)
@@ -90,6 +105,11 @@ func serve(listen, token, runtimeMode, runtimeRoot, runtimeProfiles, httpProxy s
 		if err := registry.RegisterAll(profiles); err != nil {
 			return fmt.Errorf("register runtime profiles from %q: %w", runtimeProfiles, err)
 		}
+		profileDir := filepath.Dir(runtimeProfiles)
+		watcher := runtimeprofile.NewWatcher(registry, profileDir, 30*time.Second)
+		watcher.Start()
+		defer watcher.Stop()
+		logger.Printf("watching runtime profile directory: %s", profileDir)
 	}
 	runtimeAgent, err := local.NewProcessAgentWithRegistryAndRoot(local.DefaultAgentID, registry, runtimeRoot)
 	if err != nil {

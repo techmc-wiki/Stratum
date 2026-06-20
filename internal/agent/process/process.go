@@ -872,6 +872,19 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 	if pythonManager == nil {
 		pythonManager = agentpython.NewManager()
 	}
+	if request.MinecraftVersion == "latest" {
+		latest := serverjar.DefaultVersionCache().Latest()
+		if latest != "" {
+			request.MinecraftVersion = latest
+		} else {
+			var err error
+			latest, err = serverjar.ResolveLatestVersion(ctx)
+			if err != nil {
+				return agent.EnvironmentMaterializationResult{}, fmt.Errorf("resolve latest Minecraft version: %w", err)
+			}
+			request.MinecraftVersion = latest
+		}
+	}
 	adapterMode := "unknown"
 	switch adapter.(type) {
 	case lucy.NoopAdapter:
