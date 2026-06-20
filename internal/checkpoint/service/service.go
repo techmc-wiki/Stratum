@@ -1,12 +1,14 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/stratummc/stratum/internal/agent"
+	"github.com/stratummc/stratum/internal/agent/serverproperties"
 	"github.com/stratummc/stratum/internal/audit"
 	"github.com/stratummc/stratum/internal/checkpoint"
 	"github.com/stratummc/stratum/internal/checkpoint/consistency"
@@ -204,19 +206,34 @@ func saveOnWithError(ctx context.Context, agentClient agent.AgentClient, session
 
 func buildCheckpointParams(ctx context.Context, repo Repository, req CreateRequest, sess session.Session, level consistency.Level) checkpoint.CreateParams {
 	var worldSnapshot *checkpoint.WorldProfileSnapshot
-	if req.CaptureWorldProfile && sess.RoomID != "" {
-		if rm, err := repo.GetRoom(ctx, sess.RoomID); err == nil && rm.DefaultWorldProfile != nil {
-			wp := rm.DefaultWorldProfile
-			worldSnapshot = &checkpoint.WorldProfileSnapshot{
-				Seed:               wp.Seed,
-				LevelType:          string(wp.LevelType),
-				GeneratorSettings:  wp.GeneratorSettings,
-				GenerateStructures: wp.GenerateStructures,
-				SpawnRadius:        wp.SpawnRadius,
-				Difficulty:         string(wp.Difficulty),
-				MinecraftVersion:   wp.MinecraftVersion,
-				SourceProfileID:    wp.ID,
-				CapturedFrom:       "room",
+	if req.CaptureWorldProfile {
+		if req.AgentClient != nil {
+			if data, err := req.AgentClient.ReadSessionFile(ctx, sess.ID, "server.properties"); err == nil {
+				if cfg, err := serverproperties.Parse(bytes.NewReader(data)); err == nil {
+					mcVersion := ""
+					if envManifest, err := req.AgentClient.GetSessionRuntimeStatus(ctx, sess.ID); err == nil {
+						if envManifest.EnvironmentManifest != nil {
+							mcVersion = envManifest.EnvironmentManifest.MinecraftVersion
+						}
+					}
+					worldSnapshot = serverproperties.ToWorldProfileSnapshot(cfg, mcVersion)
+				}
+			}
+		}
+		if worldSnapshot == nil && sess.RoomID != "" {
+			if rm, err := repo.GetRoom(ctx, sess.RoomID); err == nil && rm.DefaultWorldProfile != nil {
+				wp := rm.DefaultWorldProfile
+				worldSnapshot = &checkpoint.WorldProfileSnapshot{
+					Seed:               wp.Seed,
+					LevelType:          string(wp.LevelType),
+					GeneratorSettings:  wp.GeneratorSettings,
+					GenerateStructures: wp.GenerateStructures,
+					SpawnRadius:        wp.SpawnRadius,
+					Difficulty:         string(wp.Difficulty),
+					MinecraftVersion:   wp.MinecraftVersion,
+					SourceProfileID:    wp.ID,
+					CapturedFrom:       "room",
+				}
 			}
 		}
 	}

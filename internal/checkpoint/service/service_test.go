@@ -88,10 +88,12 @@ func (m *mockRepo) AppendAuditEvent(ctx context.Context, event audit.Event) erro
 }
 
 type mockAgent struct {
-	commands     []string
-	failAt       int
-	capabilities []string
-	infoErr      error
+	commands         []string
+	failAt           int
+	capabilities     []string
+	infoErr          error
+	serverProperties string
+	minecraftVersion string
 }
 
 func (m *mockAgent) Info(context.Context) (agent.AgentInfo, error) {
@@ -201,10 +203,6 @@ func (m *mockAgent) MaterializeEnvironment(context.Context, agent.EnvironmentMat
 	return agent.EnvironmentMaterializationResult{}, nil
 }
 
-func (m *mockAgent) GetSessionRuntimeStatus(context.Context, string) (agent.SessionRuntimeStatus, error) {
-	return agent.SessionRuntimeStatus{}, nil
-}
-
 func (m *mockAgent) SessionReadyForStart(context.Context, string) (agent.SessionStartReadiness, error) {
 	return agent.SessionStartReadiness{}, nil
 }
@@ -241,6 +239,26 @@ func (m *mockAgent) RestoreWorldSnapshot(ctx context.Context, request agent.Worl
 		EntryCount:  5,
 		SizeBytes:   4096,
 		RestoredAt:  testTime,
+	}, nil
+}
+
+func (m *mockAgent) ReadSessionFile(ctx context.Context, sessionID, relativePath string) ([]byte, error) {
+	if relativePath == "server.properties" && m.serverProperties != "" {
+		return []byte(m.serverProperties), nil
+	}
+	return nil, fmt.Errorf("file not found: %s", relativePath)
+}
+
+func (m *mockAgent) GetSessionRuntimeStatus(ctx context.Context, sessionID string) (agent.SessionRuntimeStatus, error) {
+	envManifest := &agent.EnvironmentManifestStatus{
+		MinecraftVersion: m.minecraftVersion,
+	}
+	if m.minecraftVersion == "" {
+		envManifest.MinecraftVersion = "1.17.1"
+	}
+	return agent.SessionRuntimeStatus{
+		SessionID:           sessionID,
+		EnvironmentManifest: envManifest,
 	}, nil
 }
 
@@ -397,6 +415,104 @@ func TestCreateCheckpointWithoutCaptureWorldProfile(t *testing.T) {
 	}
 	if cp.WorldProfileSnapshot != nil {
 		t.Fatalf("expected no world profile snapshot, got %+v", cp.WorldProfileSnapshot)
+	}
+}
+
+func TestCreateCheckpointCapturesServerProperties(t *testing.T) {
+	agent := &mockAgent{
+		serverProperties: "level-seed=999\nlevel-type=amplified\ndifficulty=hard\ngenerate-structures=false\nspawn-protection=10\n",
+		minecraftVersion: "1.19.4",
+	}
+	wp, _ := worldprofile.New(worldprofile.CreateParams{
+		ID:         "wp-1",
+		Name:       "Room World",
+		Seed:       "123",
+		LevelType:  worldprofile.LevelFlat,
+		Difficulty: worldprofile.DifficultyPeaceful,
+	})
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+		},
+		rooms: map[string]room.Room{
+			"r-1": {ID: "r-1", DefaultWorldProfile: &wp},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	cp, err := Create(context.Background(), repo, CreateRequest{
+		ID:                  "cp-props",
+		SessionID:           "s-1",
+		ActorID:             "actor-1",
+		CaptureWorldProfile: true,
+		AgentClient:         agent,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.WorldProfileSnapshot == nil {
+		t.Fatal("expected world profile snapshot")
+	}
+	if cp.WorldProfileSnapshot.Seed != "999" {
+		t.Errorf("Seed = %q, want 999 from server.properties", cp.WorldProfileSnapshot.Seed)
+	}
+	if cp.WorldProfileSnapshot.LevelType != "amplified" {
+		t.Errorf("LevelType = %q, want amplified", cp.WorldProfileSnapshot.LevelType)
+	}
+	if cp.WorldProfileSnapshot.Difficulty != "hard" {
+		t.Errorf("Difficulty = %q, want hard", cp.WorldProfileSnapshot.Difficulty)
+	}
+	if cp.WorldProfileSnapshot.GenerateStructures != false {
+		t.Errorf("GenerateStructures = %v, want false", cp.WorldProfileSnapshot.GenerateStructures)
+	}
+	if cp.WorldProfileSnapshot.SpawnRadius != 10 {
+		t.Errorf("SpawnRadius = %d, want 10", cp.WorldProfileSnapshot.SpawnRadius)
+	}
+	if cp.WorldProfileSnapshot.MinecraftVersion != "1.19.4" {
+		t.Errorf("MinecraftVersion = %q, want 1.19.4", cp.WorldProfileSnapshot.MinecraftVersion)
+	}
+	if cp.WorldProfileSnapshot.CapturedFrom != "server.properties" {
+		t.Errorf("CapturedFrom = %q, want server.properties", cp.WorldProfileSnapshot.CapturedFrom)
+	}
+}
+
+func TestCreateCheckpointFallbackToRoomProfile(t *testing.T) {
+	agent := &mockAgent{
+		serverProperties: "",
+	}
+	wp, _ := worldprofile.New(worldprofile.CreateParams{
+		ID:         "wp-1",
+		Name:       "Room World",
+		Seed:       "456",
+		LevelType:  worldprofile.LevelDefault,
+		Difficulty: worldprofile.DifficultyEasy,
+	})
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+		},
+		rooms: map[string]room.Room{
+			"r-1": {ID: "r-1", DefaultWorldProfile: &wp},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	cp, err := Create(context.Background(), repo, CreateRequest{
+		ID:                  "cp-fallback",
+		SessionID:           "s-1",
+		ActorID:             "actor-1",
+		CaptureWorldProfile: true,
+		AgentClient:         agent,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.WorldProfileSnapshot == nil {
+		t.Fatal("expected world profile snapshot")
+	}
+	if cp.WorldProfileSnapshot.Seed != "456" {
+		t.Errorf("Seed = %q, want 456 from room", cp.WorldProfileSnapshot.Seed)
+	}
+	if cp.WorldProfileSnapshot.CapturedFrom != "room" {
+		t.Errorf("CapturedFrom = %q, want room", cp.WorldProfileSnapshot.CapturedFrom)
 	}
 }
 
