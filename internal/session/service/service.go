@@ -45,29 +45,34 @@ type (
 )
 
 type Service struct {
-	repository   Repository
-	scheduler    schedulersvc.Service
-	now          Clock
-	newID        IDGenerator
-	agent        agent.AgentClient
-	operations   *operationsvc.Service
-	artifactGate ArtifactReadinessGate
+	repository      Repository
+	scheduler       schedulersvc.Service
+	now             Clock
+	newID           IDGenerator
+	agent           agent.AgentClient
+	operations      *operationsvc.Service
+	artifactGate    ArtifactReadinessGate
+	preOpCheckpoint PreOpCheckpointFunc
 }
 
 type ArtifactReadinessGate interface {
 	Check(context.Context, string) (map[string]string, error)
 }
 
+type PreOpCheckpointFunc func(ctx context.Context, sessionID, actorID string) error
+
 type OperationOptions struct {
-	IdempotencyKey   string
-	RequestID        string
-	Timeout          time.Duration
-	RuntimeProfileID string
+	IdempotencyKey        string
+	RequestID             string
+	Timeout               time.Duration
+	RuntimeProfileID      string
+	CreatePreOpCheckpoint bool
 }
 
 type operationContext struct {
 	ID, RequestID, RuntimeProfileID string
 	Metadata                        map[string]string
+	CreatePreOpCheckpoint           bool
 }
 type operationContextKey struct{}
 
@@ -96,6 +101,11 @@ func New(repository Repository, policy resourcepolicy.Policy, clients ...agent.A
 
 func (s *Service) WithArtifactReadinessGate(gate ArtifactReadinessGate) *Service {
 	s.artifactGate = gate
+	return s
+}
+
+func (s *Service) WithPreOpCheckpoint(fn PreOpCheckpointFunc) *Service {
+	s.preOpCheckpoint = fn
 	return s
 }
 
@@ -321,7 +331,7 @@ func (s *Service) coordinate(ctx context.Context, action, id, actor string, inte
 		return value, true, nil
 	}
 	runtimeMetadata := map[string]string{}
-	callCtx := context.WithValue(agent.WithRequestID(ctx, value.RequestID), operationContextKey{}, operationContext{ID: value.ID, RequestID: value.RequestID, RuntimeProfileID: options.RuntimeProfileID, Metadata: runtimeMetadata})
+	callCtx := context.WithValue(agent.WithRequestID(ctx, value.RequestID), operationContextKey{}, operationContext{ID: value.ID, RequestID: value.RequestID, RuntimeProfileID: options.RuntimeProfileID, CreatePreOpCheckpoint: options.CreatePreOpCheckpoint, Metadata: runtimeMetadata})
 	cancel := func() {}
 	if options.Timeout > 0 {
 		callCtx, cancel = context.WithTimeout(callCtx, options.Timeout)
@@ -628,6 +638,13 @@ func (s *Service) restart(ctx context.Context, id, actor string) error {
 			value.LastActiveAt = s.now()
 			if err := s.repository.SaveSession(ctx, value); err != nil {
 				return s.failWithAgent(ctx, "restart", session.Session{ID: value.ID, ProjectID: value.ProjectID, State: previous}, actor, session.StateStopped, err, &stopResult)
+			}
+			if s.preOpCheckpoint != nil && getOperationContext(ctx).CreatePreOpCheckpoint {
+				if cpErr := s.preOpCheckpoint(ctx, value.ID, actor); cpErr != nil {
+					setOperationMetadata(ctx, map[string]string{"preOpCheckpointStatus": "failed", "preOpCheckpointError": cpErr.Error()})
+				} else {
+					setOperationMetadata(ctx, map[string]string{"preOpCheckpointStatus": "created"})
+				}
 			}
 			path = []session.State{session.StateStarting, session.StateRunning}
 		} else {
