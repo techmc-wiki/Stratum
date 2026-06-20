@@ -147,6 +147,10 @@ func sessionLogs(ctx context.Context, agentClient agent.AgentClient, args []stri
 	flags := newFlagSet("sessions logs", stderr)
 	id := flags.String("id", "", "session ID")
 	maxBytes := flags.Int("max-bytes", 0, "maximum output bytes; zero returns all available logs")
+	follow := flags.Bool("follow", false, "continue polling and printing new log lines")
+	interval := flags.Duration("interval", time.Second, "poll interval for --follow")
+	duration := flags.Duration("duration", 0, "maximum follow duration; zero follows until interrupted")
+	color := flags.Bool("color", false, "render log lines with ANSI colors")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -154,26 +158,92 @@ func sessionLogs(ctx context.Context, agentClient agent.AgentClient, args []stri
 		fmt.Fprintln(stderr, "--id is required")
 		return 2
 	}
+	if *interval <= 0 {
+		fmt.Fprintln(stderr, "--interval must be positive")
+		return 2
+	}
+	if *duration < 0 {
+		fmt.Fprintln(stderr, "--duration must not be negative")
+		return 2
+	}
+	if *follow {
+		return followSessionLogs(ctx, agentClient, *id, *maxBytes, *interval, *duration, *color, stdout, stderr)
+	}
 	batch, err := agentClient.CollectLogs(agent.WithLogMaxBytes(ctx, *maxBytes), *id)
 	if err != nil {
 		return reportError(stderr, "collect session logs", err)
 	}
-	remaining := *maxBytes
-	for _, line := range batch.Lines {
+	writeLogLines(stdout, batch.Lines, *maxBytes, *color)
+	return 0
+}
+
+func followSessionLogs(ctx context.Context, agentClient agent.AgentClient, sessionID string, maxBytes int, interval, duration time.Duration, color bool, stdout, stderr io.Writer) int {
+	if duration > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, duration)
+		defer cancel()
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	printed := 0
+	for {
+		batch, err := agentClient.CollectLogs(agent.WithLogMaxBytes(ctx, maxBytes), sessionID)
+		if err != nil {
+			if ctx.Err() != nil {
+				return 0
+			}
+			return reportError(stderr, "collect session logs", err)
+		}
+		if printed > len(batch.Lines) {
+			printed = 0
+		}
+		if printed < len(batch.Lines) {
+			writeLogLines(stdout, batch.Lines[printed:], 0, color)
+			printed = len(batch.Lines)
+		}
+		select {
+		case <-ctx.Done():
+			return 0
+		case <-ticker.C:
+		}
+	}
+}
+
+func writeLogLines(stdout io.Writer, lines []string, maxBytes int, color bool) {
+	remaining := maxBytes
+	for _, line := range lines {
+		if color {
+			line = colorizeLogLine(line)
+		}
 		output := line + "\n"
 		if remaining > 0 && len(output) > remaining {
 			_, _ = io.WriteString(stdout, output[:remaining])
-			break
+			return
 		}
 		_, _ = io.WriteString(stdout, output)
 		if remaining > 0 {
 			remaining -= len(output)
 			if remaining == 0 {
-				break
+				return
 			}
 		}
 	}
-	return 0
+}
+
+func colorizeLogLine(line string) string {
+	const reset = "\x1b[0m"
+	switch {
+	case strings.Contains(line, "[stderr]"):
+		return "\x1b[31m" + line + reset
+	case strings.Contains(line, "[send-command]"):
+		return "\x1b[36m" + line + reset
+	case strings.Contains(line, "[supervisor]"):
+		return "\x1b[90m" + line + reset
+	case strings.Contains(line, "[stdout]"):
+		return "\x1b[32m" + line + reset
+	default:
+		return line
+	}
 }
 
 func sessionRuntimeStatus(ctx context.Context, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {

@@ -1,208 +1,193 @@
-# Minecraft 服务器启动指南
+# Minecraft Launch Status and Verification
 
-## 快速开始
+This document records what StratumMC can verify today, what it does not yet
+prove, and how to add a real Minecraft launch smoke test without weakening the
+Agent runtime ownership boundary.
 
-StratumMC 现在可以真正启动 Minecraft 服务器了！
+StratumMC must treat Minecraft startup as an Agent-owned runtime operation. The
+Controller may request lifecycle actions and persist metadata, but it must not
+own process handles, terminal I/O, Java execution, MCDR execution, or local
+runtime files.
 
-### 前置条件
+## Current Status
 
-1. **Java 17+** — 运行 Fabric 1.17 需要
-2. **Python 3.8+** — MCDR 需要
-3. **mcdreforged** — 安装命令: `pip install mcdreforged`
-4. **HTTP 代理** (可选) — 如果需要代理访问 Mojang/Fabric API，配置 127.0.0.1:10808
+The current test suite proves these pieces separately:
 
-### 验证环境
+1. The Agent can materialize an MCDR-oriented session layout.
+2. The Agent can generate `config.yml` with a `start_command` pointing at Java
+   and the deployed server jar name.
+3. The Agent can start and stop a trusted RuntimeProfile process.
+4. The server jar downloader can download and deploy real Vanilla, Fabric, and
+   Paper jars.
+5. The local MCDR e2e test does not start real Minecraft. It starts a Go test
+   helper process that simulates an MCDR runtime.
+
+The important distinction is this:
+
+```text
+Current local MCDR e2e:
+  materialize layout
+  write fake Fabric jar bytes
+  generate MCDR config.yml
+  start mock helper process
+  stop mock helper process
+
+Not yet covered:
+  download real Fabric server jar
+  launch real Java process
+  wait for Minecraft server readiness logs
+  stop the real server cleanly
+```
+
+So the existing e2e test verifies Stratum's runtime plumbing, not a real
+Minecraft boot.
+
+## Verified Tests
+
+Run the local MCDR e2e test:
 
 ```powershell
-.\check-deps.ps1
+go test -count=1 -v -run TestE2EMCDRSessionMaterializeAndStart ./internal/agent/local
 ```
 
-### 端到端测试
+Expected result:
+
+```text
+PASS
+ok   github.com/stratummc/stratum/internal/agent/local
+```
+
+What this test proves:
+
+- `MaterializeEnvironment` creates session runtime metadata and MCDR layout.
+- Java detection metadata is recorded.
+- Server jar deployment metadata is recorded.
+- `work/mcdr/config/config.yml` is generated.
+- The generated `start_command` contains the selected Java executable and jar
+  name.
+- The Agent starts and stops a trusted child process through the MCDR
+  RuntimeProfile path.
+
+What this test does not prove:
+
+- It does not execute `java -jar`.
+- It does not run MCDR itself.
+- It does not run Minecraft.
+- It does not prove Fabric server boot compatibility.
+
+The mock process is `TestE2EMCDRHelperProcess` in
+`internal/agent/local/e2e_test.go`. The fake server jar is written by
+`e2eServerJarDeployer` and has source metadata `e2e-test`.
+
+Run all local MCDR e2e tests:
 
 ```powershell
-.\test-e2e.ps1
+go test -count=1 -v -run TestE2EMCDR ./internal/agent/local
 ```
 
-这将：
-1. 创建 Environment (Fabric 1.17)
-2. 创建 Project 和 Room
-3. 创建 Session
-4. 启动 Agent（支持 MCDR RuntimeProfile）
-5. 启动 Session，自动执行：
-   - 检测 Java 运行时
-   - 下载 Fabric server jar
-   - 生成 Lucy manifest 和 lock 文件
-   - 下载 Fabric API 和 Carpet mods
-   - 生成 MCDR config.yml
-   - 启动 MCDR 进程
-   - MCDR 启动 Minecraft 服务器
-6. 检查状态和日志
-
-## 实现的功能
-
-### ✅ 已实现
-
-#### 1. HTTP 代理支持
-- Agent 支持 `--http-proxy` 标志
-- 环境变量 `STRATUM_HTTP_PROXY`
-- 用于 serverjar 下载
-
-#### 2. ServerJar 下载
-- Vanilla (Mojang 官方)
-- Fabric (meta.fabricmc.net)
-- Paper (papermc.io API)
-- 自动 SHA-256 验证
-
-#### 3. Java 运行时检测
-- 自动检测 JAVA_HOME
-- 扫描常见安装路径
-- 解析 `java -version`
-- 验证 Minecraft 版本兼容性
-
-#### 4. Lucy 集成
-- **EmbeddedAdapter 默认启用**
-- 自动生成 lucy.yaml 从 Environment
-- PlanEnvironment + LockEnvironment
-- InstallPackages 到 mods/
-- VerifyIntegrity 完整性检查
-
-#### 5. MCDR RuntimeProfile 执行器
-- `mcdr-python` RuntimeProfile 类型
-- Agent 启动和监督 MCDR 进程
-- 自动生成 config.yml
-- Readiness check: "Done ("
-- stdin stop strategy: `!!MCDR stop`
-
-#### 6. 完整启动流程
-- Environment materialization
-- Session start → MCDR → Minecraft
-- 进程监督和日志采集
-- 状态检查和命令发送
-
-### 架构变更
-
-#### Agent Runtime Mode
-原来只支持 `dummy-process`，现在支持：
-- `dummy-process` — Go dummy 进程测试
-- `process` — 通用进程执行
-- `mcdr` — MCDR 监督模式
-
-#### Lucy Adapter 初始化
-- **旧行为**: `detectLucyAdapter` 检查 lucy.yaml 是否存在，不存在返回 NoopAdapter
-- **新行为**: `createDefaultLucyAdapter` 总是创建 EmbeddedAdapter (除非 `STRATUM_LUCY_WORKSPACE=none`)
-- **原因**: MaterializeEnvironment 会自己生成 lucy.yaml，不需要预先存在
-
-## 手动启动示例
-
-### 1. 启动 Agent
+Run server jar download tests:
 
 ```powershell
-.\stratum-agent.exe serve `
-  --listen 127.0.0.1:8787 `
-  --runtime-root .stratum/runtime `
-  --runtime-profiles runtime-profiles/mcdr-fabric-1.17.json `
-  --runtime-mode mcdr `
-  --http-proxy http://127.0.0.1:10808
+go test -count=1 -v ./internal/agent/serverjar
 ```
 
-### 2. 创建 Environment
+These tests may need external network access. If Mojang, Fabric, PaperMC, or a
+local proxy is unavailable, they can fail for environmental reasons.
 
-```powershell
-.\stratum.exe --data-dir .stratum/data environments create `
-  --id fabric-1.17 `
-  --name "Fabric 1.17" `
-  --minecraft-version 1.17.1 `
-  --java-version 17 `
-  --loader fabric `
-  --server-core fabric `
-  --mcdr-required
+## Real Jar Download Coverage
+
+Real download coverage lives in `internal/agent/serverjar/downloader_test.go`.
+
+Important tests:
+
+- `TestDownloadFabric`: downloads a real Fabric server jar.
+- `TestDownloadVanilla`: downloads a real Mojang Vanilla server jar.
+- `TestDownloadPaper`: downloads a real Paper server jar.
+- `TestDeployServers`: deploys a downloaded Fabric jar into a target directory.
+- `TestDeployFabricLatestLoader`: resolves and deploys the latest compatible
+  Fabric loader for a Minecraft version.
+
+These tests verify download, file existence, size, and SHA-256 metadata. They do
+not start Java or Minecraft.
+
+## Runtime Layout
+
+The Agent runtime root contains machine-local session files. With the default
+local layout, paths look like this:
+
+```text
+<runtime-root>/
+  sessions/
+    <session-id>/
+      config/
+        environment-materialization.json
+        lucy.yaml
+        lucy-lock.yaml
+      work/
+        mcdr/
+          config/
+            config.yml
+            permission.yml
+          server/
+            eula.txt
+            server.properties
+            <server-jar>
+          plugins/
+          logs/
+          tmp/
+          venv/
+      world/
+      logs/
+      mods/
+      artifacts/
+      checkpoints/
+      tmp/
 ```
 
-### 3. 创建 Project/Room/Session
+`environment-materialization.json` is diagnostic metadata. It records selected
+environment values, Java detection metadata, server jar deployment metadata,
+Lucy metadata, and MCDR materialization metadata.
 
-```powershell
-.\stratum.exe --data-dir .stratum/data projects create --id proj1 --name "Project 1"
-.\stratum.exe --data-dir .stratum/data rooms create --id room1 --project proj1 --name "Room 1"
-.\stratum.exe --data-dir .stratum/data sessions create `
-  --id session1 `
-  --project proj1 `
-  --room room1 `
-  --environment fabric-1.17
+`work/mcdr/config/config.yml` is the MCDR configuration generated before MCDR is
+started. Its `start_command` is a YAML string and may contain escaped quotes,
+for example:
+
+```yaml
+start_command: "\"/usr/bin/java17\" -jar \"fabric-server-1.17.1-fat.jar\" nogui"
 ```
 
-### 4. 启动 Session
+Tests should check the semantic fragments they need, such as the Java executable
+and jar name, instead of assuming one exact YAML quoting style.
 
-```powershell
-.\stratum.exe --data-dir .stratum/data `
-  --agent-url http://127.0.0.1:8787 `
-  sessions start `
-  --id session1 `
-  --runtime-profile mcdr-fabric-1.17 `
-  --actor admin
-```
+## RuntimeProfile Boundary
 
-### 5. 检查状态
+Minecraft and MCDR startup must go through trusted Agent RuntimeProfiles.
 
-```powershell
-.\stratum.exe --data-dir .stratum/data `
-  --agent-url http://127.0.0.1:8787 `
-  sessions inspect --id session1
-```
+Rules:
 
-### 6. 查看日志
+- RuntimeProfiles are local machine-owner configuration.
+- Users and Controller requests select a profile by ID only.
+- Users must not provide executable paths, shell fragments, arguments, working
+  directories, or stop commands.
+- The Agent starts child processes with argv arrays, not shell strings.
+- The Agent owns PID tracking, stdin/stdout/stderr, logs, stop, force kill,
+  crash detection, and future sandboxing.
+- MCDR may be a child process supervised by the Agent, but MCDR is not the
+  Stratum lifecycle source of truth.
+- Lucy resolves and installs dependency artifacts. Lucy must not control Java,
+  MCDR, or Minecraft processes.
 
-```powershell
-.\stratum.exe --data-dir .stratum/data `
-  --agent-url http://127.0.0.1:8787 `
-  sessions logs --id session1
-```
-
-### 7. 停止 Session
-
-```powershell
-.\stratum.exe --data-dir .stratum/data `
-  --agent-url http://127.0.0.1:8787 `
-  sessions stop --id session1 --actor admin
-```
-
-## 运行时目录结构
-
-```
-.stratum/runtime/<session-id>/
-├── config/
-│   ├── lucy.yaml                          # Lucy manifest
-│   ├── lucy-lock.yaml                     # Lucy lock
-│   └── environment-materialization.json   # 物化元数据
-├── work/
-│   └── mcdr/
-│       ├── config/
-│       │   └── config.yml                 # MCDR 配置
-│       ├── server/                        # Minecraft 工作目录
-│       │   ├── server.jar                 # Fabric server
-│       │   ├── eula.txt
-│       │   └── server.properties
-│       ├── plugins/                       # MCDR 插件目录
-│       └── logs/                          # MCDR 日志
-├── mods/
-│   ├── fabric-api-*.jar                   # Lucy 下载
-│   └── carpet-*.jar                       # Lucy 下载
-├── world/                                 # Minecraft 世界
-└── logs/                                  # Session 日志
-```
-
-## RuntimeProfile 配置
-
-`runtime-profiles/mcdr-fabric-1.17.json`:
+Example trusted MCDR profile shape:
 
 ```json
 {
   "runtime_profiles": [
     {
       "id": "mcdr-fabric-1.17",
-      "name": "MCDR + Fabric 1.17 Terminal",
+      "name": "MCDR Fabric 1.17",
       "runtime_type": "mcdr-python",
       "command_argv": ["mcdreforged", "--start"],
-      "working_dir": "",
+      "working_dir": ".",
       "stop_strategy": "stdin",
       "stop_stdin_command": "!!MCDR stop",
       "graceful_stop_timeout": "60s",
@@ -219,58 +204,144 @@ StratumMC 现在可以真正启动 Minecraft 服务器了！
 }
 ```
 
-## 下一步
+This is deployment configuration, not a public API payload.
 
-当前实现已经可以启动 Minecraft 服务器！接下来的增强方向：
+## Dependency Checklist for Real Launch
 
-1. **World checkpoint 备份/恢复** — 实际复制 world/ 目录
-2. **1.12 环境支持** — Forge 1.12 + 旧版 Carpet
-3. **Latest 环境支持** — 追踪最新 Minecraft 版本
-4. **Web UI** — REST API 已就绪，可以构建前端
-5. **用户认证** — 替代 shared-token 模式
+A real Minecraft launch smoke test should require explicit opt-in and these
+local dependencies:
 
-## 故障排除
+1. Java compatible with the target Minecraft version.
+2. Python compatible with MCDR.
+3. `mcdreforged` available, or a tested venv installation path.
+4. Network access to Mojang/Fabric/Paper endpoints, unless cache is already
+   populated.
+5. Optional proxy configuration for restricted networks.
+6. A free server port.
+7. Enough memory and CPU to boot the target server.
 
-### ServerJar 下载失败
-- 检查网络连接
-- 配置 HTTP 代理: `--http-proxy http://127.0.0.1:10808`
-- 检查防火墙设置
+Useful commands:
 
-### MCDR 启动失败
-- 确认 mcdreforged 已安装: `pip install mcdreforged`
-- 检查 Python 版本: `python --version` (需要 3.8+)
-- 查看日志: `sessions logs --id <session-id>`
+```powershell
+java -version
+python --version
+mcdreforged --version
+```
 
-### Lucy 包安装失败
-- 检查网络连接（访问 Modrinth/CurseForge）
-- 查看 materialization manifest: `<runtime-root>/<session-id>/config/environment-materialization.json`
-- 检查 mods/ 目录权限
+Proxy environment variables used by current code paths:
 
-### Java 检测失败
-- 确认 Java 17+ 已安装: `java -version`
-- 设置 JAVA_HOME 环境变量
-- Fabric 1.17 需要 Java 16+
+```powershell
+$env:STRATUM_PROXY = "http://127.0.0.1:10808"
+$env:STRATUM_HTTP_PROXY = "http://127.0.0.1:10808"
+```
 
-## 原子提交
+## Proposed Real Minecraft Smoke E2E
 
-### 1. agent: add HTTP proxy configuration for serverjar downloads
-- 添加 `--http-proxy` CLI 标志
-- 调用 `serverjar.SetProxy()`
+The real launch test should be gated so normal local test runs and CI are not
+forced to download jars, allocate memory, bind ports, or depend on external
+services.
 
-### 2. agent: enable EmbeddedAdapter by default for Lucy
-- 修改 `detectLucyAdapter` 为 `createDefaultLucyAdapter`
-- 总是创建 EmbeddedAdapter (除非 STRATUM_LUCY_WORKSPACE=none)
-- 移除 lucy.yaml 预先存在的检查
+Suggested gate:
 
-### 3. agent: support mcdr runtime mode
-- 扩展 runtime-mode 支持: dummy-process, process, mcdr
-- 移除 dummy-process 限制
+```powershell
+$env:STRATUM_RUN_REAL_MINECRAFT_E2E = "1"
+go test -count=1 -v -run TestRealMinecraftFabricLaunch ./internal/agent/local
+```
 
-### 4. test: update Lucy adapter tests
-- `TestDefaultLucyAdapterIsNoop` → `TestDefaultLucyAdapterIsEmbedded`
-- 修复 `detectLucyAdapter` → `createDefaultLucyAdapter` 调用
+The test should do this:
 
-### 5. docs: add Minecraft launch guide and test scripts
-- 创建 test-e2e.ps1 端到端测试脚本
-- 创建 check-deps.ps1 依赖检查脚本
-- 创建 MINECRAFT_LAUNCH.md 启动指南
+1. Skip unless `STRATUM_RUN_REAL_MINECRAFT_E2E=1`.
+2. Create a temp runtime root.
+3. Use the real Java detector.
+4. Use the real server jar deployer for Fabric.
+5. Materialize a 1.17.1 Fabric environment.
+6. Start a trusted RuntimeProfile that launches real MCDR or a direct Java
+   Minecraft runtime.
+7. Wait for a readiness log pattern such as `Done (`.
+8. Send a graceful stop command.
+9. Assert the process exits and temp directories can be cleaned up.
+
+The test should record enough logs to diagnose failure, but it must not print
+secrets, proxy credentials, or host-specific private paths beyond normal temp
+diagnostics.
+
+## Manual Investigation Flow
+
+Use this flow when diagnosing whether a session actually launched Minecraft.
+
+1. Run the targeted e2e test and inspect metadata:
+
+```powershell
+go test -count=1 -v -run TestE2EMCDRSessionMaterializeAndStart ./internal/agent/local
+```
+
+2. Check the server jar source in test logs:
+
+```text
+serverJarSource:e2e-test
+```
+
+If the source is `e2e-test`, the jar is fake and Minecraft was not launched.
+
+3. Check the process command path:
+
+```text
+-test.run=TestE2EMCDRHelperProcess
+```
+
+If the command targets the test helper, the process is a mock runtime.
+
+4. Check `config.yml`:
+
+```text
+work/mcdr/config/config.yml
+```
+
+This proves the launch configuration was generated. It does not prove MCDR or
+Minecraft consumed it.
+
+5. For a real launch, require logs from the Java/Minecraft process, such as
+server bootstrap lines and a readiness message.
+
+## Troubleshooting
+
+### Fabric Download Fails
+
+- Confirm network access to `meta.fabricmc.net`.
+- Configure `STRATUM_PROXY` if the local network needs a proxy.
+- Retry with `go test -count=1 -v ./internal/agent/serverjar`.
+
+### Java Detection Fails
+
+- Run `java -version`.
+- Set `JAVA_HOME` if Java is installed but not discoverable.
+- Verify the Java major version matches the target Minecraft version.
+
+### MCDR Executable Is Accidentally Used in Mock Tests
+
+Mock e2e tests should not use a global `mcdreforged` binary. The local e2e mock
+manager rejects global MCDR verification so the test remains deterministic.
+
+### Temp Directory Cleanup Fails on Windows
+
+This usually means a child process is still running or holding a file handle.
+Always assert `StopSession` errors in tests, and wait for the supervised process
+to exit before the temp directory is cleaned up.
+
+### `config.yml` Assertion Fails
+
+Remember that `start_command` is YAML-escaped. Prefer checking required content
+fragments instead of matching one exact quoted line.
+
+## Next Atomic Task
+
+Add a gated real Minecraft smoke e2e:
+
+```text
+test: add opt-in real Fabric Minecraft launch smoke test
+```
+
+The task should be narrow: one environment, one real server jar, one startup
+readiness pattern, one graceful stop path. Broader runtime hardening, sandboxing,
+port allocation policy, and production orchestration should remain separate
+tasks.

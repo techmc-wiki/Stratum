@@ -520,6 +520,26 @@ func TestCLIRuntimeProfilesAndLogLimit(t *testing.T) {
 	}
 }
 
+func TestCLISessionLogsFollowWithColor(t *testing.T) {
+	server := httptest.NewServer(httptransport.NewServer(local.NewProcessAgent(), "", nil).Handler())
+	defer server.Close()
+	client, err := httptransport.NewClient(server.URL, "", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.StartSession(context.Background(), agent.SessionRequest{SessionID: "session-log-follow", RuntimeProfileID: "dummy-process"}); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--data-dir", filepath.Join(t.TempDir(), "data"), "--agent-url", server.URL, "sessions", "logs", "--id", "session-log-follow", "--follow", "--duration", "20ms", "--interval", "5ms", "--color"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("logs follow: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "dummy-runtime") || !strings.Contains(stdout.String(), "\x1b[") {
+		t.Fatalf("logs follow output missing expected content/color: %q", stdout.String())
+	}
+}
+
 func TestCheckpointListAndGet(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")
