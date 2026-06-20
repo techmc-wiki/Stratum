@@ -1,0 +1,10 @@
+.git/
+.stratum/
+.test/
+*.exe
+lucy.exe
+stratum.exe
+stratum-agent.exe
+stratum-controller.exe
+data/
+runtime-root/

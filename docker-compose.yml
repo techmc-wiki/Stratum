@@ -1,0 +1,93 @@
+services:
+  controller:
+    build:
+      context: .
+      dockerfile: Dockerfile.controller
+    ports:
+      - "${CONTROLLER_PORT:-8080}:8080"
+    volumes:
+      - controller-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - stratum
+
+  agent-java8:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+      args:
+        JAVA_VERSION: 8
+    ports:
+      - "8787:8787"
+    volumes:
+      - agent8-runtime:/runtime
+    environment:
+      - STRATUM_CONTROLLER_URL=http://controller:8080
+      - STRATUM_AGENT_TOKEN=${AGENT_TOKEN:-}
+      - STRATUM_HTTP_PROXY=${HTTP_PROXY:-}
+      - STRATUM_LUCY_WORKSPACE=${LUCY_WORKSPACE:-none}
+    depends_on:
+      controller:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - stratum
+
+  agent-java17:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+      args:
+        JAVA_VERSION: 17
+    ports:
+      - "8788:8787"
+    volumes:
+      - agent17-runtime:/runtime
+    environment:
+      - STRATUM_CONTROLLER_URL=http://controller:8080
+      - STRATUM_AGENT_TOKEN=${AGENT_TOKEN:-}
+      - STRATUM_HTTP_PROXY=${HTTP_PROXY:-}
+      - STRATUM_LUCY_WORKSPACE=${LUCY_WORKSPACE:-none}
+    depends_on:
+      controller:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - stratum
+
+  agent-java21:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+      args:
+        JAVA_VERSION: 21
+    ports:
+      - "8789:8787"
+    volumes:
+      - agent21-runtime:/runtime
+    environment:
+      - STRATUM_CONTROLLER_URL=http://controller:8080
+      - STRATUM_AGENT_TOKEN=${AGENT_TOKEN:-}
+      - STRATUM_HTTP_PROXY=${HTTP_PROXY:-}
+      - STRATUM_LUCY_WORKSPACE=${LUCY_WORKSPACE:-none}
+    depends_on:
+      controller:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - stratum
+
+volumes:
+  controller-data:
+  agent8-runtime:
+  agent17-runtime:
+  agent21-runtime:
+
+networks:
+  stratum:
+    driver: bridge

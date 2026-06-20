@@ -1,0 +1,24 @@
+# Stratum Agent — parameterized for Java version
+# Build: docker build -f Dockerfile.agent --build-arg JAVA_VERSION=17 -t stratum-agent:java17 .
+ARG JAVA_VERSION=17
+
+FROM golang:1.23-bookworm AS builder
+WORKDIR /build
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /agent ./cmd/stratum-agent
+
+FROM eclipse-temurin:${JAVA_VERSION}-jre
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /runtime /profiles
+
+COPY --from=builder /agent /usr/local/bin/stratum-agent
+COPY runtime-profiles/ /profiles/
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD curl -sf http://localhost:8787/healthz || exit 1
+
+EXPOSE 8787
+
+ENTRYPOINT ["stratum-agent"]
+CMD ["serve", "--listen", "0.0.0.0:8787", "--runtime-root", "/runtime", "--runtime-profiles", "/profiles"]

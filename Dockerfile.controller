@@ -1,0 +1,20 @@
+# Stratum Controller
+# Build: docker build -f Dockerfile.controller -t stratum-controller .
+
+FROM golang:1.23-bookworm AS builder
+WORKDIR /build
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /controller ./cmd/stratum-controller
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /data /config
+COPY --from=builder /controller /usr/local/bin/stratum-controller
+
+EXPOSE 8080
+
+ENTRYPOINT ["stratum-controller"]
+CMD ["serve", "--listen", "0.0.0.0:8080", "--data-dir", "/data"]
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD curl -sf http://localhost:8080/healthz || exit 1
