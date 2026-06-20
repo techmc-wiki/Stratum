@@ -420,7 +420,7 @@ func TestCreateCheckpointWithoutCaptureWorldProfile(t *testing.T) {
 
 func TestCreateCheckpointCapturesServerProperties(t *testing.T) {
 	agent := &mockAgent{
-		serverProperties: "level-seed=999\nlevel-type=amplified\ndifficulty=hard\ngenerate-structures=false\nspawn-protection=10\n",
+		serverProperties: "level-seed=999\nlevel-type=amplified\ndifficulty=hard\ngenerate-structures=false\nspawn-protection=10\nview-distance=8\n",
 		minecraftVersion: "1.19.4",
 	}
 	wp, _ := worldprofile.New(worldprofile.CreateParams{
@@ -466,6 +466,9 @@ func TestCreateCheckpointCapturesServerProperties(t *testing.T) {
 	}
 	if cp.WorldProfileSnapshot.SpawnRadius != 10 {
 		t.Errorf("SpawnRadius = %d, want 10", cp.WorldProfileSnapshot.SpawnRadius)
+	}
+	if cp.WorldProfileSnapshot.ViewDistance != 8 {
+		t.Errorf("ViewDistance = %d, want 8", cp.WorldProfileSnapshot.ViewDistance)
 	}
 	if cp.WorldProfileSnapshot.MinecraftVersion != "1.19.4" {
 		t.Errorf("MinecraftVersion = %q, want 1.19.4", cp.WorldProfileSnapshot.MinecraftVersion)
