@@ -10,6 +10,7 @@ import (
 	"github.com/stratummc/stratum/internal/agent/httptransport"
 	"github.com/stratummc/stratum/internal/agent/local"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
+	"github.com/stratummc/stratum/internal/agent/serverjar"
 )
 
 func main() {
@@ -44,25 +45,39 @@ func newServeCommand() *cobra.Command {
 	var runtimeMode string
 	var runtimeRoot string
 	var runtimeProfiles string
+	var httpProxy string
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Serve the Stratum Agent HTTP API",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return serve(listen, token, runtimeMode, runtimeRoot, runtimeProfiles)
+			return serve(listen, token, runtimeMode, runtimeRoot, runtimeProfiles, httpProxy)
 		},
 	}
 	cmd.Flags().StringVar(&listen, "listen", "127.0.0.1:8787", "listen address")
 	cmd.Flags().StringVar(&token, "token", os.Getenv("STRATUM_AGENT_TOKEN"), "optional bearer token")
-	cmd.Flags().StringVar(&runtimeMode, "runtime-mode", "dummy-process", "safe runtime mode (dummy-process only)")
+	cmd.Flags().StringVar(&runtimeMode, "runtime-mode", "process", "runtime mode: dummy-process, process, or mcdr")
 	cmd.Flags().StringVar(&runtimeRoot, "runtime-root", ".stratum/runtime", "trusted runtime working root")
 	cmd.Flags().StringVar(&runtimeProfiles, "runtime-profiles", "", "trusted local RuntimeProfile JSON configuration")
+	cmd.Flags().StringVar(&httpProxy, "http-proxy", os.Getenv("STRATUM_HTTP_PROXY"), "HTTP proxy for downloads (e.g., http://127.0.0.1:10808)")
 	return cmd
 }
 
-func serve(listen, token, runtimeMode, runtimeRoot, runtimeProfiles string) error {
-	if runtimeMode != "dummy-process" {
-		return usageError{err: fmt.Errorf("unsupported runtime mode %q; only dummy-process is available", runtimeMode)}
+func serve(listen, token, runtimeMode, runtimeRoot, runtimeProfiles, httpProxy string) error {
+	switch runtimeMode {
+	case "dummy-process", "process", "mcdr":
+	default:
+		return usageError{err: fmt.Errorf("unsupported runtime mode %q; supported: dummy-process, process, mcdr", runtimeMode)}
+	}
+
+	if httpProxy != "" {
+		if err := setHTTPProxy(httpProxy); err != nil {
+			return fmt.Errorf("set HTTP proxy: %w", err)
+		}
+		if err := os.Setenv("STRATUM_HTTP_PROXY", httpProxy); err != nil {
+			return fmt.Errorf("set STRATUM_HTTP_PROXY: %w", err)
+		}
+		log.Printf("HTTP proxy configured: %s", httpProxy)
 	}
 
 	logger := log.New(os.Stderr, "stratum-agent ", log.LstdFlags)
@@ -86,4 +101,8 @@ func serve(listen, token, runtimeMode, runtimeRoot, runtimeProfiles string) erro
 		return err
 	}
 	return nil
+}
+
+func setHTTPProxy(proxyURL string) error {
+	return serverjar.SetProxy(proxyURL)
 }

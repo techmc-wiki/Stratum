@@ -62,9 +62,9 @@ func TestDetectInstallationsChecksVenvAndPip(t *testing.T) {
 			switch joined {
 			case "/usr/bin/python3 --version":
 				return "Python 3.11.5", nil
-			case "/usr/bin/python3 -m venv --version":
+			case "/usr/bin/python3 -m venv --help":
 				return "", nil
-			case "/usr/bin/python3 -m pip --version":
+			case "/usr/bin/python3 -m pip --help":
 				return "pip 24.0", nil
 			default:
 				return "", errors.New("unexpected command: " + joined)
@@ -105,7 +105,7 @@ func TestSelectForMCDRChoosesLowestSatisfyingPython(t *testing.T) {
 			if reflect.DeepEqual(args, []string{"--version"}) {
 				return versions[path], nil
 			}
-			if reflect.DeepEqual(args, []string{"-m", "venv", "--version"}) || reflect.DeepEqual(args, []string{"-m", "pip", "--version"}) {
+			if reflect.DeepEqual(args, []string{"-m", "venv", "--help"}) || reflect.DeepEqual(args, []string{"-m", "pip", "--help"}) {
 				return "ok", nil
 			}
 			return "", errors.New("unexpected args")
@@ -136,9 +136,9 @@ func TestSelectForMCDRRequiresVenvAndPip(t *testing.T) {
 			switch strings.Join(args, " ") {
 			case "--version":
 				return "Python 3.11.5", nil
-			case "-m venv --version":
+			case "-m venv --help":
 				return "", nil
-			case "-m pip --version":
+			case "-m pip --help":
 				return "", errors.New("pip missing")
 			default:
 				return "", errors.New("unexpected command")
@@ -168,7 +168,7 @@ func TestPyLauncherCandidateUsesPrefixArgs(t *testing.T) {
 			switch joined {
 			case "-3 --version":
 				return "Python 3.11.5", nil
-			case "-3 -m venv --version", "-3 -m pip --version":
+			case "-3 -m venv --help", "-3 -m pip --help":
 				return "ok", nil
 			default:
 				return "", errors.New("unexpected args: " + joined)

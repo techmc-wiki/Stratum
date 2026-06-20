@@ -4,7 +4,7 @@
       "id": "mcdr-fabric-1.17",
       "name": "MCDR + Fabric 1.17 Terminal",
       "runtime_type": "mcdr-python",
-      "command_argv": ["mcdreforged", "--start"],
+      "command_argv": ["mcdreforged", "start"],
       "working_dir": "",
       "stop_strategy": "stdin",
       "stop_stdin_command": "!!MCDR stop",

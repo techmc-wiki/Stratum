@@ -259,7 +259,7 @@ func defaultCandidates() []Candidate {
 
 func moduleAvailable(ctx context.Context, run func(context.Context, string, ...string) (string, error), installation Installation, module string) bool {
 	args := append([]string{}, installation.PrefixArgs...)
-	args = append(args, "-m", module, "--version")
+	args = append(args, "-m", module, "--help")
 	_, err := run(ctx, installation.ExecutablePath, args...)
 	return err == nil
 }

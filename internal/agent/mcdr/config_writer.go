@@ -20,6 +20,7 @@ type RuntimeConfig struct {
 	PluginDir      string
 	LogDir         string
 	ConfigDir      string
+	HTTPProxy      string
 }
 
 func NewRuntimeConfig(layout process.MCDRRuntimeLayout) RuntimeConfig {
@@ -105,8 +106,9 @@ func renderRuntimeConfig(cfg RuntimeConfig) []byte {
 	b.WriteString("  - ")
 	b.WriteString(quoteYAMLString(cfg.PluginDir))
 	b.WriteByte('\n')
-	b.WriteString("handler:\n")
-	b.WriteString("  type: vanilla_handler\n")
+	b.WriteString("handler: vanilla_handler\n")
+	b.WriteString("encoding: utf8\n")
+	b.WriteString("decoding: utf8\n")
 	b.WriteString("logging:\n")
 	b.WriteString("  file: ")
 	b.WriteString(quoteYAMLString(filepath.Join(cfg.LogDir, "mcdr.log")))
@@ -114,18 +116,32 @@ func renderRuntimeConfig(cfg RuntimeConfig) []byte {
 	b.WriteString("config_directory: ")
 	b.WriteString(quoteYAMLString(cfg.ConfigDir))
 	b.WriteByte('\n')
+	b.WriteString("advanced_console: false\n")
+	b.WriteString("disable_console_thread: true\n")
+	if cfg.HTTPProxy != "" {
+		b.WriteString("http_proxy: ")
+		b.WriteString(quoteYAMLString(cfg.HTTPProxy))
+		b.WriteByte('\n')
+		b.WriteString("https_proxy: ")
+		b.WriteString(quoteYAMLString(cfg.HTTPProxy))
+		b.WriteByte('\n')
+	}
 	if cfg.ServerJarName != "" {
 		javaCmd := cfg.JavaExecutable
 		if javaCmd == "" {
 			javaCmd = "java"
 		}
+		command := quoteShellArg(javaCmd) + " -jar " + quoteShellArg(cfg.ServerJarName) + " nogui"
 		b.WriteString("start_command: ")
-		b.WriteString(quoteYAMLString(javaCmd))
-		b.WriteString(" -jar ")
-		b.WriteString(quoteYAMLString(cfg.ServerJarName))
-		b.WriteString(" nogui\n")
+		b.WriteString(quoteYAMLString(command))
+		b.WriteByte('\n')
 	}
 	return b.Bytes()
+}
+
+func quoteShellArg(value string) string {
+	value = strings.ReplaceAll(value, `"`, `\"`)
+	return `"` + value + `"`
 }
 
 func quoteYAMLString(value string) string {

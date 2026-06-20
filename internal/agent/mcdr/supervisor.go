@@ -77,11 +77,23 @@ func (s *Supervisor) Start(ctx context.Context, sessionID string, profile runtim
 	mcdrConfig := NewRuntimeConfig(mcdrLayout)
 	mcdrConfig.ServerJarName = serverJarName
 	mcdrConfig.JavaExecutable = javaExecutable
+	mcdrConfig.HTTPProxy = os.Getenv("STRATUM_HTTP_PROXY")
+	if err := writeServerBootstrapFiles(mcdrLayout); err != nil {
+		return RuntimeState{}, err
+	}
+	if err := writePermissionFile(mcdrLayout); err != nil {
+		return RuntimeState{}, err
+	}
 	if _, err := WriteRuntimeConfig(mcdrLayout, mcdrConfig); err != nil {
 		return RuntimeState{}, fmt.Errorf("write MCDR config.yml: %w", err)
 	}
 
 	actualProfile := profile
+	workingDir, err := filepath.Rel(sessionLayout.RuntimeRoot, mcdrLayout.MCDRConfigDir)
+	if err != nil {
+		return RuntimeState{}, fmt.Errorf("resolve MCDR working directory: %w", err)
+	}
+	actualProfile.WorkingDir = workingDir
 	if mcdrExecutable != "" {
 		if _, statErr := os.Stat(mcdrExecutable); statErr == nil {
 			if len(profile.CommandArgv) > 0 {
@@ -105,6 +117,34 @@ func (s *Supervisor) Start(ctx context.Context, sessionID string, profile runtim
 	}
 
 	return s.runtimeState(model), nil
+}
+
+func writeServerBootstrapFiles(layout agentprocess.MCDRRuntimeLayout) error {
+	if err := os.MkdirAll(layout.MCDRServerDir, 0o750); err != nil {
+		return fmt.Errorf("create Minecraft server directory: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(layout.MCDRServerDir, "eula.txt"), []byte("eula=true\n"), 0o640); err != nil {
+		return fmt.Errorf("write Minecraft eula.txt: %w", err)
+	}
+	properties := "server-port=25565\n" +
+		"gamemode=creative\n" +
+		"difficulty=peaceful\n" +
+		"spawn-protection=0\n" +
+		"max-players=20\n" +
+		"online-mode=false\n" +
+		"enable-command-block=true\n"
+	if err := os.WriteFile(filepath.Join(layout.MCDRServerDir, "server.properties"), []byte(properties), 0o640); err != nil {
+		return fmt.Errorf("write Minecraft server.properties: %w", err)
+	}
+	return nil
+}
+
+func writePermissionFile(layout agentprocess.MCDRRuntimeLayout) error {
+	content := "default_level: user\nowner:\nadmin:\nhelper:\nuser:\nguest:\n"
+	if err := os.WriteFile(filepath.Join(layout.MCDRConfigDir, "permission.yml"), []byte(content), 0o640); err != nil {
+		return fmt.Errorf("write MCDR permission.yml: %w", err)
+	}
+	return nil
 }
 
 func readMaterializationManifest(configDir string) map[string]string {
