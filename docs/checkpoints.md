@@ -4,7 +4,7 @@ Checkpoints are semantic experiment snapshots that record project state at a spe
 
 ## Current Implementation
 
-The current implementation is **metadata-only**. Checkpoints record:
+Checkpoints capture:
 
 * Project, Room, and Session identity
 * Environment ID and RuntimeProfile ID
@@ -13,14 +13,17 @@ The current implementation is **metadata-only**. Checkpoints record:
 * Status (metadata_only, complete)
 * Optional notes
 * Optional compact Agent runtime-status snapshot
+* **World state snapshot** (world files packed to zip)
+* **World Profile snapshot** (server.properties configuration)
 
-Checkpoints do **not** currently:
+Checkpoints support:
 
-* Copy world files
-* Snapshot artifact payloads
-* Capture runtime directories
-* Enable restore or rollback
-* Stop, start, or restart sessions
+* World restore to target session
+* World Profile application during restore
+* Audit event creation
+* Consistency-level metadata
+
+See [World Profile documentation](world-profile.md) for world configuration capture and restore workflows.
 
 ## Service Layer
 
