@@ -30,6 +30,12 @@ type VenvResult struct {
 	MCDRExecutable string `json:"mcdrExecutable"`
 }
 
+type MCDRExecutable struct {
+	Executable string `json:"executable"`
+	Version    string `json:"version"`
+	Source     string `json:"source"`
+}
+
 type InstallMCDRRequest struct {
 	Venv      VenvResult
 	Version   string
@@ -103,6 +109,17 @@ func (m *Manager) VerifyMCDR(ctx context.Context, venv VenvResult) (string, erro
 	output, err := m.runner()(ctx, venv.MCDRExecutable, "--version")
 	if err != nil {
 		return "", fmt.Errorf("verify MCDR: %w", err)
+	}
+	return strings.TrimSpace(output), nil
+}
+
+func (m *Manager) VerifyMCDRExecutable(ctx context.Context, executable string) (string, error) {
+	if strings.TrimSpace(executable) == "" {
+		return "", fmt.Errorf("MCDR executable is required")
+	}
+	output, err := m.runner()(ctx, executable, "--version")
+	if err != nil {
+		return "", fmt.Errorf("verify MCDR executable: %w", err)
 	}
 	return strings.TrimSpace(output), nil
 }

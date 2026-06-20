@@ -33,6 +33,10 @@ func (fakePythonManager) VerifyMCDR(context.Context, agentpython.VenvResult) (st
 	return "MCDReforged v2.15.7", nil
 }
 
+func (fakePythonManager) VerifyMCDRExecutable(context.Context, string) (string, error) {
+	return "", fmt.Errorf("not found")
+}
+
 type fakeJavaDetector struct{}
 
 func (fakeJavaDetector) SelectForMinecraftVersion(_ context.Context, _ string) (agentjava.Installation, error) {
