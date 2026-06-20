@@ -314,6 +314,14 @@ func (f *Fake) GetSessionRuntimeStatus(_ context.Context, sessionID string) (age
 		CheckedAt:         f.now(),
 		RuntimeRootExists: true,
 		SessionRootExists: false,
+		WorldProfile: &agent.WorldProfileStatus{
+			Seed:               "12345",
+			LevelType:          "flat",
+			Difficulty:         "hard",
+			ViewDistance:       10,
+			GenerateStructures: false,
+			SpawnRadius:        16,
+		},
 	}, nil
 }
 
@@ -374,7 +382,7 @@ func (f *Fake) ReadSessionFile(_ context.Context, sessionID, relativePath string
 		return nil, err
 	}
 	if relativePath == "server.properties" {
-		return []byte("level-seed=123\nlevel-type=default\ndifficulty=normal\n"), nil
+		return []byte("level-seed=12345\nlevel-type=flat\ndifficulty=hard\nview-distance=10\ngenerate-structures=false\nspawn-protection=16\n"), nil
 	}
 	return nil, fmt.Errorf("file not found: %s", relativePath)
 }

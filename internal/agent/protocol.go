@@ -371,6 +371,17 @@ type SessionRuntimeStatus struct {
 	MaterializedArtifacts *MaterializedArtifactsStatus
 	AppliedArtifacts      *AppliedArtifactsStatus
 	ProcessStatus         *ProcessStatusSummary
+	WorldProfile          *WorldProfileStatus
+}
+
+type WorldProfileStatus struct {
+	Seed               string `json:"seed,omitempty"`
+	LevelType          string `json:"levelType"`
+	GeneratorSettings  string `json:"generatorSettings,omitempty"`
+	GenerateStructures bool   `json:"generateStructures"`
+	SpawnRadius        int    `json:"spawnRadius"`
+	Difficulty         string `json:"difficulty"`
+	ViewDistance       int    `json:"viewDistance,omitempty"`
 }
 
 type EnvironmentManifestStatus struct {
