@@ -89,6 +89,7 @@ func (m *mockRepo) AppendAuditEvent(ctx context.Context, event audit.Event) erro
 
 type mockAgent struct {
 	commands         []string
+	calls            []string
 	failAt           int
 	capabilities     []string
 	infoErr          error
@@ -233,6 +234,7 @@ func (m *mockAgent) CreateWorldSnapshot(ctx context.Context, request agent.World
 }
 
 func (m *mockAgent) RestoreWorldSnapshot(ctx context.Context, request agent.WorldCheckpointRestoreRequest) (agent.WorldCheckpointRestoreResult, error) {
+	m.calls = append(m.calls, "restore_world_snapshot")
 	return agent.WorldCheckpointRestoreResult{
 		SessionID:   request.SessionID,
 		RestoredRef: "agent-local://mock/sessions/" + request.SessionID + "/work/world_restored",
@@ -247,6 +249,11 @@ func (m *mockAgent) ReadSessionFile(ctx context.Context, sessionID, relativePath
 		return []byte(m.serverProperties), nil
 	}
 	return nil, fmt.Errorf("file not found: %s", relativePath)
+}
+
+func (m *mockAgent) WriteSessionFile(ctx context.Context, sessionID, relativePath string, data []byte) error {
+	m.calls = append(m.calls, "write_session_file")
+	return nil
 }
 
 func (m *mockAgent) GetSessionRuntimeStatus(ctx context.Context, sessionID string) (agent.SessionRuntimeStatus, error) {
@@ -1210,5 +1217,58 @@ func TestRestoreGeneratesCheckpointIDWhenEmpty(t *testing.T) {
 	}
 	if cp.SourceSessionID != "s-target" {
 		t.Fatalf("SourceSessionID = %q", cp.SourceSessionID)
+	}
+}
+
+func TestRestoreAppliesWorldProfile(t *testing.T) {
+	worldSnapshot := &checkpoint.WorldProfileSnapshot{
+		Seed:               "999000",
+		LevelType:          "flat",
+		Difficulty:         "peaceful",
+		GenerateStructures: false,
+		SpawnRadius:        5,
+		ViewDistance:       10,
+	}
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-source": {ID: "s-source", ProjectID: "p-1", EnvironmentID: "env-1", State: session.StateStopped},
+			"s-target": {ID: "s-target", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1", State: session.StateStopped},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{
+			"cp-source": {
+				ID: "cp-source", ProjectID: "p-1", SourceSessionID: "s-source", CreatorID: "creator-1",
+				Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+				ConsistencyLevel: consistency.LevelCommandQuiesced, EnvironmentID: "env-1",
+				WorldStateRef:        "agent-local://mock/sessions/s-source/checkpoints/world.zip",
+				WorldProfileSnapshot: worldSnapshot,
+			},
+		},
+	}
+	agent := &mockAgent{}
+	cp, err := Restore(context.Background(), repo, RestoreRequest{
+		CheckpointID:      "cp-source",
+		TargetSessionID:   "s-target",
+		ActorID:           "actor-1",
+		AgentClient:       agent,
+		ApplyWorldProfile: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agent.calls) < 2 {
+		t.Fatalf("expected at least 2 agent calls, got %d", len(agent.calls))
+	}
+	writeFound := false
+	for _, call := range agent.calls {
+		if call == "write_session_file" {
+			writeFound = true
+			break
+		}
+	}
+	if !writeFound {
+		t.Fatalf("write_session_file not called, calls: %v", agent.calls)
+	}
+	if cp.ID == "" {
+		t.Fatal("checkpoint ID is empty")
 	}
 }

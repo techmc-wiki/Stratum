@@ -317,12 +317,13 @@ func ListBySession(ctx context.Context, repo Repository, sessionID string) ([]ch
 }
 
 type RestoreRequest struct {
-	CheckpointID    string
-	TargetSessionID string
-	WorldDirRel     string
-	ActorID         string
-	Notes           string
-	AgentClient     agent.AgentClient
+	CheckpointID      string
+	TargetSessionID   string
+	WorldDirRel       string
+	ActorID           string
+	Notes             string
+	AgentClient       agent.AgentClient
+	ApplyWorldProfile bool
 }
 
 // Restore restores a checkpoint's world state to a target session.
@@ -366,6 +367,12 @@ func Restore(ctx context.Context, repo Repository, req RestoreRequest) (checkpoi
 	})
 	if err != nil {
 		return checkpoint.Checkpoint{}, fmt.Errorf("restore world snapshot: %w", err)
+	}
+	if req.ApplyWorldProfile && sourceCP.WorldProfileSnapshot != nil {
+		propsContent := serverproperties.FromWorldProfileSnapshot(sourceCP.WorldProfileSnapshot)
+		if err := req.AgentClient.WriteSessionFile(ctx, req.TargetSessionID, "server.properties", []byte(propsContent)); err != nil {
+			return checkpoint.Checkpoint{}, fmt.Errorf("write server.properties: %w", err)
+		}
 	}
 	checkpointID, idErr := idgen.NewID("cp")
 	if idErr != nil {

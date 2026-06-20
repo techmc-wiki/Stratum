@@ -400,3 +400,41 @@ view-distance=10
 		t.Errorf("Snapshot CapturedFrom = %q", snapshot.CapturedFrom)
 	}
 }
+
+func TestE2EWriteSessionFileServerProperties(t *testing.T) {
+	root := t.TempDir()
+	sessionID := "e2e-write-1"
+	sessionDir := filepath.Join(root, "sessions", sessionID)
+
+	sup, err := agentprocess.NewSupervisorWithRoot("e2e-agent", root, 1024*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pa := &ProcessAgent{
+		id:         "e2e-agent",
+		supervisor: sup,
+	}
+
+	propsContent := []byte("level-seed=111\nlevel-type=default\ndifficulty=normal\nview-distance=8\n")
+	if err := pa.WriteSessionFile(context.Background(), sessionID, "server.properties", propsContent); err != nil {
+		t.Fatalf("WriteSessionFile: %v", err)
+	}
+
+	readData, err := pa.ReadSessionFile(context.Background(), sessionID, "server.properties")
+	if err != nil {
+		t.Fatalf("ReadSessionFile: %v", err)
+	}
+
+	if string(readData) != string(propsContent) {
+		t.Errorf("ReadSessionFile returned unexpected content:\ngot:  %s\nwant: %s", string(readData), string(propsContent))
+	}
+
+	if err := pa.WriteSessionFile(context.Background(), sessionID, "../etc/passwd", []byte("bad")); err == nil {
+		t.Fatal("Expected error for path traversal, got nil")
+	}
+
+	writtenPath := filepath.Join(sessionDir, "server.properties")
+	if _, err := os.Stat(writtenPath); os.IsNotExist(err) {
+		t.Fatalf("server.properties was not written to %s", writtenPath)
+	}
+}
