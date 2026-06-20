@@ -92,6 +92,19 @@ func TestDownloadUnsupportedCore(t *testing.T) {
 	}
 }
 
+func TestDownloadForgeSupported(t *testing.T) {
+	cacheDir := t.TempDir()
+	downloader := NewDownloader(cacheDir)
+	_, err := downloader.Download(context.Background(), DownloadRequest{
+		ServerCore:       "forge",
+		MinecraftVersion: "1.12.2",
+		LoaderVersion:    "14.23.5.2859",
+	})
+	if err != nil {
+		t.Fatalf("download Forge 1.12.2: %v", err)
+	}
+}
+
 func TestDeployServers(t *testing.T) {
 	if err := SetProxy(os.Getenv("STRATUM_PROXY")); err != nil {
 		t.Fatal(err)
