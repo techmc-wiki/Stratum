@@ -1,21 +1,4 @@
 services:
-  controller:
-    build:
-      context: .
-      dockerfile: Dockerfile.controller
-    ports:
-      - "${CONTROLLER_PORT:-8080}:8080"
-    volumes:
-      - controller-data:/data
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8080/healthz"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    restart: unless-stopped
-    networks:
-      - stratum
-
   agent-java8:
     build:
       context: .
@@ -27,16 +10,13 @@ services:
     volumes:
       - agent8-runtime:/runtime
     environment:
-      - STRATUM_CONTROLLER_URL=http://controller:8080
+      - STRATUM_CONTROLLER_URL=http://host.docker.internal:8080
       - STRATUM_AGENT_TOKEN=${AGENT_TOKEN:-}
       - STRATUM_HTTP_PROXY=${HTTP_PROXY:-}
       - STRATUM_LUCY_WORKSPACE=${LUCY_WORKSPACE:-none}
-    depends_on:
-      controller:
-        condition: service_healthy
     restart: unless-stopped
-    networks:
-      - stratum
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   agent-java17:
     build:
@@ -49,16 +29,13 @@ services:
     volumes:
       - agent17-runtime:/runtime
     environment:
-      - STRATUM_CONTROLLER_URL=http://controller:8080
+      - STRATUM_CONTROLLER_URL=http://host.docker.internal:8080
       - STRATUM_AGENT_TOKEN=${AGENT_TOKEN:-}
       - STRATUM_HTTP_PROXY=${HTTP_PROXY:-}
       - STRATUM_LUCY_WORKSPACE=${LUCY_WORKSPACE:-none}
-    depends_on:
-      controller:
-        condition: service_healthy
     restart: unless-stopped
-    networks:
-      - stratum
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   agent-java21:
     build:
@@ -71,23 +48,15 @@ services:
     volumes:
       - agent21-runtime:/runtime
     environment:
-      - STRATUM_CONTROLLER_URL=http://controller:8080
+      - STRATUM_CONTROLLER_URL=http://host.docker.internal:8080
       - STRATUM_AGENT_TOKEN=${AGENT_TOKEN:-}
       - STRATUM_HTTP_PROXY=${HTTP_PROXY:-}
       - STRATUM_LUCY_WORKSPACE=${LUCY_WORKSPACE:-none}
-    depends_on:
-      controller:
-        condition: service_healthy
     restart: unless-stopped
-    networks:
-      - stratum
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
-  controller-data:
   agent8-runtime:
   agent17-runtime:
   agent21-runtime:
-
-networks:
-  stratum:
-    driver: bridge
