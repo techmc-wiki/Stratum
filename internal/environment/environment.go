@@ -25,6 +25,7 @@ const (
 	ServerFabric  ServerCore = "fabric"
 	ServerCarpet  ServerCore = "carpet"
 	ServerPaper   ServerCore = "paper"
+	ServerForge   ServerCore = "forge"
 	ServerCustom  ServerCore = "custom"
 )
 
@@ -89,7 +90,7 @@ func isValidLoaderType(t LoaderType) bool {
 
 func isValidServerCore(c ServerCore) bool {
 	switch c {
-	case ServerVanilla, ServerFabric, ServerCarpet, ServerPaper, ServerCustom:
+	case ServerVanilla, ServerFabric, ServerCarpet, ServerPaper, ServerForge, ServerCustom:
 		return true
 	}
 	return false

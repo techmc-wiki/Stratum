@@ -12,7 +12,7 @@
     "javaVersion": {"type": "string"},
     "loaderType": {"enum": ["none", "fabric", "liteloader", "forge", "quilt", "custom"]},
     "loaderVersion": {"type": "string"},
-    "serverCore": {"enum": ["vanilla", "fabric", "carpet", "paper", "custom"]},
+    "serverCore": {"enum": ["vanilla", "fabric", "carpet", "paper", "forge", "custom"]},
     "mcdrRequired": {"type": "boolean"},
     "carpetRequired": {"type": "boolean"},
     "lucyManifestRef": {"type": "string"},
