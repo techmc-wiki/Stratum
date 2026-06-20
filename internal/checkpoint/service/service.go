@@ -11,6 +11,7 @@ import (
 	"github.com/stratummc/stratum/internal/checkpoint"
 	"github.com/stratummc/stratum/internal/checkpoint/consistency"
 	"github.com/stratummc/stratum/internal/idgen"
+	"github.com/stratummc/stratum/internal/room"
 	"github.com/stratummc/stratum/internal/session"
 )
 
@@ -24,14 +25,20 @@ type CreateRequest struct {
 	RuntimeStatusSnapshot *checkpoint.RuntimeStatusSnapshot
 	LucyLockHash          string
 	AgentClient           agent.AgentClient
+	CaptureWorldProfile   bool
 }
 
 type SessionReader interface {
 	GetSession(ctx context.Context, id string) (session.Session, error)
 }
 
+type RoomReader interface {
+	GetRoom(ctx context.Context, id string) (room.Room, error)
+}
+
 type Repository interface {
 	SessionReader
+	RoomReader
 	CreateCheckpoint(ctx context.Context, cp checkpoint.Checkpoint) error
 	UpdateCheckpoint(ctx context.Context, cp checkpoint.Checkpoint) error
 	GetCheckpoint(ctx context.Context, id string) (checkpoint.Checkpoint, error)
@@ -40,6 +47,10 @@ type Repository interface {
 	AppendAuditEvent(ctx context.Context, event audit.Event) error
 }
 
+// Create creates a checkpoint. Checkpoint creation is safe during session runtime because:
+// - MetadataOnly: no world files are accessed
+// - CommandQuiesced: uses save-off + save-all flush to ensure world files are read-only before snapshot
+// World files may be held open by JVM but are safe to read (copy) while the server is running.
 func Create(ctx context.Context, repo Repository, req CreateRequest) (checkpoint.Checkpoint, error) {
 	if req.ActorID == "" {
 		return checkpoint.Checkpoint{}, fmt.Errorf("actor required")
@@ -65,7 +76,7 @@ func Create(ctx context.Context, repo Repository, req CreateRequest) (checkpoint
 	default:
 		return checkpoint.Checkpoint{}, fmt.Errorf("checkpoint consistency level %q requires checkpoint orchestration; only %q and %q are supported", consistencyLevel, consistency.LevelMetadataOnly, consistency.LevelCommandQuiesced)
 	}
-	cp, err := checkpoint.New(buildCheckpointParams(req, sess, consistencyLevel))
+	cp, err := checkpoint.New(buildCheckpointParams(ctx, repo, req, sess, consistencyLevel))
 	if err != nil {
 		return checkpoint.Checkpoint{}, err
 	}
@@ -135,7 +146,7 @@ func createCommandQuiesced(ctx context.Context, repo Repository, req CreateReque
 	consistencyMetadata["snapshotSizeBytes"] = fmt.Sprintf("%d", snapResult.SizeBytes)
 	consistencyMetadata["snapshotSHA256"] = snapResult.SHA256
 
-	params := buildCheckpointParams(req, sess, consistency.LevelCommandQuiesced)
+	params := buildCheckpointParams(ctx, repo, req, sess, consistency.LevelCommandQuiesced)
 	params.ConsistencyMetadata = consistencyMetadata
 	params.WorldStateRef = snapResult.SnapshotRef
 	cp, err := checkpoint.New(params)
@@ -191,7 +202,25 @@ func saveOnWithError(ctx context.Context, agentClient agent.AgentClient, session
 	return err
 }
 
-func buildCheckpointParams(req CreateRequest, sess session.Session, level consistency.Level) checkpoint.CreateParams {
+func buildCheckpointParams(ctx context.Context, repo Repository, req CreateRequest, sess session.Session, level consistency.Level) checkpoint.CreateParams {
+	var worldSnapshot *checkpoint.WorldProfileSnapshot
+	if req.CaptureWorldProfile && sess.RoomID != "" {
+		if rm, err := repo.GetRoom(ctx, sess.RoomID); err == nil && rm.DefaultWorldProfile != nil {
+			wp := rm.DefaultWorldProfile
+			worldSnapshot = &checkpoint.WorldProfileSnapshot{
+				Seed:               wp.Seed,
+				LevelType:          string(wp.LevelType),
+				GeneratorSettings:  wp.GeneratorSettings,
+				GenerateStructures: wp.GenerateStructures,
+				SpawnRadius:        wp.SpawnRadius,
+				Difficulty:         string(wp.Difficulty),
+				MinecraftVersion:   wp.MinecraftVersion,
+				SourceProfileID:    wp.ID,
+				CapturedFrom:       "room",
+			}
+		}
+	}
+
 	return checkpoint.CreateParams{
 		ID:                    req.ID,
 		ProjectID:             sess.ProjectID,
@@ -206,6 +235,7 @@ func buildCheckpointParams(req CreateRequest, sess session.Session, level consis
 		RuntimeProfileID:      sess.RuntimeProfileID,
 		LucyLockHash:          req.LucyLockHash,
 		RuntimeStatusSnapshot: prepareRuntimeStatusSnapshot(req.RuntimeStatusSnapshot, sess),
+		WorldProfileSnapshot:  worldSnapshot,
 		Notes:                 req.Notes,
 	}
 }
@@ -278,6 +308,12 @@ type RestoreRequest struct {
 	AgentClient     agent.AgentClient
 }
 
+// Restore restores a checkpoint's world state to a target session.
+// SAFETY: Target session MUST be in Stopped state because:
+// - JVM locks jar/world files while running (cannot replace/delete)
+// - Overwriting open region files causes data corruption
+// - Windows file locks will cause restore to fail
+// - Unix allows unsafe overwrites but data is corrupted
 func Restore(ctx context.Context, repo Repository, req RestoreRequest) (checkpoint.Checkpoint, error) {
 	if strings.TrimSpace(req.ActorID) == "" {
 		return checkpoint.Checkpoint{}, fmt.Errorf("actor required")
@@ -298,6 +334,9 @@ func Restore(ctx context.Context, repo Repository, req RestoreRequest) (checkpoi
 	}
 	if targetSession.ProjectID != sourceCP.ProjectID {
 		return checkpoint.Checkpoint{}, fmt.Errorf("target session project %q does not match source checkpoint project %q", targetSession.ProjectID, sourceCP.ProjectID)
+	}
+	if targetSession.State != session.StateStopped {
+		return checkpoint.Checkpoint{}, fmt.Errorf("target session must be stopped before restore, current state: %s (JVM file locks prevent safe world replacement while running)", targetSession.State)
 	}
 	worldDirRel := strings.TrimSpace(req.WorldDirRel)
 	if worldDirRel == "" {

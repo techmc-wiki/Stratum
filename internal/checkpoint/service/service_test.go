@@ -12,11 +12,14 @@ import (
 	"github.com/stratummc/stratum/internal/audit"
 	"github.com/stratummc/stratum/internal/checkpoint"
 	"github.com/stratummc/stratum/internal/checkpoint/consistency"
+	"github.com/stratummc/stratum/internal/room"
 	"github.com/stratummc/stratum/internal/session"
+	"github.com/stratummc/stratum/internal/worldprofile"
 )
 
 type mockRepo struct {
 	sessions    map[string]session.Session
+	rooms       map[string]room.Room
 	checkpoints map[string]checkpoint.Checkpoint
 	auditEvents []audit.Event
 	createErr   error
@@ -29,6 +32,13 @@ func (m *mockRepo) GetSession(ctx context.Context, id string) (session.Session, 
 		return s, nil
 	}
 	return session.Session{}, fmt.Errorf("session not found")
+}
+
+func (m *mockRepo) GetRoom(ctx context.Context, id string) (room.Room, error) {
+	if r, ok := m.rooms[id]; ok {
+		return r, nil
+	}
+	return room.Room{}, fmt.Errorf("room not found")
 }
 
 func (m *mockRepo) CreateCheckpoint(ctx context.Context, cp checkpoint.Checkpoint) error {
@@ -305,6 +315,88 @@ func TestCreateCheckpointWithoutLucyLockHash(t *testing.T) {
 	}
 	if cp.LucyLockHash != "" {
 		t.Fatalf("LucyLockHash = %q, want empty", cp.LucyLockHash)
+	}
+}
+
+func TestCreateCheckpointCapturesWorldProfile(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+		},
+		rooms: map[string]room.Room{
+			"r-1": {
+				ID:        "r-1",
+				ProjectID: "p-1",
+				DefaultWorldProfile: &worldprofile.WorldProfile{
+					ID:                 "wp-1",
+					Name:               "Test World",
+					Seed:               "12345",
+					LevelType:          worldprofile.LevelFlat,
+					GeneratorSettings:  `{"layers":[]}`,
+					GenerateStructures: false,
+					SpawnRadius:        5,
+					Difficulty:         worldprofile.DifficultyPeaceful,
+					MinecraftVersion:   "1.17.1",
+				},
+			},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	cp, err := Create(context.Background(), repo, CreateRequest{
+		ID:                  "cp-world",
+		SessionID:           "s-1",
+		ActorID:             "actor-1",
+		CaptureWorldProfile: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.WorldProfileSnapshot == nil {
+		t.Fatal("expected world profile snapshot")
+	}
+	ws := cp.WorldProfileSnapshot
+	if ws.Seed != "12345" || ws.LevelType != string(worldprofile.LevelFlat) || ws.Difficulty != string(worldprofile.DifficultyPeaceful) {
+		t.Fatalf("world profile snapshot: %+v", ws)
+	}
+	if ws.GeneratorSettings != `{"layers":[]}` {
+		t.Fatalf("GeneratorSettings = %q", ws.GeneratorSettings)
+	}
+	if ws.SpawnRadius != 5 || ws.GenerateStructures != false {
+		t.Fatalf("SpawnRadius=%d GenerateStructures=%v", ws.SpawnRadius, ws.GenerateStructures)
+	}
+	if ws.SourceProfileID != "wp-1" || ws.CapturedFrom != "room" {
+		t.Fatalf("SourceProfileID=%q CapturedFrom=%q", ws.SourceProfileID, ws.CapturedFrom)
+	}
+}
+
+func TestCreateCheckpointWithoutCaptureWorldProfile(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-1": {ID: "s-1", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+		},
+		rooms: map[string]room.Room{
+			"r-1": {
+				ID:        "r-1",
+				ProjectID: "p-1",
+				DefaultWorldProfile: &worldprofile.WorldProfile{
+					ID:   "wp-1",
+					Name: "Test World",
+				},
+			},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{},
+	}
+	cp, err := Create(context.Background(), repo, CreateRequest{
+		ID:                  "cp-no-world",
+		SessionID:           "s-1",
+		ActorID:             "actor-1",
+		CaptureWorldProfile: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.WorldProfileSnapshot != nil {
+		t.Fatalf("expected no world profile snapshot, got %+v", cp.WorldProfileSnapshot)
 	}
 }
 
@@ -727,8 +819,8 @@ func TestCreateCommandQuiescedRequiresRuntimeProfileOrEnvironment(t *testing.T) 
 func TestRestoreCreatesNewCheckpoint(t *testing.T) {
 	repo := &mockRepo{
 		sessions: map[string]session.Session{
-			"s-source": {ID: "s-source", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
-			"s-target": {ID: "s-target", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+			"s-source": {ID: "s-source", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1", State: session.StateStopped},
+			"s-target": {ID: "s-target", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1", State: session.StateStopped},
 		},
 		checkpoints: map[string]checkpoint.Checkpoint{
 			"cp-source": {
@@ -777,8 +869,8 @@ func TestRestoreCreatesNewCheckpoint(t *testing.T) {
 func TestRestoreCheckpointCarriesLucyLockHash(t *testing.T) {
 	repo := &mockRepo{
 		sessions: map[string]session.Session{
-			"s-source": {ID: "s-source", ProjectID: "p-1", EnvironmentID: "env-1"},
-			"s-target": {ID: "s-target", ProjectID: "p-1", EnvironmentID: "env-1"},
+			"s-source": {ID: "s-source", ProjectID: "p-1", EnvironmentID: "env-1", State: session.StateStopped},
+			"s-target": {ID: "s-target", ProjectID: "p-1", EnvironmentID: "env-1", State: session.StateStopped},
 		},
 		checkpoints: map[string]checkpoint.Checkpoint{
 			"cp-source": {
@@ -804,7 +896,7 @@ func TestRestoreCheckpointCarriesLucyLockHash(t *testing.T) {
 func TestRestoreRejectsCheckpointWithoutWorldState(t *testing.T) {
 	repo := &mockRepo{
 		sessions: map[string]session.Session{
-			"s-target": {ID: "s-target", ProjectID: "p-1", EnvironmentID: "env-1"},
+			"s-target": {ID: "s-target", ProjectID: "p-1", EnvironmentID: "env-1", State: session.StateStopped},
 		},
 		checkpoints: map[string]checkpoint.Checkpoint{
 			"cp-no-world": {
@@ -829,7 +921,7 @@ func TestRestoreRejectsCheckpointWithoutWorldState(t *testing.T) {
 func TestRestoreRejectsTargetSessionInDifferentProject(t *testing.T) {
 	repo := &mockRepo{
 		sessions: map[string]session.Session{
-			"s-target": {ID: "s-target", ProjectID: "p-other", EnvironmentID: "env-1"},
+			"s-target": {ID: "s-target", ProjectID: "p-other", EnvironmentID: "env-1", State: session.StateStopped},
 		},
 		checkpoints: map[string]checkpoint.Checkpoint{
 			"cp-source": {
@@ -877,11 +969,36 @@ func TestRestoreRequiresActorAndAgentClient(t *testing.T) {
 	}
 }
 
+func TestRestoreRejectsNonStoppedSession(t *testing.T) {
+	repo := &mockRepo{
+		sessions: map[string]session.Session{
+			"s-running": {ID: "s-running", ProjectID: "p-1", EnvironmentID: "env-1", State: session.StateRunning},
+		},
+		checkpoints: map[string]checkpoint.Checkpoint{
+			"cp-source": {
+				ID: "cp-source", ProjectID: "p-1", SourceSessionID: "s-running", CreatorID: "creator-1",
+				Kind: checkpoint.KindManual, Status: checkpoint.StatusMetadataOnly,
+				ConsistencyLevel: consistency.LevelCommandQuiesced, EnvironmentID: "env-1",
+				WorldStateRef: "agent-local://mock/sessions/s-running/checkpoints/world.zip",
+			},
+		},
+	}
+	_, err := Restore(context.Background(), repo, RestoreRequest{
+		CheckpointID:    "cp-source",
+		TargetSessionID: "s-running",
+		ActorID:         "actor-1",
+		AgentClient:     &mockAgent{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "must be stopped") || !strings.Contains(err.Error(), "JVM file locks") {
+		t.Fatalf("expected JVM file lock error, got %v", err)
+	}
+}
+
 func TestRestoreDefaultsWorldDirRelToWorldRestored(t *testing.T) {
 	repo := &mockRepo{
 		sessions: map[string]session.Session{
-			"s-source": {ID: "s-source", ProjectID: "p-1", EnvironmentID: "env-1"},
-			"s-target": {ID: "s-target", ProjectID: "p-1", EnvironmentID: "env-1"},
+			"s-source": {ID: "s-source", ProjectID: "p-1", EnvironmentID: "env-1", State: session.StateStopped},
+			"s-target": {ID: "s-target", ProjectID: "p-1", EnvironmentID: "env-1", State: session.StateStopped},
 		},
 		checkpoints: map[string]checkpoint.Checkpoint{
 			"cp-source": {
@@ -910,8 +1027,8 @@ func TestRestoreDefaultsWorldDirRelToWorldRestored(t *testing.T) {
 func TestRestoreAuditAppendFailureReturnsError(t *testing.T) {
 	repo := &mockRepo{
 		sessions: map[string]session.Session{
-			"s-source": {ID: "s-source", ProjectID: "p-1", EnvironmentID: "env-1"},
-			"s-target": {ID: "s-target", ProjectID: "p-1", EnvironmentID: "env-1"},
+			"s-source": {ID: "s-source", ProjectID: "p-1", EnvironmentID: "env-1", State: session.StateStopped},
+			"s-target": {ID: "s-target", ProjectID: "p-1", EnvironmentID: "env-1", State: session.StateStopped},
 		},
 		checkpoints: map[string]checkpoint.Checkpoint{
 			"cp-source": {
@@ -944,8 +1061,8 @@ func TestRestoreAuditAppendFailureReturnsError(t *testing.T) {
 func TestRestoreGeneratesCheckpointIDWhenEmpty(t *testing.T) {
 	repo := &mockRepo{
 		sessions: map[string]session.Session{
-			"s-source": {ID: "s-source", ProjectID: "p-1", EnvironmentID: "env-1"},
-			"s-target": {ID: "s-target", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1"},
+			"s-source": {ID: "s-source", ProjectID: "p-1", EnvironmentID: "env-1", State: session.StateStopped},
+			"s-target": {ID: "s-target", ProjectID: "p-1", RoomID: "r-1", EnvironmentID: "env-1", State: session.StateStopped},
 		},
 		checkpoints: map[string]checkpoint.Checkpoint{
 			"cp-source": {

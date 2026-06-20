@@ -21,6 +21,7 @@ func createCheckpoint(ctx context.Context, store *filesystem.Store, agentClient 
 	actor := flags.String("actor", "", "")
 	notes := flags.String("notes", "", "")
 	consistencyLevelValue := flags.String("consistency-level", string(consistency.LevelMetadataOnly), "")
+	captureWorldProfile := flags.Bool("capture-world-profile", false, "capture world profile from room")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -58,6 +59,7 @@ func createCheckpoint(ctx context.Context, store *filesystem.Store, agentClient 
 		RuntimeStatusSnapshot: snapshot,
 		LucyLockHash:          lucyLockHash,
 		AgentClient:           agentClient,
+		CaptureWorldProfile:   *captureWorldProfile,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "create checkpoint error: %v\n", err)
@@ -133,6 +135,23 @@ func inspectCheckpoint(ctx context.Context, store *filesystem.Store, args []stri
 		fmt.Fprintf(stdout, "  Applied Artifacts:          %d\n", snapshot.AppliedArtifactsCount)
 		if len(snapshot.Issues) > 0 {
 			fmt.Fprintf(stdout, "  Issues:                     %s\n", strings.Join(snapshot.Issues, ","))
+		}
+	}
+	if cp.WorldProfileSnapshot != nil {
+		ws := cp.WorldProfileSnapshot
+		fmt.Fprintln(stdout, "\nWorld Profile Snapshot:")
+		fmt.Fprintf(stdout, "  Level Type:          %s\n", ws.LevelType)
+		fmt.Fprintf(stdout, "  Difficulty:          %s\n", ws.Difficulty)
+		if ws.Seed != "" {
+			fmt.Fprintf(stdout, "  Seed:                %s\n", ws.Seed)
+		}
+		fmt.Fprintf(stdout, "  Generate Structures: %v\n", ws.GenerateStructures)
+		fmt.Fprintf(stdout, "  Spawn Radius:        %d\n", ws.SpawnRadius)
+		if ws.GeneratorSettings != "" {
+			fmt.Fprintf(stdout, "  Generator Settings:  %s\n", ws.GeneratorSettings)
+		}
+		if ws.CapturedFrom != "" {
+			fmt.Fprintf(stdout, "  Captured From:       %s\n", ws.CapturedFrom)
 		}
 	}
 	fmt.Fprintf(stdout, "Created At:         %s\n", cp.CreatedAt.Format(time.RFC3339))

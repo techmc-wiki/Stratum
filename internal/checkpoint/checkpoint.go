@@ -50,6 +50,18 @@ type RuntimeStatusSnapshot struct {
 	Issues                     []string  `json:"issues,omitempty"`
 }
 
+type WorldProfileSnapshot struct {
+	Seed               string `json:"seed,omitempty"`
+	LevelType          string `json:"levelType"`
+	GeneratorSettings  string `json:"generatorSettings,omitempty"`
+	GenerateStructures bool   `json:"generateStructures"`
+	SpawnRadius        int    `json:"spawnRadius"`
+	Difficulty         string `json:"difficulty"`
+	MinecraftVersion   string `json:"minecraftVersion,omitempty"`
+	SourceProfileID    string `json:"sourceProfileId,omitempty"`
+	CapturedFrom       string `json:"capturedFrom,omitempty"`
+}
+
 type Checkpoint struct {
 	ID                                    string                 `json:"id"`
 	ProjectID                             string                 `json:"projectId"`
@@ -71,8 +83,7 @@ type Checkpoint struct {
 	RuntimeStatusSnapshot                 *RuntimeStatusSnapshot `json:"runtimeStatusSnapshot,omitempty"`
 	ServerConfig                          map[string]string      `json:"serverConfig,omitempty"`
 	CarpetRules                           map[string]string      `json:"carpetRules,omitempty"`
-	Seed                                  string                 `json:"seed,omitempty"`
-	GeneratorSettings                     map[string]string      `json:"generatorSettings,omitempty"`
+	WorldProfileSnapshot                  *WorldProfileSnapshot  `json:"worldProfileSnapshot,omitempty"`
 	Notes                                 string                 `json:"notes,omitempty"`
 	OperationHistory                      []Operation            `json:"operationHistory,omitempty"`
 	Metadata                              map[string]string      `json:"metadata,omitempty"`
@@ -100,8 +111,7 @@ type CreateParams struct {
 	RuntimeStatusSnapshot                 *RuntimeStatusSnapshot
 	ServerConfig                          map[string]string
 	CarpetRules                           map[string]string
-	Seed                                  string
-	GeneratorSettings                     map[string]string
+	WorldProfileSnapshot                  *WorldProfileSnapshot
 	Notes                                 string
 	Metadata                              map[string]string
 	CreatedAt                             time.Time
@@ -137,8 +147,9 @@ func New(params CreateParams) (Checkpoint, error) {
 		RuntimeStatusSummary:                  params.RuntimeStatusSummary,
 		RuntimeStatusSnapshot:                 cloneRuntimeStatusSnapshot(params.RuntimeStatusSnapshot),
 		ServerConfig:                          cloneMap(params.ServerConfig), CarpetRules: cloneMap(params.CarpetRules),
-		Seed: params.Seed, GeneratorSettings: cloneMap(params.GeneratorSettings), Notes: params.Notes,
-		Metadata: cloneMap(params.Metadata), OperationHistory: []Operation{}, CreatedAt: createdAt,
+		WorldProfileSnapshot: cloneWorldProfileSnapshot(params.WorldProfileSnapshot),
+		Notes:                params.Notes,
+		Metadata:             cloneMap(params.Metadata), OperationHistory: []Operation{}, CreatedAt: createdAt,
 	}, nil
 }
 
@@ -158,5 +169,13 @@ func cloneRuntimeStatusSnapshot(source *RuntimeStatusSnapshot) *RuntimeStatusSna
 	}
 	result := *source
 	result.Issues = cloneSlice(source.Issues)
+	return &result
+}
+
+func cloneWorldProfileSnapshot(source *WorldProfileSnapshot) *WorldProfileSnapshot {
+	if source == nil {
+		return nil
+	}
+	result := *source
 	return &result
 }
