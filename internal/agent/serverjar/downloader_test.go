@@ -105,6 +105,33 @@ func TestDownloadForgeSupported(t *testing.T) {
 	}
 }
 
+func TestResolveLatestVersion(t *testing.T) {
+	version, err := ResolveLatestVersion(context.Background())
+	if err != nil {
+		t.Fatalf("ResolveLatestVersion: %v", err)
+	}
+	if version == "" {
+		t.Fatal("empty latest version")
+	}
+	t.Logf("Latest Minecraft version: %s", version)
+}
+
+func TestDownloadLatestVanilla(t *testing.T) {
+	cacheDir := t.TempDir()
+	downloader := NewDownloader(cacheDir)
+	result, err := downloader.Download(context.Background(), DownloadRequest{
+		ServerCore:       "vanilla",
+		MinecraftVersion: "latest",
+	})
+	if err != nil {
+		t.Fatalf("download latest vanilla: %v", err)
+	}
+	if result.JarName == "" || result.SHA256 == "" {
+		t.Fatalf("incomplete result: %+v", result)
+	}
+	t.Logf("Latest vanilla: %s (%d bytes, sha256=%s)", result.JarName, result.SizeBytes, result.SHA256[:16])
+}
+
 func TestDeployServers(t *testing.T) {
 	if err := SetProxy(os.Getenv("STRATUM_PROXY")); err != nil {
 		t.Fatal(err)
