@@ -17,6 +17,8 @@ import (
 	"github.com/stratummc/stratum/internal/artifact"
 	artifactstaging "github.com/stratummc/stratum/internal/artifact/staging"
 	"github.com/stratummc/stratum/internal/audit"
+	"github.com/stratummc/stratum/internal/checkpoint"
+	"github.com/stratummc/stratum/internal/checkpoint/consistency"
 	"github.com/stratummc/stratum/internal/storage/artifactblob"
 	"github.com/stratummc/stratum/internal/storage/filesystem"
 )
@@ -620,6 +622,7 @@ func TestCLIRestoreCheckpointFromCommandQuiesced(t *testing.T) {
 		{"sessions", "start", "--id", "session-source", "--actor", "actor-1"},
 		{"sessions", "start", "--id", "session-target", "--actor", "actor-1"},
 		{"checkpoints", "create", "--id", "checkpoint-source", "--session", "session-source", "--actor", "actor-1", "--consistency-level", "command_quiesced"},
+		{"sessions", "stop", "--id", "session-target", "--actor", "actor-1"},
 		{"checkpoints", "restore", "--checkpoint", "checkpoint-source", "--target-session", "session-target", "--actor", "actor-1"},
 	}
 	for _, command := range commands {
@@ -668,6 +671,129 @@ func TestCLIRestoreCheckpointRejectsMissingFlags(t *testing.T) {
 		if code != 2 || !strings.Contains(stderr.String(), "--checkpoint, --target-session, and --actor are required") {
 			t.Fatalf("args=%v code=%d stderr=%q", args, code, stderr.String())
 		}
+	}
+}
+
+func TestCLIRestoreCheckpointWithWorldProfile(t *testing.T) {
+	server := httptest.NewServer(httptransport.NewServer(local.NewFake(), "", nil).Handler())
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	_ = ensureTestEnvironment(dataDirectory)
+	base := []string{"--data-dir", dataDirectory, "--agent-url", server.URL}
+	commands := [][]string{
+		{"projects", "create", "--id", "project-1", "--name", "Project"},
+		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room", "--environment", "env-test"},
+		{"sessions", "create", "--id", "session-source", "--project", "project-1", "--room", "room-1"},
+		{"sessions", "create", "--id", "session-target", "--project", "project-1", "--room", "room-1"},
+		{"sessions", "start", "--id", "session-source", "--actor", "actor-1"},
+		{"sessions", "start", "--id", "session-target", "--actor", "actor-1"},
+		{"checkpoints", "create", "--id", "checkpoint-source", "--session", "session-source", "--actor", "actor-1", "--consistency-level", "command_quiesced", "--capture-world-profile"},
+		{"sessions", "stop", "--id", "session-target", "--actor", "actor-1"},
+		{"checkpoints", "restore", "--checkpoint", "checkpoint-source", "--target-session", "session-target", "--actor", "actor-1", "--apply-world-profile"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(append(append([]string{}, base...), command...), &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+	if !strings.Contains(stdout.String(), "World state restored:") {
+		t.Fatalf("restore stdout=%q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "World profile applied to target session") {
+		t.Fatalf("world profile not applied, stdout=%q", stdout.String())
+	}
+}
+
+func TestCLICheckpointDiff(t *testing.T) {
+	server := httptest.NewServer(httptransport.NewServer(local.NewFake(), "", nil).Handler())
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	_ = ensureTestEnvironment(dataDirectory)
+	base := []string{"--data-dir", dataDirectory, "--agent-url", server.URL}
+	commands := [][]string{
+		{"projects", "create", "--id", "project-1", "--name", "Project"},
+		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room", "--environment", "env-test"},
+		{"sessions", "create", "--id", "session-source", "--project", "project-1", "--room", "room-1"},
+		{"sessions", "start", "--id", "session-source", "--actor", "actor-1"},
+		{"checkpoints", "create", "--id", "checkpoint-source", "--session", "session-source", "--actor", "actor-1", "--capture-world-profile"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(append(append([]string{}, base...), command...), &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, base...), "checkpoints", "diff", "--checkpoint", "checkpoint-source", "--session", "session-source"), &stdout, &stderr); code != 0 {
+		t.Fatalf("diff failed: code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "World Profile Diff:") || !strings.Contains(stdout.String(), "Checkpoint: checkpoint-source") {
+		t.Fatalf("diff stdout=%q", stdout.String())
+	}
+}
+
+func TestCLICheckpointDiffShowsDifferences(t *testing.T) {
+	fakeAgent := local.NewFake()
+	server := httptest.NewServer(httptransport.NewServer(fakeAgent, "", nil).Handler())
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	store, _ := filesystem.New(dataDirectory)
+	_ = ensureTestEnvironment(dataDirectory)
+	base := []string{"--data-dir", dataDirectory, "--agent-url", server.URL}
+	commands := [][]string{
+		{"projects", "create", "--id", "project-1", "--name", "Project"},
+		{"rooms", "create", "--id", "room-1", "--project", "project-1", "--name", "Room", "--environment", "env-test"},
+		{"sessions", "create", "--id", "session-diff", "--project", "project-1", "--room", "room-1"},
+	}
+	for _, command := range commands {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(append(append([]string{}, base...), command...), &stdout, &stderr); code != 0 {
+			t.Fatalf("command %v: code=%d stderr=%q", command, code, stderr.String())
+		}
+	}
+	ctx := context.Background()
+	cp := &checkpoint.Checkpoint{
+		ID:                   "cp-different",
+		ProjectID:            "project-1",
+		RoomID:               "room-1",
+		SourceSessionID:      "session-diff",
+		CreatorID:            "actor-1",
+		Kind:                 checkpoint.KindManual,
+		Status:               checkpoint.StatusComplete,
+		ConsistencyLevel:     consistency.LevelCommandQuiesced,
+		WorldProfileSnapshot: &checkpoint.WorldProfileSnapshot{Seed: "99999", LevelType: "default", Difficulty: "easy", ViewDistance: 8},
+		WorldStateRef:        "dummy",
+		Notes:                "test",
+		CreatedAt:            time.Now(),
+	}
+	if err := store.CreateCheckpoint(ctx, *cp); err != nil {
+		t.Fatalf("create checkpoint: %v", err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(append(append([]string{}, base...), "checkpoints", "diff", "--checkpoint", "cp-different", "--session", "session-diff"), &stdout, &stderr); code != 0 {
+		t.Fatalf("diff failed: code=%d stderr=%q", code, stderr.String())
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "level-seed:") || !strings.Contains(output, "99999") || !strings.Contains(output, "12345") {
+		t.Fatalf("diff should show seed difference, stdout=%q", output)
+	}
+	if !strings.Contains(output, "level-type:") || !strings.Contains(output, "default") || !strings.Contains(output, "flat") {
+		t.Fatalf("diff should show level-type difference, stdout=%q", output)
+	}
+	if !strings.Contains(output, "difficulty:") || !strings.Contains(output, "easy") || !strings.Contains(output, "hard") {
+		t.Fatalf("diff should show difficulty difference, stdout=%q", output)
 	}
 }
 

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stratummc/stratum/internal/agent"
+	"github.com/stratummc/stratum/internal/agent/serverproperties"
 	"github.com/stratummc/stratum/internal/checkpoint"
 	"github.com/stratummc/stratum/internal/checkpoint/consistency"
 	checkpointsvc "github.com/stratummc/stratum/internal/checkpoint/service"
@@ -165,6 +167,7 @@ func restoreCheckpoint(ctx context.Context, store *filesystem.Store, agentClient
 	worldDir := flags.String("world-dir", "world_restored", "")
 	actor := flags.String("actor", "", "")
 	notes := flags.String("notes", "", "")
+	applyWorldProfile := flags.Bool("apply-world-profile", false, "apply world profile from checkpoint to target session")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -173,17 +176,87 @@ func restoreCheckpoint(ctx context.Context, store *filesystem.Store, agentClient
 		return 2
 	}
 	cp, err := checkpointsvc.Restore(ctx, store, checkpointsvc.RestoreRequest{
-		CheckpointID:    *checkpointID,
-		TargetSessionID: *targetSessionID,
-		WorldDirRel:     *worldDir,
-		ActorID:         *actor,
-		Notes:           *notes,
-		AgentClient:     agentClient,
+		CheckpointID:      *checkpointID,
+		TargetSessionID:   *targetSessionID,
+		WorldDirRel:       *worldDir,
+		ActorID:           *actor,
+		Notes:             *notes,
+		AgentClient:       agentClient,
+		ApplyWorldProfile: *applyWorldProfile,
 	})
 	if err != nil {
 		return reportError(stderr, "checkpoint restore", err)
 	}
 	fmt.Fprintf(stdout, "World state restored: checkpoint=%s target=%s restoredRef=%s\n", cp.ID, *targetSessionID, cp.WorldStateRef)
+	if *applyWorldProfile {
+		fmt.Fprintln(stdout, "World profile applied to target session")
+	}
+	return 0
+}
+
+func diffCheckpoint(ctx context.Context, store *filesystem.Store, agentClient agent.AgentClient, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("checkpoints diff", stderr)
+	checkpointID := flags.String("checkpoint", "", "")
+	sessionID := flags.String("session", "", "")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *checkpointID == "" || *sessionID == "" {
+		fmt.Fprintln(stderr, "--checkpoint and --session are required")
+		return 2
+	}
+	cp, err := store.GetCheckpoint(ctx, *checkpointID)
+	if err != nil {
+		return reportError(stderr, "checkpoint diff", err)
+	}
+	if cp.WorldProfileSnapshot == nil {
+		fmt.Fprintln(stderr, "checkpoint has no world profile snapshot")
+		return 1
+	}
+	sess, err := store.GetSession(ctx, *sessionID)
+	if err != nil {
+		return reportError(stderr, "checkpoint diff", err)
+	}
+	data, err := agentClient.ReadSessionFile(ctx, *sessionID, "server.properties")
+	if err != nil {
+		fmt.Fprintf(stderr, "failed to read session server.properties: %v\n", err)
+		return 1
+	}
+	cfg, err := serverproperties.Parse(bytes.NewReader(data))
+	if err != nil {
+		fmt.Fprintf(stderr, "failed to parse server.properties: %v\n", err)
+		return 1
+	}
+	sessWP := serverproperties.ToWorldProfileSnapshot(cfg, "")
+	if sessWP == nil {
+		fmt.Fprintln(stderr, "failed to extract world profile from session server.properties")
+		return 1
+	}
+	fmt.Fprintf(stdout, "World Profile Diff:\n\n")
+	fmt.Fprintf(stdout, "  Checkpoint: %s\n", cp.ID)
+	fmt.Fprintf(stdout, "  Session:    %s\n\n", sess.ID)
+	cpw := cp.WorldProfileSnapshot
+	if cpw.Seed != sessWP.Seed {
+		fmt.Fprintf(stdout, "  level-seed:          %q -> %q\n", cpw.Seed, sessWP.Seed)
+	}
+	if cpw.LevelType != sessWP.LevelType {
+		fmt.Fprintf(stdout, "  level-type:          %q -> %q\n", cpw.LevelType, sessWP.LevelType)
+	}
+	if cpw.Difficulty != sessWP.Difficulty {
+		fmt.Fprintf(stdout, "  difficulty:          %q -> %q\n", cpw.Difficulty, sessWP.Difficulty)
+	}
+	if cpw.ViewDistance != sessWP.ViewDistance {
+		fmt.Fprintf(stdout, "  view-distance:       %d -> %d\n", cpw.ViewDistance, sessWP.ViewDistance)
+	}
+	if cpw.GenerateStructures != sessWP.GenerateStructures {
+		fmt.Fprintf(stdout, "  generate-structures: %v -> %v\n", cpw.GenerateStructures, sessWP.GenerateStructures)
+	}
+	if cpw.SpawnRadius != sessWP.SpawnRadius {
+		fmt.Fprintf(stdout, "  spawn-radius:        %d -> %d\n", cpw.SpawnRadius, sessWP.SpawnRadius)
+	}
+	if cpw.GeneratorSettings != sessWP.GeneratorSettings {
+		fmt.Fprintf(stdout, "  generator-settings:  %q -> %q\n", cpw.GeneratorSettings, sessWP.GeneratorSettings)
+	}
 	return 0
 }
 

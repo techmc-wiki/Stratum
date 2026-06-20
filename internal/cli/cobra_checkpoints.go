@@ -20,5 +20,8 @@ func newCheckpointsCommand() *cobra.Command {
 	cmd.AddCommand(storeAgentCommand("restore", "Restore world state from a checkpoint to a target session", func(ctx context.Context, runtime *commandRuntime, args []string) int {
 		return restoreCheckpoint(ctx, runtime.store, runtime.agentClient, args, runtime.stdout, runtime.stderr)
 	}))
+	cmd.AddCommand(storeAgentCommand("diff", "Compare checkpoint world profile with session configuration", func(ctx context.Context, runtime *commandRuntime, args []string) int {
+		return diffCheckpoint(ctx, runtime.store, runtime.agentClient, args, runtime.stdout, runtime.stderr)
+	}))
 	return cmd
 }
