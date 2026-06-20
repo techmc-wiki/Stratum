@@ -59,7 +59,7 @@ func (r *commandRuntime) parseGlobalFlags(args []string) ([]string, int) {
 	flags.StringVar(&r.artifactBlobRoot, "artifact-blob-root", defaultArtifactBlobRoot, "artifact blob storage root")
 	flags.StringVar(&r.agentURL, "agent-url", "", "agent HTTP endpoint; empty uses local fake")
 	flags.StringVar(&r.agentToken, "agent-token", "", "agent HTTP bearer token")
-	flags.DurationVar(&r.agentTimeout, "agent-timeout", 10*time.Second, "agent HTTP request timeout")
+	flags.DurationVar(&r.agentTimeout, "agent-timeout", 10*time.Minute, "agent HTTP request timeout")
 	if err := flags.Parse(args); err != nil {
 		return nil, 2
 	}
