@@ -95,8 +95,10 @@ func (m *Manager) CreateVenv(ctx context.Context, req VenvRequest) (VenvResult, 
 	if _, err := run(ctx, result.PythonExec, "--version"); err != nil {
 		return VenvResult{}, fmt.Errorf("verify venv python: %w", err)
 	}
-	if _, err := run(ctx, result.PipExec, "--version"); err != nil {
-		return VenvResult{}, fmt.Errorf("verify venv pip: %w", err)
+	if managerType != ManagerUV {
+		if _, err := run(ctx, result.PipExec, "--version"); err != nil {
+			return VenvResult{}, fmt.Errorf("verify venv pip: %w", err)
+		}
 	}
 	return result, nil
 }
@@ -112,6 +114,10 @@ func (m *Manager) createVenvWithStandard(ctx context.Context, req VenvRequest) e
 }
 
 func (m *Manager) createVenvWithUV(ctx context.Context, req VenvRequest) error {
+	detector := NewUVDetector()
+	if _, err := detector.Detect(ctx); err != nil {
+		return err
+	}
 	run := m.runner()
 	args := []string{"venv", req.VenvPath, "--python", req.Python.ExecutablePath}
 	if _, err := run(ctx, "uv", args...); err != nil {
@@ -158,7 +164,11 @@ func (m *Manager) installMCDRWithPip(ctx context.Context, req InstallMCDRRequest
 }
 
 func (m *Manager) installMCDRWithUV(ctx context.Context, req InstallMCDRRequest) error {
-	args := []string{"pip", "install"}
+	detector := NewUVDetector()
+	if _, err := detector.Detect(ctx); err != nil {
+		return err
+	}
+	args := []string{"pip", "install", "--python", req.Venv.PythonExec}
 	if req.IndexURL != "" {
 		args = append(args, "--index-url", req.IndexURL)
 	}
