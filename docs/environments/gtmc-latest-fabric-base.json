@@ -1,0 +1,25 @@
+{
+  "id": "gtmc-latest-fabric",
+  "name": "GTMC Latest Fabric Carpet Testing",
+  "description": "Fabric latest environment for GTMC technical testing. Minecraft version resolved at materialization time via Mojang manifest.",
+  "minecraftVersion": "latest",
+  "javaVersion": "21",
+  "loaderType": "fabric",
+  "loaderVersion": "",
+  "serverCore": "carpet",
+  "mcdrRequired": true,
+  "carpetRequired": true,
+  "lucyManifestRef": "manifests/gtmc-latest-fabric-base.lucy.yaml",
+  "lucyLockRef": "",
+  "runtimeProfileId": "fabric-latest",
+  "runtimeProfileRequired": true,
+  "artifactPolicyId": "",
+  "pythonManagerType": "uv",
+  "notes": "Latest Minecraft Fabric Carpet environment. Version resolved to latest Mojang release at start time. Java 21+ required.",
+  "createdAt": "2026-06-20T00:00:00Z",
+  "updatedAt": "2026-06-20T00:00:00Z",
+  "metadata": {
+    "targetCommunity": "GTMC",
+    "versionResolution": "auto"
+  }
+}

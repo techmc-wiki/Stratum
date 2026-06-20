@@ -1,0 +1,19 @@
+format_version: "1"
+environment:
+  game_version: "latest"
+  server_core: "fabric"
+  server_core_version: ""
+  modding_platform: "fabric"
+  modding_platform_version: ""
+  mcdr: true
+packages:
+  - id: fabric/fabric-api
+    version: "latest"
+    source: modrinth
+    role: required
+    side: server
+  - id: fabric/fabric-carpet
+    version: "latest"
+    source: modrinth
+    role: recommended
+    side: server

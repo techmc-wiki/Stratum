@@ -1,0 +1,23 @@
+{
+  "runtime_profiles": [
+    {
+      "id": "fabric-latest",
+      "name": "Fabric Latest Terminal",
+      "runtime_type": "mcdr-python",
+      "command_argv": ["mcdreforged", "start"],
+      "working_dir": "",
+      "stop_strategy": "stdin",
+      "stop_stdin_command": "!!MCDR stop",
+      "graceful_stop_timeout": "60s",
+      "force_kill_timeout": "15s",
+      "log_mode": "combined",
+      "enabled": true,
+      "notes": "MCDR child runtime for Fabric latest. Uses latest resolved Minecraft version. Agent supervises MCDR; MCDR starts Minecraft via config.yml start_command.",
+      "readiness_check": {
+        "type": "log-pattern",
+        "pattern": "Done (",
+        "timeout": "300s"
+      }
+    }
+  ]
+}
