@@ -708,6 +708,8 @@ func deriveServerJarName(serverCore string) string {
 		return "fabric-server-launch.jar"
 	case "vanilla":
 		return "server.jar"
+	case "forge":
+		return "forge-server.jar"
 	default:
 		return ""
 	}
