@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/stratummc/stratum/internal/agent"
+	"github.com/stratummc/stratum/internal/agent/serverjar"
 	"github.com/stratummc/stratum/internal/audit"
 	"github.com/stratummc/stratum/internal/environment"
 	"github.com/stratummc/stratum/internal/idgen"
@@ -417,5 +418,25 @@ func materializeEnvironment(ctx context.Context, store *filesystem.Store, agentC
 	fmt.Fprintf(stdout, "  Status:         %s\n", result.Status)
 	fmt.Fprintf(stdout, "  Directories:    %s\n", strings.Join(result.Directories, ", "))
 	fmt.Fprintf(stdout, "  Materialized:   %s\n", result.MaterializedAt.Format(time.RFC3339))
+	return 0
+}
+
+func showLatestVersion(ctx context.Context, stdout, stderr io.Writer) int {
+	cache := serverjar.DefaultVersionCache()
+	if cached := cache.Latest(); cached != "" {
+		fmt.Fprintf(stdout, "Latest Minecraft release (cached): %s\n", cached)
+		fmt.Fprintf(stdout, "Last checked: %s\n", cache.CheckedAt().Format(time.RFC3339))
+		if err := cache.LastError(); err != nil {
+			fmt.Fprintf(stdout, "Last error: %v\n", err)
+		}
+		return 0
+	}
+	version, err := cache.RefreshNow(ctx)
+	if err != nil {
+		fmt.Fprintf(stderr, "resolve latest version: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Latest Minecraft release: %s\n", version)
+	fmt.Fprintf(stdout, "Checked at: %s\n", cache.CheckedAt().Format(time.RFC3339))
 	return 0
 }

@@ -29,5 +29,8 @@ func newEnvironmentsCommand() *cobra.Command {
 	cmd.AddCommand(storeAgentCommand("materialize", "Materialize an environment", func(ctx context.Context, runtime *commandRuntime, args []string) int {
 		return materializeEnvironment(ctx, runtime.store, runtime.agentClient, args, runtime.stdout, runtime.stderr)
 	}))
+	cmd.AddCommand(rawCommand("latest-version", "Show the latest Minecraft release version", func(ctx context.Context, runtime *commandRuntime, args []string) int {
+		return showLatestVersion(ctx, runtime.stdout, runtime.stderr)
+	}))
 	return cmd
 }
