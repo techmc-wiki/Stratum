@@ -2,7 +2,10 @@ module github.com/stratummc/stratum
 
 go 1.25.8
 
-require github.com/spf13/cobra v1.10.2
+require (
+	github.com/mclucy/lucy v0.0.0-20260617080255-b2539d110491
+	github.com/spf13/cobra v1.10.2
+)
 
 require (
 	charm.land/bubbles/v2 v2.1.0 // indirect
@@ -37,7 +40,6 @@ require (
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.23 // indirect
-	github.com/mclucy/lucy v0.0.0-20260617080255-b2539d110491 // indirect
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
