@@ -173,7 +173,8 @@ Last updated: 2026-06-20
 
 ## ✅ Phase 6c — Container Orchestration (Complete)
 
-### Docker Compose
+### Docker Compose (Optional)
+- Configs live in `deploy/docker/` — Docker is a convenience, not required.
 - `Dockerfile.agent` — parameterized `ARG JAVA_VERSION` (8/17/21), eclipse-temurin
 - `Dockerfile.controller` — standalone controller image (not in compose)
 - `docker-compose.yml` — 3 agents (java8:8787, java17:8788, java21:8789)

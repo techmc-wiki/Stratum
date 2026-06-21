@@ -53,7 +53,7 @@ Everything is scriptable from the CLI first. A future Web UI is a convenience la
 
 **Resource-aware scheduling** — Global, per-project, and per-user limits with queueing and denial reasons.
 
-**Container orchestration** — `Dockerfile.agent` parameterized by Java version, `docker-compose.yml` with three isolated agents (Java 8/17/21) connecting to a host Controller.
+**Container orchestration** — Optional Docker Compose setup in `deploy/docker/` with three isolated agents (Java 8/17/21) connecting to a host Controller. Docker is a convenience, not a requirement.
 
 ---
 
@@ -160,9 +160,11 @@ Discover available RuntimeProfiles with `stratum agents runtime-profiles --id <a
 
 ### Docker Compose (three isolated Agents)
 
+Optional — see `deploy/docker/`.
+
 ```bash
-cp .env.example .env   # adjust if needed
-docker compose up -d   # starts agent-java8 / java17 / java21
+cp .env.example .env                         # adjust if needed
+docker compose -f deploy/docker/docker-compose.yml up -d
 ```
 
 Each container auto-registers with the host Controller at `host.docker.internal:8080`.

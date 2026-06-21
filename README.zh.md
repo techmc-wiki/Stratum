@@ -53,7 +53,7 @@ StratumMC **不是**通用的 Minecraft 托管面板。它在明确的资源上�
 
 **资源感知调度** — 全局、按项目、按用户限额,带排队与拒绝原因。
 
-**容器编排** — `Dockerfile.agent` 按 Java 版本参数化,`docker-compose.yml` 启动三个隔离的 Agent(Java 8/17/21)连接到主机上的 Controller。
+**容器编排** — 可选的 Docker Compose 配置位于 `deploy/docker/`,启动三个隔离的 Agent(Java 8/17/21)连接到主机上的 Controller。Docker 仅为便利选项,并非必需。
 
 ---
 
@@ -160,9 +160,11 @@ $STRATUM --agent-url http://127.0.0.1:8787 sessions stop --id sess-1
 
 ### Docker Compose(三个隔离 Agent)
 
+可选 — 参见 `deploy/docker/`。
+
 ```bash
-cp .env.example .env   # 按需调整
-docker compose up -d   # 启动 agent-java8 / java17 / java21
+cp .env.example .env                              # 按需调整
+docker compose -f deploy/docker/docker-compose.yml up -d
 ```
 
 每个容器都会向主机 Controller 自动注册,地址为 `host.docker.internal:8080`。

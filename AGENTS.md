@@ -141,12 +141,9 @@ suite.
 ## Build and Deployment
 
 - Build outputs land in `dist/local` (host) or `dist/linux-amd64` (CI target).
-- `Dockerfile.controller` — standalone controller image.
-- `Dockerfile.agent` — parameterized via `ARG JAVA_VERSION` (8 / 17 / 21), based
-  on `eclipse-temurin`.
-- `docker-compose.yml` brings up three Agents (`java8:8787`, `java17:8788`,
-  `java21:8789`) that connect to a host controller at
-  `host.docker.internal:8080`.
+- Optional Docker deployment configs live in `deploy/docker/`:
+  `Dockerfile.controller`, `Dockerfile.agent`, and `docker-compose.yml`. These
+  are provided as a convenience — Stratum is not coupled to Docker.
 - `.env.example` documents required env vars. Never commit real secrets.
 - GitHub Actions workflow lives in `.github/workflows/` and runs the equivalent
   of `task ci`.
