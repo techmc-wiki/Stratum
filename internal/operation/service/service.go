@@ -33,20 +33,19 @@ func (e ConflictError) Error() string {
 }
 
 type Service struct {
-	repository Repository
-	now        func() time.Time
-	newID      func(string) (string, error)
+	repository     Repository
+	now            func() time.Time
+	newID          func(string) (string, error)
+	coordinationMu sync.Mutex
 }
-
-var coordinationMu sync.Mutex
 
 func New(repository Repository) *Service {
 	return &Service{repository: repository, now: func() time.Time { return time.Now().UTC() }, newID: idgen.NewID}
 }
 
 func (s *Service) Begin(ctx context.Context, params BeginParams) (operation.Operation, bool, error) {
-	coordinationMu.Lock()
-	defer coordinationMu.Unlock()
+	s.coordinationMu.Lock()
+	defer s.coordinationMu.Unlock()
 	if params.ActorID == "" || params.Action == "" || params.TargetID == "" {
 		return operation.Operation{}, false, stratumerrors.Error{Kind: stratumerrors.KindValidation, Operation: "operationsvc.Begin", Message: "actor, action, and target are required"}
 	}
@@ -128,5 +127,11 @@ func (s *Service) audit(ctx context.Context, value operation.Operation, action s
 			metadata[key] = item
 		}
 	}
-	return s.repository.AppendAuditEvent(ctx, audit.Event{ID: id, ProjectID: value.ProjectID, ActorID: value.ActorID, Action: action, TargetType: "operation", TargetID: value.ID, Metadata: metadata, CreatedAt: s.now()})
+	event, err := audit.NewEvent(id, value.ActorID, action, "operation", value.ID, s.now())
+	if err != nil {
+		return err
+	}
+	event.ProjectID = value.ProjectID
+	event.Metadata = metadata
+	return s.repository.AppendAuditEvent(ctx, event)
 }
