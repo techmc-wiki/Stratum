@@ -14,9 +14,16 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/stratummc/stratum/internal/fileops"
 )
 
 var httpClient = &http.Client{Timeout: 120 * time.Second}
+
+const (
+	httpRequestAttempts = 3
+	httpRetryDelay      = 250 * time.Millisecond
+)
 
 func SetProxy(proxyURL string) error {
 	if strings.TrimSpace(proxyURL) == "" {
@@ -298,11 +305,7 @@ func (d *Downloader) downloadFile(ctx context.Context, fileURL, fileName string)
 			return DownloadResult{JarPath: destPath, JarName: fileName, SHA256: hash, SizeBytes: info.Size()}, nil
 		}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)
-	if err != nil {
-		return DownloadResult{}, fmt.Errorf("create request: %w", err)
-	}
-	resp, err := httpClient.Do(req)
+	resp, err := doHTTPGet(ctx, fileURL)
 	if err != nil {
 		return DownloadResult{}, fmt.Errorf("download %s: %w", fileURL, err)
 	}
@@ -338,11 +341,7 @@ func (d *Downloader) downloadFile(ctx context.Context, fileURL, fileName string)
 }
 
 func fetchJSON(ctx context.Context, urlStr string) (map[string]interface{}, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := httpClient.Do(req)
+	resp, err := doHTTPGet(ctx, urlStr)
 	if err != nil {
 		return nil, err
 	}
@@ -357,13 +356,44 @@ func fetchJSON(ctx context.Context, urlStr string) (map[string]interface{}, erro
 	return result, nil
 }
 
-func fileSHA256(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
+func doHTTPGet(ctx context.Context, urlStr string) (*http.Response, error) {
+	var lastErr error
+	for attempt := 1; attempt <= httpRequestAttempts; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := httpClient.Do(req)
+		if err == nil {
+			return resp, nil
+		}
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		lastErr = err
+		if attempt == httpRequestAttempts {
+			break
+		}
+		if err := sleepWithContext(ctx, httpRetryDelay); err != nil {
+			return nil, err
+		}
 	}
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:]), nil
+	return nil, lastErr
+}
+
+func sleepWithContext(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func fileSHA256(path string) (string, error) {
+	return fileops.SHA256Hex(path)
 }
 
 func CopyFile(src, dst string) error {

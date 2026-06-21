@@ -2,11 +2,21 @@ package serverjar
 
 import (
 	"context"
+	"errors"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
 
 func TestDownloadFabric(t *testing.T) {
 	if err := SetProxy(os.Getenv("STRATUM_PROXY")); err != nil {
@@ -89,6 +99,29 @@ func TestDownloadUnsupportedCore(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "unsupported server core") {
 		t.Fatalf("expected unsupported core error: %v", err)
+	}
+}
+
+func TestDoHTTPGetRetriesTransportErrors(t *testing.T) {
+	originalClient := httpClient
+	t.Cleanup(func() { httpClient = originalClient })
+	var attempts int32
+	httpClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if atomic.AddInt32(&attempts, 1) == 1 {
+			return nil, errors.New("temporary network failure")
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"ok":true}`)), Header: make(http.Header), Request: request}, nil
+	})}
+	response, err := doHTTPGet(context.Background(), "https://example.test/manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d", response.StatusCode)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts=%d, want 2", attempts)
 	}
 }
 
