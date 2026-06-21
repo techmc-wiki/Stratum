@@ -2,6 +2,7 @@ package httptransport
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -294,12 +295,21 @@ func (s *Server) checkpointStub(create bool) http.HandlerFunc {
 
 func (s *Server) withAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.token != "" && r.Header.Get("Authorization") != "Bearer "+s.token {
+		if s.token != "" && !bearerTokenMatches(r.Header.Get("Authorization"), s.token) {
 			s.writeError(w, r, http.StatusUnauthorized, "authenticate", errors.New("missing or invalid bearer token"))
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func bearerTokenMatches(header, token string) bool {
+	const prefix = "Bearer "
+	if !strings.HasPrefix(header, prefix) {
+		return false
+	}
+	provided := strings.TrimPrefix(header, prefix)
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(token)) == 1
 }
 
 func (s *Server) withRequestID(next http.Handler) http.Handler {

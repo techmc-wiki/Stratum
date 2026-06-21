@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -95,7 +96,7 @@ func serve(listen, token, runtimeMode, runtimeRoot, runtimeProfiles, httpProxy, 
 		}
 		server := httptransport.NewServer(runtimeAgent, token, logger)
 		logger.Printf("listening on %s with %s supervision (auth=%t)", listen, runtimeMode, token != "")
-		return http.ListenAndServe(listen, server.Handler())
+		return serveHTTP(listen, server.Handler())
 	}
 
 	registry := runtimeprofile.Builtins()
@@ -126,10 +127,22 @@ func serve(listen, token, runtimeMode, runtimeRoot, runtimeProfiles, httpProxy, 
 
 	server := httptransport.NewServer(runtimeAgent, token, logger)
 	logger.Printf("listening on %s with %s supervision (auth=%t)", listen, runtimeMode, token != "")
-	if err := http.ListenAndServe(listen, server.Handler()); err != nil {
+	if err := serveHTTP(listen, server.Handler()); err != nil {
 		return err
 	}
 	return nil
+}
+
+func serveHTTP(listen string, handler http.Handler) error {
+	server := &http.Server{
+		Addr:              listen,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	return server.ListenAndServe()
 }
 
 func setHTTPProxy(proxyURL string) error {
@@ -138,8 +151,9 @@ func setHTTPProxy(proxyURL string) error {
 
 func registerWithController(controllerURL, token, listen, runtimeMode string, logger *log.Logger) error {
 	controllerURL = strings.TrimSuffix(controllerURL, "/")
+	client := &http.Client{Timeout: 30 * time.Second}
 	registerURL := controllerURL + "/v1/agents/register"
-	req, err := http.NewRequest("POST", registerURL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, registerURL, nil)
 	if err != nil {
 		return err
 	}
@@ -149,7 +163,7 @@ func registerWithController(controllerURL, token, listen, runtimeMode string, lo
 	}
 	req.Header.Set("X-Agent-Listen", listen)
 	req.Header.Set("X-Agent-Mode", runtimeMode)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("register request: %w", err)
 	}
@@ -164,14 +178,23 @@ func registerWithController(controllerURL, token, listen, runtimeMode string, lo
 		defer ticker.Stop()
 		for range ticker.C {
 			heartURL := controllerURL + "/v1/agents/heartbeat"
-			req, _ := http.NewRequest("POST", heartURL, nil)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, heartURL, nil)
+			if err != nil {
+				cancel()
+				logger.Printf("controller heartbeat request failed: %v", err)
+				continue
+			}
 			if token != "" {
 				req.Header.Set("Authorization", "Bearer "+token)
 			}
 			req.Header.Set("X-Agent-Listen", listen)
-			if resp, err := http.DefaultClient.Do(req); err == nil {
+			if resp, err := client.Do(req); err == nil {
 				resp.Body.Close()
+			} else {
+				logger.Printf("controller heartbeat failed: %v", err)
 			}
+			cancel()
 		}
 	}()
 	return nil
