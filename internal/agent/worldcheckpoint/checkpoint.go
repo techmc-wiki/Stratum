@@ -253,6 +253,9 @@ func (w *Worker) writeDir(zipWriter *zip.Writer, baseDir, targetDir string) erro
 		if !pathWithin(baseDir, fullPath) {
 			continue
 		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symlink rejected: %s", entry.Name())
+		}
 		relPath, err := filepath.Rel(baseDir, fullPath)
 		if err != nil {
 			return err

@@ -151,6 +151,33 @@ func TestWorkerRejectsWorldDirNotADirectory(t *testing.T) {
 	}
 }
 
+func TestWorkerRejectsSymlinkInWorldDir(t *testing.T) {
+	root := t.TempDir()
+	worker, err := NewWorker(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionRoot := filepath.Join(root, "sessions", "session-1")
+	worldDir := filepath.Join(sessionRoot, "work", "world")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(target, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(worldDir, "outside-link")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	_, err = worker.Create(context.Background(), CreateParams{
+		SessionRoot: sessionRoot,
+		WorldDir:    worldDir,
+	})
+	if err == nil || !strings.Contains(err.Error(), "symlink rejected") {
+		t.Fatalf("expected symlink rejection: %v", err)
+	}
+}
+
 func TestPathWithin(t *testing.T) {
 	tests := []struct {
 		root, candidate string
