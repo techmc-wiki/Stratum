@@ -7,6 +7,14 @@
         "gopls",
         "mcp"
       ]
+    },
+    "codegraph": {
+      "type": "local",
+      "command": [
+        "codegraph",
+        "serve",
+        "--mcp"
+      ]
     }
   }
 }
