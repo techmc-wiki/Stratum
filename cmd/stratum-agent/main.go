@@ -24,7 +24,6 @@ func main() {
 		}
 		os.Exit(1)
 	}
-	// TODO: add more agent subcommands as runtime supervision grows.
 }
 
 type usageError struct{ err error }
