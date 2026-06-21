@@ -2,9 +2,9 @@ package cli
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +21,7 @@ type commandRuntime struct {
 	agentURL         string
 	agentToken       string
 	agentTimeout     time.Duration
+	agentLocal       bool
 	store            *filesystem.Store
 	agentClient      agent.AgentClient
 	agentMode        string
@@ -48,22 +49,62 @@ func runCobra(args []string, stdout, stderr io.Writer) int {
 }
 
 func (r *commandRuntime) parseGlobalFlags(args []string) ([]string, int) {
-	for _, arg := range args {
-		if arg == "--help" || arg == "-h" || arg == "help" {
-			return args, 0
+	r.dataDirectory = defaultDataDirectory
+	r.artifactBlobRoot = defaultArtifactBlobRoot
+	r.agentTimeout = 10 * time.Minute
+	remaining := make([]string, 0, len(args))
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		name, value, hasValue := strings.Cut(arg, "=")
+		switch name {
+		case "--data-dir", "--artifact-blob-root", "--agent-url", "--agent-token", "--agent-timeout":
+			if !hasValue {
+				index++
+				if index >= len(args) {
+					fmt.Fprintf(r.stderr, "%s requires a value\n", name)
+					return nil, 2
+				}
+				value = args[index]
+			}
+			if code := r.setGlobalFlag(name, value); code != 0 {
+				return nil, code
+			}
+		case "--agent-local":
+			if !hasValue {
+				value = "true"
+			}
+			enabled, err := strconv.ParseBool(value)
+			if err != nil {
+				fmt.Fprintf(r.stderr, "%s must be a boolean\n", name)
+				return nil, 2
+			}
+			r.agentLocal = enabled
+		default:
+			remaining = append(remaining, arg)
 		}
 	}
-	flags := flag.NewFlagSet("stratum", flag.ContinueOnError)
-	flags.SetOutput(r.stderr)
-	flags.StringVar(&r.dataDirectory, "data-dir", defaultDataDirectory, "metadata data directory")
-	flags.StringVar(&r.artifactBlobRoot, "artifact-blob-root", defaultArtifactBlobRoot, "artifact blob storage root")
-	flags.StringVar(&r.agentURL, "agent-url", "", "agent HTTP endpoint; empty uses local fake")
-	flags.StringVar(&r.agentToken, "agent-token", "", "agent HTTP bearer token")
-	flags.DurationVar(&r.agentTimeout, "agent-timeout", 10*time.Minute, "agent HTTP request timeout")
-	if err := flags.Parse(args); err != nil {
-		return nil, 2
+	return remaining, 0
+}
+
+func (r *commandRuntime) setGlobalFlag(name, value string) int {
+	switch name {
+	case "--data-dir":
+		r.dataDirectory = value
+	case "--artifact-blob-root":
+		r.artifactBlobRoot = value
+	case "--agent-url":
+		r.agentURL = value
+	case "--agent-token":
+		r.agentToken = value
+	case "--agent-timeout":
+		timeout, err := time.ParseDuration(value)
+		if err != nil {
+			fmt.Fprintf(r.stderr, "parse --agent-timeout: %v\n", err)
+			return 2
+		}
+		r.agentTimeout = timeout
 	}
-	return flags.Args(), 0
+	return 0
 }
 
 type exitCodeError int
@@ -81,9 +122,10 @@ func newRootCommand(runtime *commandRuntime) *cobra.Command {
 	}
 	cmd.PersistentFlags().String("data-dir", runtime.dataDirectory, "metadata data directory")
 	cmd.PersistentFlags().String("artifact-blob-root", runtime.artifactBlobRoot, "artifact blob storage root")
-	cmd.PersistentFlags().String("agent-url", runtime.agentURL, "agent HTTP endpoint; empty uses local fake")
+	cmd.PersistentFlags().String("agent-url", runtime.agentURL, "agent HTTP endpoint")
 	cmd.PersistentFlags().String("agent-token", runtime.agentToken, "agent HTTP bearer token")
 	cmd.PersistentFlags().Duration("agent-timeout", runtime.agentTimeout, "agent HTTP request timeout")
+	cmd.PersistentFlags().Bool("agent-local", runtime.agentLocal, "use an in-process fake agent")
 
 	cmd.AddCommand(newProjectsCommand())
 	cmd.AddCommand(newRoomsCommand())
@@ -174,7 +216,7 @@ func (r *commandRuntime) ensureAgent() int {
 	if r.agentClient != nil {
 		return 0
 	}
-	client, mode, err := buildAgentClient(r.agentURL, r.agentToken, r.agentTimeout)
+	client, mode, err := buildAgentClient(r.agentURL, r.agentToken, r.agentTimeout, r.agentLocal)
 	if err != nil {
 		fmt.Fprintf(r.stderr, "configure agent client: %v\n", err)
 		return 2

@@ -174,7 +174,7 @@ func TestSessionsMCDRConfigStubInspectReadOnly(t *testing.T) {
 
 func TestSessionsMCDRConfigStubRequiresID(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"sessions", "mcdr-config-stub", "inspect"}, &stdout, &stderr)
+	code := Run([]string{"--agent-local", "sessions", "mcdr-config-stub", "inspect"}, &stdout, &stderr)
 	if code == 0 {
 		t.Fatal("expected non-zero exit when --id missing")
 	}

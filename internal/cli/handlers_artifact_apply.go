@@ -203,9 +203,12 @@ func artifactApplyExecute(ctx context.Context, store *filesystem.Store, agentCli
 	return 0
 }
 
-func buildAgentClient(rawURL, token string, timeout time.Duration) (agent.AgentClient, string, error) {
+func buildAgentClient(rawURL, token string, timeout time.Duration, useLocal bool) (agent.AgentClient, string, error) {
 	if strings.TrimSpace(rawURL) == "" {
-		return local.NewFake(), "local", nil
+		if useLocal {
+			return local.NewFake(), "local", nil
+		}
+		return nil, "", fmt.Errorf("requires --agent-url unless --agent-local is set")
 	}
 	client, err := httptransport.NewClient(rawURL, token, timeout)
 	if err != nil {

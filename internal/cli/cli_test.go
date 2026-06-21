@@ -272,7 +272,7 @@ func TestCLIManualMarkStoppedRequiresActorAndReason(t *testing.T) {
 		{"sessions", "reconcile", "mark-stopped", "--id", "session-1", "--actor", "actor-1"},
 	} {
 		var stdout, stderr bytes.Buffer
-		code := Run(append([]string{"--data-dir", filepath.Join(t.TempDir(), "data")}, args...), &stdout, &stderr)
+		code := Run(append([]string{"--data-dir", filepath.Join(t.TempDir(), "data"), "--agent-local"}, args...), &stdout, &stderr)
 		if code != 2 || !strings.Contains(stderr.String(), "--id, --actor, and --reason are required") {
 			t.Fatalf("args=%v code=%d stderr=%q", args, code, stderr.String())
 		}
@@ -414,7 +414,7 @@ func TestCLIManualMarkCrashedUnreachableAgentStillSucceeds(t *testing.T) {
 	setupTestProjectRoomEnvironment(t, dataDirectory)
 	commands := [][]string{
 		{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
-		{"--data-dir", dataDirectory, "sessions", "start", "--id", "session-1", "--actor", "actor-1"},
+		{"--data-dir", dataDirectory, "--agent-local", "sessions", "start", "--id", "session-1", "--actor", "actor-1"},
 	}
 	for _, command := range commands {
 		stdout.Reset()
@@ -463,8 +463,8 @@ func TestCLIManualStopRuntimeUnreachableAgentFailsWithoutStateChange(t *testing.
 	setupTestProjectRoomEnvironment(t, dataDirectory)
 	commands := [][]string{
 		{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
-		{"--data-dir", dataDirectory, "sessions", "prepare", "--id", "session-1", "--actor", "actor-1"},
-		{"--data-dir", dataDirectory, "sessions", "start", "--id", "session-1", "--actor", "actor-1"},
+		{"--data-dir", dataDirectory, "--agent-local", "sessions", "prepare", "--id", "session-1", "--actor", "actor-1"},
+		{"--data-dir", dataDirectory, "--agent-local", "sessions", "start", "--id", "session-1", "--actor", "actor-1"},
 	}
 	for _, command := range commands {
 		stdout.Reset()
@@ -548,7 +548,7 @@ func TestCheckpointListAndGet(t *testing.T) {
 	setupTestProjectRoomEnvironment(t, dataDirectory)
 	commands := [][]string{
 		{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
-		{"--data-dir", dataDirectory, "checkpoints", "create", "--id", "checkpoint-1", "--session", "session-1", "--actor", "test-actor", "--notes", "before test"},
+		{"--data-dir", dataDirectory, "--agent-local", "checkpoints", "create", "--id", "checkpoint-1", "--session", "session-1", "--actor", "test-actor", "--notes", "before test"},
 	}
 	for _, command := range commands {
 		stdout.Reset()
@@ -592,7 +592,7 @@ func TestCheckpointCreateRejectsUnorchestratedConsistencyLevel(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	code := Run([]string{"--data-dir", dataDirectory, "checkpoints", "create", "--id", "checkpoint-1", "--session", "session-1", "--actor", "test-actor", "--consistency-level", "plugin_backup"}, &stdout, &stderr)
+	code := Run([]string{"--data-dir", dataDirectory, "--agent-local", "checkpoints", "create", "--id", "checkpoint-1", "--session", "session-1", "--actor", "test-actor", "--consistency-level", "plugin_backup"}, &stdout, &stderr)
 	if code != 2 || !strings.Contains(stderr.String(), "unsupported") {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
@@ -878,7 +878,7 @@ func TestCLIArtifactCreateCannotApproveOrStageWithoutPayload(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "staging", "plan", "--session", "session-1", "--artifact", "artifact-1", "--actor", "actor-1", "--name", "test-artifact.jar"}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "status=rejected") {
+	if code := Run([]string{"--data-dir", dataDirectory, "--agent-local", "artifacts", "staging", "plan", "--session", "session-1", "--artifact", "artifact-1", "--actor", "actor-1", "--name", "test-artifact.jar"}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "status=rejected") {
 		t.Fatalf("pending staging: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 	stdout.Reset()
@@ -1289,7 +1289,7 @@ func TestCLIArtifactStagingPlanListAndInspect(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"--data-dir", dataDirectory, "--artifact-blob-root", blobRoot, "artifacts", "staging", "plan", "--session", "session-1", "--artifact", "artifact-1", "--actor", "actor-1", "--name", "mods/test.jar"}, &stdout, &stderr); code != 0 {
+	if code := Run([]string{"--data-dir", dataDirectory, "--artifact-blob-root", blobRoot, "--agent-local", "artifacts", "staging", "plan", "--session", "session-1", "--artifact", "artifact-1", "--actor", "actor-1", "--name", "mods/test.jar"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("plan: code=%d stderr=%q", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "status=planned") || !strings.Contains(stdout.String(), "No payload was copied") {
@@ -1301,7 +1301,7 @@ func TestCLIArtifactStagingPlanListAndInspect(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "staging", "list", "--session", "session-1"}, &stdout, &stderr); code != 0 {
+	if code := Run([]string{"--data-dir", dataDirectory, "--agent-local", "artifacts", "staging", "list", "--session", "session-1"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("list: code=%d stderr=%q", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), plans[0].ID+"\tsession-1\tartifact-1\tartifact\t"+filepath.Clean("mods/test.jar")+"\tplanned") {
@@ -1309,7 +1309,7 @@ func TestCLIArtifactStagingPlanListAndInspect(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"--data-dir", dataDirectory, "artifacts", "staging", "inspect", "--id", plans[0].ID}, &stdout, &stderr); code != 0 {
+	if code := Run([]string{"--data-dir", dataDirectory, "--agent-local", "artifacts", "staging", "inspect", "--id", plans[0].ID}, &stdout, &stderr); code != 0 {
 		t.Fatalf("inspect: code=%d stderr=%q", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "artifact=artifact-1") || !strings.Contains(stdout.String(), "target="+filepath.Clean("mods/test.jar")) {
@@ -1333,7 +1333,7 @@ func TestCLIArtifactStagingMaterialize(t *testing.T) {
 	}
 	server := httptest.NewServer(httptransport.NewServer(runtime, "", nil).Handler())
 	defer server.Close()
-	base := []string{"--data-dir", dataDirectory, "--artifact-blob-root", blobRoot}
+	base := []string{"--data-dir", dataDirectory, "--artifact-blob-root", blobRoot, "--agent-local"}
 	_ = ensureTestEnvironment(dataDirectory)
 	commands := [][]string{
 		{"projects", "create", "--id", "project-1", "--name", "Project"},
@@ -1514,7 +1514,7 @@ func TestCLIArtifactStagingMaterialize(t *testing.T) {
 
 func TestCLIArtifactStagingMaterializeRequiresActorAndAgentURL(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	base := []string{"--data-dir", filepath.Join(t.TempDir(), "data"), "artifacts", "staging", "materialize"}
+	base := []string{"--data-dir", filepath.Join(t.TempDir(), "data"), "--agent-local", "artifacts", "staging", "materialize"}
 	if code := Run(append(append([]string{}, base...), "--plan", "plan-1"), &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--actor") {
 		t.Fatalf("actor code=%d stderr=%q", code, stderr.String())
 	}
@@ -1533,7 +1533,7 @@ func TestCLIArtifactStagingMaterializeRequiresActorAndAgentURL(t *testing.T) {
 func TestCLISessionArtifactsRequiresIDAndAgentURL(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	dataDirectory := filepath.Join(t.TempDir(), "data")
-	if code := Run([]string{"--data-dir", dataDirectory, "sessions", "artifacts"}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--id") {
+	if code := Run([]string{"--data-dir", dataDirectory, "--agent-local", "sessions", "artifacts"}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--id") {
 		t.Fatalf("id code=%d stderr=%q", code, stderr.String())
 	}
 	stdout.Reset()
@@ -1543,7 +1543,7 @@ func TestCLISessionArtifactsRequiresIDAndAgentURL(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"--data-dir", dataDirectory, "sessions", "artifacts", "inspect", "--id", "session-1"}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--plan") {
+	if code := Run([]string{"--data-dir", dataDirectory, "--agent-local", "sessions", "artifacts", "inspect", "--id", "session-1"}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--plan") {
 		t.Fatalf("plan code=%d stderr=%q", code, stderr.String())
 	}
 	stdout.Reset()
@@ -1648,9 +1648,9 @@ func TestLifecycleCLIUpdatesPersistentSession(t *testing.T) {
 	setupTestProjectRoomEnvironment(t, dataDirectory)
 	commands := [][]string{
 		{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
-		{"--data-dir", dataDirectory, "sessions", "start", "--id", "session-1", "--actor", "actor-1"},
-		{"--data-dir", dataDirectory, "sessions", "freeze", "--id", "session-1", "--actor", "actor-1"},
-		{"--data-dir", dataDirectory, "sessions", "unfreeze", "--id", "session-1", "--actor", "actor-1"},
+		{"--data-dir", dataDirectory, "--agent-local", "sessions", "start", "--id", "session-1", "--actor", "actor-1"},
+		{"--data-dir", dataDirectory, "--agent-local", "sessions", "freeze", "--id", "session-1", "--actor", "actor-1"},
+		{"--data-dir", dataDirectory, "--agent-local", "sessions", "unfreeze", "--id", "session-1", "--actor", "actor-1"},
 	}
 	for _, command := range commands {
 		stdout.Reset()
@@ -1701,7 +1701,7 @@ func TestAgentAndSessionInspectionCommands(t *testing.T) {
 	setupTestProjectRoomEnvironment(t, dataDirectory)
 	commands := [][]string{
 		{"--data-dir", dataDirectory, "sessions", "create", "--id", "session-1", "--project", "project-1", "--room", "room-1"},
-		{"--data-dir", dataDirectory, "sessions", "start", "--id", "session-1", "--actor", "actor-1"},
+		{"--data-dir", dataDirectory, "--agent-local", "sessions", "start", "--id", "session-1", "--actor", "actor-1"},
 	}
 	for _, command := range commands {
 		stdout.Reset()
@@ -1713,7 +1713,7 @@ func TestAgentAndSessionInspectionCommands(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"--data-dir", dataDirectory, "agents", "list"}, &stdout, &stderr); code != 0 {
+	if code := Run([]string{"--data-dir", dataDirectory, "--agent-local", "agents", "list"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("agents list: %s", stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "local\tavailable\tlocal://agent/local") {
@@ -1722,7 +1722,7 @@ func TestAgentAndSessionInspectionCommands(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"--data-dir", dataDirectory, "agents", "inspect", "--id", "local"}, &stdout, &stderr); code != 0 {
+	if code := Run([]string{"--data-dir", dataDirectory, "--agent-local", "agents", "inspect", "--id", "local"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("agents inspect: %s", stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "cpu=8") || !strings.Contains(stdout.String(), "memory=2048/16384MB") || !strings.Contains(stdout.String(), "disk=32768/262144MB") || !strings.Contains(stdout.String(), "capabilities=") {
@@ -1731,7 +1731,7 @@ func TestAgentAndSessionInspectionCommands(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"--data-dir", dataDirectory, "sessions", "inspect", "--id", "session-1"}, &stdout, &stderr); code != 0 {
+	if code := Run([]string{"--data-dir", dataDirectory, "--agent-local", "sessions", "inspect", "--id", "session-1"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("session inspect: %s", stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "project=project-1") || !strings.Contains(stdout.String(), "room=room-1") || !strings.Contains(stdout.String(), "type=shared") || !strings.Contains(stdout.String(), "state=running") || !strings.Contains(stdout.String(), "agent=local") || !strings.Contains(stdout.String(), "agentStatus=success") || !strings.Contains(stdout.String(), "runtimeMessage=\"running\"") {
@@ -1740,7 +1740,7 @@ func TestAgentAndSessionInspectionCommands(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"--data-dir", dataDirectory, "sessions", "logs", "--id", "session-1"}, &stdout, &stderr); code != 0 {
+	if code := Run([]string{"--data-dir", dataDirectory, "--agent-local", "sessions", "logs", "--id", "session-1"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("session logs: %s", stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "no real JVM process was started") {
@@ -1749,7 +1749,7 @@ func TestAgentAndSessionInspectionCommands(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"--data-dir", dataDirectory, "agents", "resources", "--id", "local"}, &stdout, &stderr); code != 0 {
+	if code := Run([]string{"--data-dir", dataDirectory, "--agent-local", "agents", "resources", "--id", "local"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("agent resources: %s", stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "disk=32768/262144MB") {
