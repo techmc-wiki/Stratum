@@ -47,11 +47,21 @@ func TestVersionCacheStopPreventsPolling(t *testing.T) {
 	cache := NewVersionCache(50 * time.Millisecond)
 	cache.Start()
 
-	time.Sleep(150 * time.Millisecond)
-	first := cache.Latest()
+	// Wait for at least one successful poll so first is non-empty.
+	var first string
+	for range 30 {
+		time.Sleep(50 * time.Millisecond)
+		first = cache.Latest()
+		if first != "" {
+			break
+		}
+	}
+	if first == "" {
+		t.Fatal("cache did not populate after start")
+	}
 
 	cache.Stop()
-	time.Sleep(150 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
 	if cache.Latest() != first {
 		t.Fatalf("version changed after stop: %q -> %q", first, cache.Latest())

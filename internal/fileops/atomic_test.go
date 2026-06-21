@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -23,8 +24,10 @@ func TestWriteFileAtomicWritesPayloadAndPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0o640 {
-		t.Fatalf("permissions=%#o, want 0640", got)
+	if runtime.GOOS != "windows" {
+		if got := info.Mode().Perm(); got != 0o640 {
+			t.Fatalf("permissions=%#o, want 0640", got)
+		}
 	}
 	matches, err := filepath.Glob(filepath.Join(filepath.Dir(target), ".test-*.tmp"))
 	if err != nil {
