@@ -88,7 +88,8 @@ func Create(ctx context.Context, repo Repository, req CreateRequest) (checkpoint
 	default:
 		return checkpoint.Checkpoint{}, fmt.Errorf(
 			"checkpoint consistency level %q requires checkpoint orchestration; supported: %q, %q, %q, %q",
-			consistencyLevel, consistency.LevelMetadataOnly, consistency.LevelStopped, consistency.LevelBestEffort, consistency.LevelCommandQuiesced)
+			consistencyLevel, consistency.LevelMetadataOnly, consistency.LevelStopped, consistency.LevelBestEffort, consistency.LevelCommandQuiesced,
+		)
 	}
 	cp, err := checkpoint.New(buildCheckpointParams(ctx, repo, req, sess, consistencyLevel))
 	if err != nil {

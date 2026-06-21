@@ -731,16 +731,16 @@ func TestCLICreateAndRestorePipelineE2E(t *testing.T) {
 	sessionRoot := filepath.Join(runtimeRoot, "sessions", "session-create")
 	workDir := filepath.Join(sessionRoot, "work")
 	worldDir := filepath.Join(workDir, "world")
-	if err := os.MkdirAll(worldDir, 0755); err != nil {
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(worldDir, "level.dat"), []byte("e2e-world-data"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(worldDir, "level.dat"), []byte("e2e-world-data"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(worldDir, "region"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(worldDir, "region"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(worldDir, "region", "r.0.0.mca"), []byte("region-chunk-data"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(worldDir, "region", "r.0.0.mca"), []byte("region-chunk-data"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	snapResult, err := pa.CreateWorldSnapshot(context.Background(), agent.WorldCheckpointRequest{
@@ -756,7 +756,7 @@ func TestCLICreateAndRestorePipelineE2E(t *testing.T) {
 		t.Fatal("SHA256 should be set")
 	}
 	targetRoot := filepath.Join(runtimeRoot, "sessions", "session-restore")
-	if err := os.MkdirAll(filepath.Join(targetRoot, "work"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(targetRoot, "work"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	restoreResult, err := pa.RestoreWorldSnapshot(context.Background(), agent.WorldCheckpointRestoreRequest{

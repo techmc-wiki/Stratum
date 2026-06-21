@@ -21,8 +21,10 @@ func (fakePythonDetector) SelectForMCDR(context.Context) (agentpython.Installati
 
 type fakePythonManager struct{}
 
-var fakePythonManagerLastVenvType agentpython.ManagerType
-var fakePythonManagerLastInstallType agentpython.ManagerType
+var (
+	fakePythonManagerLastVenvType    agentpython.ManagerType
+	fakePythonManagerLastInstallType agentpython.ManagerType
+)
 
 func (fakePythonManager) CreateVenv(_ context.Context, req agentpython.VenvRequest) (agentpython.VenvResult, error) {
 	fakePythonManagerLastVenvType = req.ManagerType

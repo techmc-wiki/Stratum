@@ -197,7 +197,7 @@ func TestGetSessionRuntimeStatusWithWorldProfile(t *testing.T) {
 	ctx := context.Background()
 	sessionRoot := filepath.Join(tmp, "sessions", "test-session")
 	workDir := filepath.Join(sessionRoot, "work")
-	if err := os.MkdirAll(workDir, 0755); err != nil {
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	serverProps := `level-seed=12345
@@ -207,7 +207,7 @@ view-distance=10
 generate-structures=false
 spawn-protection=16
 `
-	if err := os.WriteFile(filepath.Join(workDir, "server.properties"), []byte(serverProps), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(workDir, "server.properties"), []byte(serverProps), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	status, err := supervisor.GetSessionRuntimeStatus(ctx, "test-session")

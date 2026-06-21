@@ -37,8 +37,10 @@ func TestMCDRSupervisorStartStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{mcdrLayout.MCDRRoot, mcdrLayout.MCDRConfigDir, mcdrLayout.MCDRPluginsDir,
-		mcdrLayout.MCDRServerDir, mcdrLayout.MCDRLogsDir, mcdrLayout.MCDRTmpDir} {
+	for _, path := range []string{
+		mcdrLayout.MCDRRoot, mcdrLayout.MCDRConfigDir, mcdrLayout.MCDRPluginsDir,
+		mcdrLayout.MCDRServerDir, mcdrLayout.MCDRLogsDir, mcdrLayout.MCDRTmpDir,
+	} {
 		if info, err := os.Stat(path); err != nil || !info.IsDir() {
 			t.Fatalf("MCDR directory %q missing: info=%+v err=%v", path, info, err)
 		}

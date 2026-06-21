@@ -9,8 +9,10 @@ import (
 	"github.com/stratummc/stratum/internal/agent/process"
 )
 
-const launchPlanManifestName = "mcdr-launch-plan.json"
-const launchPlanNotes = "Stratum MCDR launch plan; planning only, no MCDR or Minecraft process was started."
+const (
+	launchPlanManifestName = "mcdr-launch-plan.json"
+	launchPlanNotes        = "Stratum MCDR launch plan; planning only, no MCDR or Minecraft process was started."
+)
 
 // Status constants for LaunchPlan.
 const (
