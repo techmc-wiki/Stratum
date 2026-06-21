@@ -136,7 +136,7 @@ func ExecuteArtifactApply(ctx context.Context, runtimeRoot string, req agent.Art
 		return result, nil
 	}
 	targetPath := filepath.Join(targetRoot, filepath.Clean(req.TargetRelativePath))
-	if !strings.HasPrefix(targetPath, targetRoot) {
+	if !pathWithin(targetRoot, targetPath) {
 		result.Issues = append(result.Issues, "computed target escapes target root")
 		return result, nil
 	}
@@ -417,7 +417,7 @@ func VerifyAppliedArtifact(ctx context.Context, runtimeRoot, sessionID, applyPla
 	}
 	result := AppliedArtifactVerification{SessionID: sessionID, ApplyPlanID: applyPlanID, ArtifactID: record.ArtifactID, StagingPlanID: record.StagingPlanID, TargetRoot: record.TargetRoot, TargetRelativePath: record.TargetRelativePath, TargetRuntimeRelativePath: record.TargetRuntimeRelativePath, PayloadAlgorithm: record.PayloadAlgorithm, ExpectedHash: record.PayloadHash, PayloadSize: record.PayloadSize, VerifiedAt: at}
 	targetPath := filepath.Join(layout.SessionRoot, record.TargetRuntimeRelativePath)
-	if !strings.HasPrefix(targetPath, layout.SessionRoot) {
+	if !pathWithin(layout.SessionRoot, targetPath) {
 		result.Status = "error"
 		result.ErrorMessage = "target path escapes session runtime layout"
 		return result, nil

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -389,7 +390,7 @@ func (a *ProcessAgent) CreateWorldSnapshot(ctx context.Context, request agent.Wo
 	if worldRel == "" {
 		worldRel = "world"
 	}
-	if filepath.IsAbs(worldRel) || strings.Contains(worldRel, "..") || worldRel == "." {
+	if !safeRelativePath(worldRel) {
 		return agent.WorldCheckpointResult{}, agent.Error{AgentID: a.id, Operation: "create-world-snapshot", Message: "world dir relative path must be safe"}
 	}
 	sessionLayout, err := agentprocess.NewSessionRuntimeLayout(a.supervisor.RuntimeRoot(), request.SessionID)
@@ -437,7 +438,7 @@ func (a *ProcessAgent) RestoreWorldSnapshot(ctx context.Context, request agent.W
 	if worldRel == "" {
 		worldRel = "world_restored"
 	}
-	if filepath.IsAbs(worldRel) || strings.Contains(worldRel, "..") || worldRel == "." {
+	if !safeRelativePath(worldRel) {
 		return agent.WorldCheckpointRestoreResult{}, agent.Error{AgentID: a.id, Operation: agent.OperationRestoreWorldSnapshot, Message: "world dir relative path must be safe"}
 	}
 	snapshotPath := filepath.Join(a.supervisor.RuntimeRoot(), filepath.FromSlash(relativePath))
@@ -478,6 +479,19 @@ func (a *ProcessAgent) RestoreWorldSnapshot(ctx context.Context, request agent.W
 		RestoredDir: restoreResult.RestoredDir,
 		RestoredAt:  restoredAt,
 	}, nil
+}
+
+func safeRelativePath(value string) bool {
+	normalized := strings.ReplaceAll(strings.TrimSpace(value), `\`, "/")
+	if normalized == "" || path.IsAbs(normalized) || filepath.IsAbs(filepath.FromSlash(normalized)) || hasWindowsVolumePrefix(normalized) {
+		return false
+	}
+	clean := path.Clean(normalized)
+	return clean != "." && clean != ".." && !strings.HasPrefix(clean, "../")
+}
+
+func hasWindowsVolumePrefix(value string) bool {
+	return len(value) >= 2 && ((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) && value[1] == ':'
 }
 
 func (a *ProcessAgent) ReadSessionFile(_ context.Context, sessionID, relativePath string) ([]byte, error) {
