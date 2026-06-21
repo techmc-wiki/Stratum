@@ -77,9 +77,17 @@ func serve(listen, dataDir, agentURL, agentToken string) error {
 		logger.Printf("default agent client configured: %s", agentURL)
 	}
 
-	server := httpapi.NewServerWithServices(store, agentClient)
+	server := httpapi.NewServerWithServices(store, agentClient).WithToken(agentToken)
 	server.WithAgentRegistry(registry)
 
 	logger.Printf("listening on %s (data-dir=%s)", listen, dataDir)
-	return http.ListenAndServe(listen, server.Handler())
+	httpServer := &http.Server{
+		Addr:              listen,
+		Handler:           server.AuthenticatedHandler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	return httpServer.ListenAndServe()
 }

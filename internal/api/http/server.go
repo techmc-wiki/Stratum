@@ -1,8 +1,11 @@
 package httpapi
 
 import (
+	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -16,6 +19,7 @@ type Server struct {
 	repo         checkpointsvc.Repository
 	agentClient  agent.AgentClient
 	agentService *agentregistry.Service
+	token        string
 }
 
 type CheckpointRestoreRequest struct {
@@ -56,6 +60,33 @@ func (s *Server) WithAgentRegistry(svc *agentregistry.Service) *Server {
 
 func (s *Server) Handler() http.Handler { return s.mux }
 
+func (s *Server) WithToken(token string) *Server {
+	s.token = token
+	return s
+}
+
+func (s *Server) AuthenticatedHandler() http.Handler {
+	return s.withAuth(s.mux)
+}
+
+func (s *Server) withAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if s.token != "" && !bearerTokenMatches(request.Header.Get("Authorization"), s.token) {
+			writeError(writer, http.StatusUnauthorized, "missing or invalid bearer token")
+			return
+		}
+		next.ServeHTTP(writer, request)
+	})
+}
+
+func bearerTokenMatches(header, token string) bool {
+	const prefix = "Bearer "
+	if !strings.HasPrefix(header, prefix) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(strings.TrimPrefix(header, prefix)), []byte(token)) == 1
+}
+
 func (s *Server) restoreCheckpoint(writer http.ResponseWriter, request *http.Request) {
 	if s.repo == nil || s.agentClient == nil {
 		writeError(writer, http.StatusServiceUnavailable, "checkpoint restore service unavailable")
@@ -67,6 +98,11 @@ func (s *Server) restoreCheckpoint(writer http.ResponseWriter, request *http.Req
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&body); err != nil {
 		writeError(writer, http.StatusBadRequest, "decode request body: "+err.Error())
+		return
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		writeError(writer, http.StatusBadRequest, "decode request body: multiple JSON values")
 		return
 	}
 
@@ -115,7 +151,9 @@ func validateCheckpointRestoreRequest(request CheckpointRestoreRequest) error {
 func writeJSON(writer http.ResponseWriter, status int, value any) {
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(status)
-	_ = json.NewEncoder(writer).Encode(value)
+	if err := json.NewEncoder(writer).Encode(value); err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func writeError(writer http.ResponseWriter, status int, message string) {

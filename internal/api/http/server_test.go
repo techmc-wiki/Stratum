@@ -28,6 +28,23 @@ func TestHealth(t *testing.T) {
 	}
 }
 
+func TestAuthenticatedHandlerRequiresToken(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	response := httptest.NewRecorder()
+	NewServer().WithToken("secret").AuthenticatedHandler().ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	request.Header.Set("Authorization", "Bearer secret")
+	response = httptest.NewRecorder()
+	NewServer().WithToken("secret").AuthenticatedHandler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("authorized status = %d", response.Code)
+	}
+}
+
 func TestRestoreCheckpointSuccess(t *testing.T) {
 	repo := &mockCheckpointRepo{
 		sessions: map[string]session.Session{
