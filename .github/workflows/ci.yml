@@ -20,33 +20,27 @@ jobs:
           submodules: recursive
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: '1.23.x'
-          cache: false
+          go-version: '1.26'
+          cache: true
 
-      - name: Patch go.mod for CI compatibility
-        run: |
-          # Patch go directives to match available Go version
-          sed -i 's/^go 1\.25\.8$/go 1.23/' go.mod
-          sed -i 's/^go 1\.25\.8$/go 1.23/' tools/lucy/go.mod
-          
-          # Regenerate go.mod and go.sum with available Go version
-          # This will fetch compatible dependency versions
-          go get -d ./...
-          go mod tidy
-          
       - name: Download dependencies
         run: go mod download
+
+      - name: Verify modules are tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum tools/lucy/go.mod tools/lucy/go.sum
 
       - name: Vet
         run: go vet ./...
 
       - name: Test
-        run: |
-          echo "Temporarily skipping tests due to Go version incompatibility"
-          echo "Tests require Go 1.25.8 dependencies that are not available in Go 1.23"
-          # go test -v -count=1 ./...
+        run: go test -race -shuffle=on -count=1 ./...
+
+      - name: Vulnerability scan
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
       - name: Build Linux amd64 binaries
         env:
@@ -58,9 +52,10 @@ jobs:
           go build -trimpath -o dist/linux-amd64/stratum ./cmd/stratum
           go build -trimpath -o dist/linux-amd64/stratum-agent ./cmd/stratum-agent
           go build -trimpath -o dist/linux-amd64/stratum-controller ./cmd/stratum-controller
+          go build -trimpath -o dist/linux-amd64/lucy ./cmd/lucy
 
       - name: Upload Linux amd64 binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: stratum-linux-amd64
           path: dist/linux-amd64/
