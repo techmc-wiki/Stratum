@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stratummc/stratum/internal/safepath"
 )
 
 func TestSessionRuntimeLayoutPathsAndCreate(t *testing.T) {
@@ -52,7 +54,7 @@ func TestMCDRRuntimeLayoutPathsAndCreate(t *testing.T) {
 	if mcdr.MCDRConfigDir != filepath.Join(mcdr.MCDRRoot, "config") {
 		t.Fatalf("mcdr config=%q", mcdr.MCDRConfigDir)
 	}
-	if !pathWithin(root, mcdr.MCDRRoot) || !pathWithin(root, mcdr.MCDRServerDir) {
+	if !safepath.Within(root, mcdr.MCDRRoot) || !safepath.Within(root, mcdr.MCDRServerDir) {
 		t.Fatal("MCDR paths escape runtime root")
 	}
 	if err := mcdr.Create(); err != nil {

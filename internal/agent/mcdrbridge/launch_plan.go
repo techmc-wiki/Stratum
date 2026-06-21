@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/stratummc/stratum/internal/agent/process"
+	"github.com/stratummc/stratum/internal/fileops"
+	"github.com/stratummc/stratum/internal/safepath"
 )
 
 // LaunchCommand describes how MCDR should be launched.
@@ -96,12 +98,12 @@ func writeLaunchPlanManifest(layout process.MCDRRuntimeLayout, plan LaunchPlan) 
 		return "", fmt.Errorf("MCDR launch plan session does not match runtime layout")
 	}
 
-	if !pathWithin(layout.SessionLayout.RuntimeRoot, layout.MCDRRoot) {
+	if !safepath.Within(layout.SessionLayout.RuntimeRoot, layout.MCDRRoot) {
 		return "", fmt.Errorf("MCDR root escapes runtime root")
 	}
 
 	manifestPath := filepath.Join(layout.MCDRRoot, launchPlanManifestName)
-	if !pathWithin(layout.MCDRRoot, manifestPath) {
+	if !safepath.Within(layout.MCDRRoot, manifestPath) {
 		return "", fmt.Errorf("launch-plan manifest path escapes MCDR root")
 	}
 
@@ -119,37 +121,8 @@ func writeLaunchPlanManifest(layout process.MCDRRuntimeLayout, plan LaunchPlan) 
 		return "", fmt.Errorf("inspect launch-plan manifest: %w", err)
 	}
 
-	payload, err := json.MarshalIndent(plan, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("serialize launch plan: %w", err)
-	}
-	payload = append(payload, '\n')
-
-	tmp, err := os.CreateTemp(layout.MCDRRoot, ".mcdr-launch-plan-*.tmp")
-	if err != nil {
-		return "", fmt.Errorf("create temporary launch-plan manifest: %w", err)
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-
-	if err := tmp.Chmod(0o640); err != nil {
-		_ = tmp.Close()
-		return "", fmt.Errorf("set launch-plan manifest permissions: %w", err)
-	}
-	if _, err := tmp.Write(payload); err != nil {
-		_ = tmp.Close()
+	if err := fileops.WriteJSONAtomic(manifestPath, plan, 0o640, 0o750, ".mcdr-launch-plan-*.tmp"); err != nil {
 		return "", fmt.Errorf("write launch-plan manifest: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return "", fmt.Errorf("sync launch-plan manifest: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return "", fmt.Errorf("close launch-plan manifest: %w", err)
-	}
-
-	if err := os.Rename(tmpPath, manifestPath); err != nil {
-		return "", fmt.Errorf("replace launch-plan manifest: %w", err)
 	}
 
 	return manifestPath, nil
@@ -165,7 +138,7 @@ func inspectLaunchPlanManifest(layout process.MCDRRuntimeLayout) LaunchPlanStatu
 	manifestPath := filepath.Join(layout.MCDRRoot, launchPlanManifestName)
 	result.Path = manifestPath
 
-	if !pathWithin(layout.MCDRRoot, manifestPath) {
+	if !safepath.Within(layout.MCDRRoot, manifestPath) {
 		result.Issues = append(result.Issues, "launch-plan manifest path escapes MCDR root")
 		return result
 	}

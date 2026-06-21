@@ -22,6 +22,7 @@ import (
 	"github.com/stratummc/stratum/internal/agent/serverjar"
 	"github.com/stratummc/stratum/internal/agent/serverproperties"
 	"github.com/stratummc/stratum/internal/integration/lucy"
+	"github.com/stratummc/stratum/internal/safepath"
 )
 
 type Status string
@@ -646,7 +647,7 @@ func (s *Supervisor) resolveWorkingDir(layout SessionRuntimeLayout, relative str
 		return "", errors.New("terminal runtime working directory escapes runtime root")
 	}
 	resolved := filepath.Join(s.runtimeRoot, clean)
-	if !pathWithin(s.runtimeRoot, resolved) {
+	if !safepath.Within(s.runtimeRoot, resolved) {
 		return "", errors.New("terminal runtime working directory escapes runtime root")
 	}
 	info, err := os.Stat(resolved)

@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/stratummc/stratum/internal/fileops"
+	"github.com/stratummc/stratum/internal/safepath"
 )
 
 const (
@@ -105,7 +108,7 @@ func stagingPath(root, name string) (string, error) {
 	}
 	root = filepath.Clean(root)
 	path := filepath.Join(root, filepath.Clean(name))
-	if !pathWithin(root, path) {
+	if !safepath.Within(root, path) {
 		return "", fmt.Errorf("staging path %q escapes staging root", name)
 	}
 	return path, nil
@@ -139,32 +142,8 @@ func stagedItem(kind, id, name, path string, at time.Time) (StagedRuntimeItem, e
 }
 
 func writeStagingManifestAtomic(path string, value StagingManifest) error {
-	directory := filepath.Dir(path)
-	if err := os.MkdirAll(directory, runtimeDirectoryPermissions); err != nil {
-		return fmt.Errorf("create staging manifest directory: %w", err)
-	}
-	temporary, err := os.CreateTemp(directory, ".stratum-staging-*.tmp")
-	if err != nil {
-		return fmt.Errorf("create staging manifest temporary file: %w", err)
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-
-	encoder := json.NewEncoder(temporary)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(value); err != nil {
-		_ = temporary.Close()
-		return fmt.Errorf("encode staging manifest: %w", err)
-	}
-	if err := temporary.Sync(); err != nil {
-		_ = temporary.Close()
-		return fmt.Errorf("sync staging manifest: %w", err)
-	}
-	if err := temporary.Close(); err != nil {
-		return fmt.Errorf("close staging manifest: %w", err)
-	}
-	if err := os.Rename(temporaryPath, path); err != nil {
-		return fmt.Errorf("replace staging manifest: %w", err)
+	if err := fileops.WriteJSONAtomic(path, value, 0o640, runtimeDirectoryPermissions, ".stratum-staging-*.tmp"); err != nil {
+		return fmt.Errorf("write staging manifest: %w", err)
 	}
 	return nil
 }

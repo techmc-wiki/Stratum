@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stratummc/stratum/internal/safepath"
 )
 
 func TestWorkerCreatesSnapshotOfWorldDir(t *testing.T) {
@@ -191,7 +193,7 @@ func TestPathWithin(t *testing.T) {
 		{"/a", "/aa", false},
 	}
 	for _, tt := range tests {
-		got := pathWithin(tt.root, tt.candidate)
+		got := safepath.Within(tt.root, tt.candidate)
 		if got != tt.want {
 			t.Errorf("pathWithin(%q, %q) = %t, want %t", tt.root, tt.candidate, got, tt.want)
 		}

@@ -2,8 +2,6 @@ package process
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +13,8 @@ import (
 	"time"
 
 	"github.com/stratummc/stratum/internal/agent"
+	"github.com/stratummc/stratum/internal/fileops"
+	"github.com/stratummc/stratum/internal/safepath"
 )
 
 type AppliedArtifactRecord struct {
@@ -122,7 +122,7 @@ func ExecuteArtifactApply(ctx context.Context, runtimeRoot string, req agent.Art
 	}
 	layout, _ := NewSessionRuntimeLayout(runtimeRoot, req.SessionID)
 	sourcePath, err := resolvePathUnderRoot(layout.SessionRoot, dryRun.SourceRuntimeRelativePath)
-	if err != nil || !pathWithin(layout.ArtifactsDir, sourcePath) {
+	if err != nil || !safepath.Within(layout.ArtifactsDir, sourcePath) {
 		result.Issues = append(result.Issues, "computed source escapes artifact root")
 		return result, nil
 	}
@@ -136,7 +136,7 @@ func ExecuteArtifactApply(ctx context.Context, runtimeRoot string, req agent.Art
 		return result, nil
 	}
 	targetPath := filepath.Join(targetRoot, filepath.Clean(req.TargetRelativePath))
-	if !pathWithin(targetRoot, targetPath) {
+	if !safepath.Within(targetRoot, targetPath) {
 		result.Issues = append(result.Issues, "computed target escapes target root")
 		return result, nil
 	}
@@ -213,37 +213,22 @@ func resolveMaterializedSourcePath(layout SessionRuntimeLayout, entry StagedRunt
 
 func resolvePathUnderRoot(root, relativePath string) (string, error) {
 	normalized := strings.ReplaceAll(strings.TrimSpace(relativePath), `\`, "/")
-	if normalized == "" || path.IsAbs(normalized) || filepath.IsAbs(filepath.FromSlash(normalized)) || hasWindowsVolumePrefix(normalized) {
+	if normalized == "" || path.IsAbs(normalized) || filepath.IsAbs(filepath.FromSlash(normalized)) || safepath.HasWindowsVolumePrefix(normalized) {
 		return "", errors.New("source path must be relative")
 	}
 	clean := path.Clean(normalized)
 	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
 		return "", errors.New("source path escapes artifact root")
 	}
-	root = filepath.Clean(root)
-	candidate := filepath.Join(root, filepath.FromSlash(clean))
-	if !pathWithin(root, candidate) {
+	candidate, err := safepath.Resolve(root, clean)
+	if err != nil {
 		return "", errors.New("source path escapes artifact root")
 	}
 	return candidate, nil
 }
 
-func hasWindowsVolumePrefix(value string) bool {
-	return len(value) >= 2 && ((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) && value[1] == ':'
-}
-
 func hashFile(path string) (string, int64, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", 0, err
-	}
-	defer f.Close()
-	h := sha256.New()
-	size, err := io.Copy(h, f)
-	if err != nil {
-		return "", 0, err
-	}
-	return hex.EncodeToString(h.Sum(nil)), size, nil
+	return fileops.SHA256HexWithSize(path)
 }
 
 func mapTargetRoot(root string) string {
@@ -417,7 +402,7 @@ func VerifyAppliedArtifact(ctx context.Context, runtimeRoot, sessionID, applyPla
 	}
 	result := AppliedArtifactVerification{SessionID: sessionID, ApplyPlanID: applyPlanID, ArtifactID: record.ArtifactID, StagingPlanID: record.StagingPlanID, TargetRoot: record.TargetRoot, TargetRelativePath: record.TargetRelativePath, TargetRuntimeRelativePath: record.TargetRuntimeRelativePath, PayloadAlgorithm: record.PayloadAlgorithm, ExpectedHash: record.PayloadHash, PayloadSize: record.PayloadSize, VerifiedAt: at}
 	targetPath := filepath.Join(layout.SessionRoot, record.TargetRuntimeRelativePath)
-	if !pathWithin(layout.SessionRoot, targetPath) {
+	if !safepath.Within(layout.SessionRoot, targetPath) {
 		result.Status = "error"
 		result.ErrorMessage = "target path escapes session runtime layout"
 		return result, nil
@@ -433,20 +418,12 @@ func VerifyAppliedArtifact(ctx context.Context, runtimeRoot, sessionID, applyPla
 		return result, nil
 	}
 	result.ActualSize = info.Size()
-	file, err := os.Open(targetPath)
+	hash, err := fileops.SHA256Hex(targetPath)
 	if err != nil {
 		result.Status = "error"
 		result.ErrorMessage = err.Error()
 		return result, nil
 	}
-	defer file.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, file); err != nil {
-		result.Status = "error"
-		result.ErrorMessage = err.Error()
-		return result, nil
-	}
-	hash := hex.EncodeToString(h.Sum(nil))
 	result.ActualHash = hash
 	if hash != record.PayloadHash {
 		result.Status = "corrupted"

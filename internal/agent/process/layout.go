@@ -1,13 +1,15 @@
 package process
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/stratummc/stratum/internal/fileops"
+	"github.com/stratummc/stratum/internal/safepath"
 )
 
 const runtimeDirectoryPermissions = 0o750
@@ -57,7 +59,7 @@ func NewSessionRuntimeLayout(runtimeRoot, sessionID string) (SessionRuntimeLayou
 		TmpDir:         filepath.Join(sessionRoot, "tmp"),
 	}
 	for _, path := range []string{layout.SessionRoot, layout.WorkDir, layout.LogsDir, layout.ConfigDir, layout.ArtifactsDir, layout.CheckpointsDir, layout.TmpDir} {
-		if !pathWithin(root, path) {
+		if !safepath.Within(root, path) {
 			return SessionRuntimeLayout{}, fmt.Errorf("session runtime path %q escapes runtime root", path)
 		}
 	}
@@ -86,7 +88,7 @@ func (l SessionRuntimeLayout) MCDR() (MCDRRuntimeLayout, error) {
 		MCDRManifestPath: filepath.Join(mcdrRoot, "mcdr-layout.json"),
 	}
 	for _, path := range []string{layout.MCDRRoot, layout.MCDRConfigDir, layout.MCDRPluginsDir, layout.MCDRServerDir, layout.MCDRLogsDir, layout.MCDRTmpDir} {
-		if !pathWithin(l.RuntimeRoot, path) {
+		if !safepath.Within(l.RuntimeRoot, path) {
 			return MCDRRuntimeLayout{}, fmt.Errorf("MCDR runtime path %q escapes runtime root", path)
 		}
 	}
@@ -128,23 +130,8 @@ func (m MCDRRuntimeLayout) WriteManifest() error {
 		Status:     "prepared",
 		Notes:      "MCDR runtime directories are prepared only; MCDR and Minecraft are not started.",
 	}
-	tmp, err := os.CreateTemp(m.MCDRRoot, ".mcdr-layout-*.tmp")
-	if err != nil {
-		return fmt.Errorf("create temporary manifest: %w", err)
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	encoder := json.NewEncoder(tmp)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(manifest); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("encode manifest: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close manifest: %w", err)
-	}
-	if err := os.Rename(tmpPath, m.MCDRManifestPath); err != nil {
-		return fmt.Errorf("replace manifest: %w", err)
+	if err := fileops.WriteJSONAtomic(m.MCDRManifestPath, manifest, 0o640, runtimeDirectoryPermissions, ".mcdr-layout-*.tmp"); err != nil {
+		return fmt.Errorf("write manifest: %w", err)
 	}
 	return nil
 }
@@ -160,14 +147,4 @@ func validateSessionRuntimeID(id string) error {
 		return fmt.Errorf("session runtime id %q contains unsupported characters", id)
 	}
 	return nil
-}
-
-func pathWithin(root, candidate string) bool {
-	root = filepath.Clean(root)
-	candidate = filepath.Clean(candidate)
-	relative, err := filepath.Rel(root, candidate)
-	if err != nil {
-		return false
-	}
-	return relative == "." || (relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)))
 }

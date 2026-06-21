@@ -10,6 +10,7 @@ import (
 
 	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/agent/process"
+	"github.com/stratummc/stratum/internal/safepath"
 )
 
 type ConfigStubStatus string
@@ -198,7 +199,7 @@ func validateRuntimeRelativePath(field, value string) error {
 	if strings.Contains(value, "\\") {
 		return fmt.Errorf("%s must use forward-slash runtime-relative paths", field)
 	}
-	if filepath.IsAbs(value) || path.IsAbs(value) || hasWindowsVolumePrefix(value) {
+	if filepath.IsAbs(value) || path.IsAbs(value) || safepath.HasWindowsVolumePrefix(value) {
 		return fmt.Errorf("%s must be runtime-relative", field)
 	}
 	clean := path.Clean(value)
@@ -210,10 +211,6 @@ func validateRuntimeRelativePath(field, value string) error {
 
 func relativePathWithin(root, candidate string) bool {
 	return candidate == root || strings.HasPrefix(candidate, root+"/")
-}
-
-func hasWindowsVolumePrefix(value string) bool {
-	return len(value) >= 2 && ((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) && value[1] == ':'
 }
 
 func cloneMetadata(values map[string]string) map[string]string {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/stratummc/stratum/internal/agent/process"
+	"github.com/stratummc/stratum/internal/safepath"
 )
 
 type CreateParams struct {
@@ -63,14 +64,14 @@ func (w *Worker) Create(ctx context.Context, params CreateParams) (Result, error
 	if err != nil {
 		return Result{}, fmt.Errorf("resolve session root: %w", err)
 	}
-	if !pathWithin(w.runtimeRoot, sessionRoot) {
+	if !safepath.Within(w.runtimeRoot, sessionRoot) {
 		return Result{}, fmt.Errorf("session root %q escapes runtime root", sessionRoot)
 	}
 	worldDir, err := filepath.Abs(filepath.Clean(params.WorldDir))
 	if err != nil {
 		return Result{}, fmt.Errorf("resolve world dir: %w", err)
 	}
-	if !pathWithin(sessionRoot, worldDir) {
+	if !safepath.Within(sessionRoot, worldDir) {
 		return Result{}, fmt.Errorf("world dir %q escapes session root", worldDir)
 	}
 	worldInfo, err := os.Stat(worldDir)
@@ -85,7 +86,7 @@ func (w *Worker) Create(ctx context.Context, params CreateParams) (Result, error
 		return Result{}, fmt.Errorf("build session layout: %w", err)
 	}
 	snapshotDir := layout.CheckpointsDir
-	if !pathWithin(sessionRoot, snapshotDir) {
+	if !safepath.Within(sessionRoot, snapshotDir) {
 		return Result{}, fmt.Errorf("snapshot dir %q escapes session root", snapshotDir)
 	}
 	if err := os.MkdirAll(snapshotDir, 0o750); err != nil {
@@ -94,7 +95,7 @@ func (w *Worker) Create(ctx context.Context, params CreateParams) (Result, error
 	createdAt := time.Now().UTC()
 	snapshotName := fmt.Sprintf("world-%s.zip", createdAt.Format("20060102T150405Z"))
 	snapshotPath := filepath.Join(snapshotDir, snapshotName)
-	if !pathWithin(sessionRoot, snapshotPath) {
+	if !safepath.Within(sessionRoot, snapshotPath) {
 		return Result{}, fmt.Errorf("snapshot path %q escapes session root", snapshotPath)
 	}
 	f, err := os.Create(snapshotPath)
@@ -146,7 +147,7 @@ func (w *Worker) Restore(ctx context.Context, params RestoreParams) (RestoreResu
 	if err != nil {
 		return RestoreResult{}, fmt.Errorf("resolve session root: %w", err)
 	}
-	if !pathWithin(w.runtimeRoot, sessionRoot) {
+	if !safepath.Within(w.runtimeRoot, sessionRoot) {
 		return RestoreResult{}, fmt.Errorf("session root %q escapes runtime root", sessionRoot)
 	}
 	worldRel := strings.TrimSpace(params.WorldDirRel)
@@ -161,7 +162,7 @@ func (w *Worker) Restore(ctx context.Context, params RestoreParams) (RestoreResu
 	if err != nil {
 		return RestoreResult{}, fmt.Errorf("resolve target dir: %w", err)
 	}
-	if !pathWithin(sessionRoot, targetDir) {
+	if !safepath.Within(sessionRoot, targetDir) {
 		return RestoreResult{}, fmt.Errorf("target dir %q escapes session root", targetDir)
 	}
 	snapshotPath, err := filepath.Abs(filepath.Clean(params.SnapshotPath))
@@ -201,7 +202,7 @@ func (w *Worker) Restore(ctx context.Context, params RestoreParams) (RestoreResu
 		}
 		fullPath := filepath.Join(targetDir, filepath.FromSlash(entry.Name))
 		fullPath = filepath.Clean(fullPath)
-		if !pathWithin(targetDir, fullPath) {
+		if !safepath.Within(targetDir, fullPath) {
 			return RestoreResult{}, fmt.Errorf("zip entry %q escapes target dir", entry.Name)
 		}
 		if entry.FileInfo().IsDir() {
@@ -250,7 +251,7 @@ func (w *Worker) writeDir(zipWriter *zip.Writer, baseDir, targetDir string) erro
 	}
 	for _, entry := range entries {
 		fullPath := filepath.Join(targetDir, entry.Name())
-		if !pathWithin(baseDir, fullPath) {
+		if !safepath.Within(baseDir, fullPath) {
 			continue
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
@@ -297,10 +298,4 @@ func (w *Worker) writeDir(zipWriter *zip.Writer, baseDir, targetDir string) erro
 		}
 	}
 	return nil
-}
-
-func pathWithin(root, candidate string) bool {
-	root = filepath.Clean(root)
-	candidate = filepath.Clean(candidate)
-	return candidate == root || strings.HasPrefix(candidate, root+string(filepath.Separator))
 }

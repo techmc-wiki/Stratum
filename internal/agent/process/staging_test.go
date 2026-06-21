@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/stratummc/stratum/internal/safepath"
 )
 
 func TestRuntimeStagingPathsStayInsideSessionDirs(t *testing.T) {
@@ -22,7 +24,7 @@ func TestRuntimeStagingPathsStayInsideSessionDirs(t *testing.T) {
 	if artifactPath != filepath.Join(layout.ArtifactsDir, "mods", "test-mod.jar") || configPath != filepath.Join(layout.ConfigDir, "server", "server.properties") {
 		t.Fatalf("artifact=%q config=%q", artifactPath, configPath)
 	}
-	if !pathWithin(layout.ArtifactsDir, artifactPath) || !pathWithin(layout.ConfigDir, configPath) {
+	if !safepath.Within(layout.ArtifactsDir, artifactPath) || !safepath.Within(layout.ConfigDir, configPath) {
 		t.Fatalf("staging paths escaped layout: artifact=%q config=%q", artifactPath, configPath)
 	}
 }

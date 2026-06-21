@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/stratummc/stratum/internal/safepath"
 )
 
 const AgentLocalScheme = "agent-local://"
@@ -33,7 +35,7 @@ func BuildAgentLocalSnapshotRef(agentID, sessionID, snapshotPath, runtimeRoot st
 	if err != nil {
 		return "", fmt.Errorf("resolve snapshot path: %w", err)
 	}
-	if !pathWithin(absRuntime, absSnapshot) {
+	if !safepath.Within(absRuntime, absSnapshot) {
 		return "", fmt.Errorf("snapshot path %q escapes runtime root", snapshotPath)
 	}
 	rel, err := filepath.Rel(absRuntime, absSnapshot)

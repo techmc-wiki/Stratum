@@ -16,6 +16,7 @@ import (
 	agentprocess "github.com/stratummc/stratum/internal/agent/process"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
 	"github.com/stratummc/stratum/internal/agent/worldcheckpoint"
+	"github.com/stratummc/stratum/internal/safepath"
 )
 
 type ProcessAgent struct {
@@ -483,15 +484,11 @@ func (a *ProcessAgent) RestoreWorldSnapshot(ctx context.Context, request agent.W
 
 func safeRelativePath(value string) bool {
 	normalized := strings.ReplaceAll(strings.TrimSpace(value), `\`, "/")
-	if normalized == "" || path.IsAbs(normalized) || filepath.IsAbs(filepath.FromSlash(normalized)) || hasWindowsVolumePrefix(normalized) {
+	if normalized == "" || path.IsAbs(normalized) || filepath.IsAbs(filepath.FromSlash(normalized)) || safepath.HasWindowsVolumePrefix(normalized) {
 		return false
 	}
 	clean := path.Clean(normalized)
 	return clean != "." && clean != ".." && !strings.HasPrefix(clean, "../")
-}
-
-func hasWindowsVolumePrefix(value string) bool {
-	return len(value) >= 2 && ((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) && value[1] == ':'
 }
 
 func (a *ProcessAgent) ReadSessionFile(_ context.Context, sessionID, relativePath string) ([]byte, error) {

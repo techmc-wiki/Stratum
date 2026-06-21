@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/stratummc/stratum/internal/agent"
+	"github.com/stratummc/stratum/internal/safepath"
 )
 
 const materializedFilePermissions = 0o640
@@ -127,7 +128,7 @@ func inspectMaterializedArtifactItem(layout SessionRuntimeLayout, staging Sessio
 		return agent.MaterializedArtifact{}, errors.New("materialized artifact manifest path does not match safe runtime path")
 	}
 	relative, err := filepath.Rel(layout.SessionRoot, target)
-	if err != nil || !pathWithin(layout.SessionRoot, target) {
+	if err != nil || !safepath.Within(layout.SessionRoot, target) {
 		return agent.MaterializedArtifact{}, errors.New("materialized artifact path escapes session runtime")
 	}
 	return agent.MaterializedArtifact{
@@ -349,38 +350,7 @@ func writeMaterializedFile(ctx context.Context, artifactsRoot, target string, pa
 }
 
 func rejectSymlinkPath(root, candidate string) error {
-	root = filepath.Clean(root)
-	candidate = filepath.Clean(candidate)
-	if !pathWithin(root, candidate) {
-		return errors.New("materialization path escapes runtime root")
-	}
-	relative, err := filepath.Rel(root, candidate)
-	if err != nil {
-		return fmt.Errorf("resolve materialization path: %w", err)
-	}
-	current := root
-	if info, err := os.Lstat(current); err == nil && info.Mode()&os.ModeSymlink != 0 {
-		return errors.New("materialization path contains a symbolic link")
-	} else if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("inspect materialization path: %w", err)
-	}
-	for _, component := range strings.Split(relative, string(filepath.Separator)) {
-		if component == "." || component == "" {
-			continue
-		}
-		current = filepath.Join(current, component)
-		info, err := os.Lstat(current)
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("inspect materialization path: %w", err)
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return errors.New("materialization path contains a symbolic link")
-		}
-	}
-	return nil
+	return safepath.RejectSymlinkPath(root, candidate, "materialization path")
 }
 
 func updateArtifactManifest(staging SessionRuntimeStaging, request agent.ArtifactMaterializationRequest, at time.Time) error {
