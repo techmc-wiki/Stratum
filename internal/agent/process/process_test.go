@@ -280,6 +280,9 @@ func TestTerminalHelperProcess(t *testing.T) {
 	if os.Getenv("STRATUM_TERMINAL_HELPER") != "1" {
 		return
 	}
+	if os.Getenv("STRATUM_TERMINAL_MODE") == "exit-before-ready" {
+		os.Exit(7)
+	}
 	fmt.Println("helper-ready stdout")
 	fmt.Fprintln(os.Stderr, "helper-ready stderr")
 	switch os.Getenv("STRATUM_TERMINAL_MODE") {
@@ -364,7 +367,7 @@ func TestWaitForLogTimeout(t *testing.T) {
 }
 
 func TestWaitForLogDetectsExit(t *testing.T) {
-	supervisor, profile := terminalTestSupervisor(t, "exit")
+	supervisor, profile := terminalTestSupervisor(t, "exit-before-ready")
 	if _, err := supervisor.StartProcess(context.Background(), "wait-exit", profile); err != nil {
 		t.Fatal(err)
 	}
