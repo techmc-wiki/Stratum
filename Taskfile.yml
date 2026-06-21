@@ -32,6 +32,16 @@ tasks:
     cmds:
       - go test -count=1 ./...
 
+  test:race:
+    desc: Run the full Go test suite with race detection and shuffled order
+    cmds:
+      - go test -race -shuffle=on -count=1 ./...
+
+  vuln:
+    desc: Run govulncheck against called Go code
+    cmds:
+      - go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
   build:
     desc: Build host binaries into dist/local
     cmds:
@@ -55,11 +65,12 @@ tasks:
       - go build -trimpath -o {{.LINUX_AMD64_DIR}}/lucy ./cmd/lucy
 
   ci:
-    desc: Run the same vet, test, and Linux amd64 build sequence as GitHub Actions
+    desc: Run the same vet, race test, vulnerability scan, and Linux amd64 build sequence as GitHub Actions
     cmds:
       - task: deps
       - task: vet
-      - task: test
+      - task: test:race
+      - task: vuln
       - task: build:linux-amd64
 
   clean:
