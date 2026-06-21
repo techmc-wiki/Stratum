@@ -1,6 +1,6 @@
 module github.com/stratummc/stratum
 
-go 1.25.8
+go 1.26.4
 
 require (
 	github.com/mclucy/lucy v0.0.0-20260617080255-b2539d110491
