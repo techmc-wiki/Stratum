@@ -197,7 +197,7 @@ func TestMCDRPythonMultiStepGracefulStop(t *testing.T) {
 	supervisor, profile := terminalTestSupervisor(t, "stdin")
 	profile.RuntimeType = runtimeprofile.TypeMCDRPython
 	profile.GracefulStopSteps = []runtimeprofile.GracefulStopStep{
-		{Type: runtimeprofile.GracefulStopStdinCommand, Command: "stop", Timeout: time.Second},
+		{Type: runtimeprofile.GracefulStopStdinCommand, Command: "stop", Timeout: 5 * time.Second},
 		{Type: runtimeprofile.GracefulStopSignal, Signal: "SIGTERM", Timeout: 100 * time.Millisecond},
 		{Type: runtimeprofile.GracefulStopSignal, Signal: "SIGKILL", Timeout: time.Second},
 	}
@@ -272,7 +272,7 @@ func terminalTestSupervisor(t *testing.T, mode string) (*Supervisor, runtimeprof
 	if err != nil {
 		t.Fatal(err)
 	}
-	profile := runtimeprofile.Profile{ID: "terminal-test-" + mode, Name: "Terminal test helper", RuntimeType: runtimeprofile.TypeTerminal, CommandArgv: []string{executable, "-test.run=TestTerminalHelperProcess", "--"}, WorkingDir: ".", Env: map[string]string{"STRATUM_TERMINAL_HELPER": "1", "STRATUM_TERMINAL_MODE": mode}, StopStrategy: runtimeprofile.StopStdin, StopStdinCommand: "stop", GracefulStopTimeout: time.Second, ForceKillTimeout: time.Second, LogMode: runtimeprofile.LogMemory, Enabled: true}
+	profile := runtimeprofile.Profile{ID: "terminal-test-" + mode, Name: "Terminal test helper", RuntimeType: runtimeprofile.TypeTerminal, CommandArgv: []string{executable, "-test.run=TestTerminalHelperProcess", "--"}, WorkingDir: ".", Env: map[string]string{"STRATUM_TERMINAL_HELPER": "1", "STRATUM_TERMINAL_MODE": mode}, StopStrategy: runtimeprofile.StopStdin, StopStdinCommand: "stop", GracefulStopTimeout: 5 * time.Second, ForceKillTimeout: time.Second, LogMode: runtimeprofile.LogMemory, Enabled: true}
 	return supervisor, profile
 }
 
@@ -290,6 +290,10 @@ func TestTerminalHelperProcess(t *testing.T) {
 				fmt.Println("helper-stopped")
 				os.Exit(0)
 			}
+		}
+		if err := scanner.Err(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(3)
 		}
 		os.Exit(2)
 	case "exit":

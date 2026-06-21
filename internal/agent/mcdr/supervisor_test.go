@@ -294,7 +294,7 @@ func TestMCDRSupervisorStartConfigWriteFailsDoesNotStartProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	configPath := filepath.Join(mcdrLayout.MCDRConfigDir, configYMLName)
-	if err := os.WriteFile(configPath, []byte{}, 0o400); err != nil {
+	if err := os.Mkdir(configPath, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	state, err := ms.Start(context.Background(), "mcdr-fail-config", profile)
