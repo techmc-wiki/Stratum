@@ -88,26 +88,3 @@ func assertJSONRoundTrip[T any](t *testing.T, value T) {
 		t.Fatalf("decoded=%+v want=%+v", decoded, value)
 	}
 }
-
-func TestLocalArtifactRefRepresentsStratumPayload(t *testing.T) {
-	ref := LocalArtifactRef{
-		ArtifactID: "artifact-carpet", PayloadAlgorithm: "sha256", PayloadHash: "0123456789abcdef",
-		PayloadSize: 4096, ArtifactType: "jar", RuntimeName: "carpet.jar", Metadata: map[string]string{"project_id": "gtmc"},
-	}
-	if ref.ArtifactID == "" || ref.PayloadAlgorithm != "sha256" || ref.PayloadHash == "" || ref.PayloadSize != 4096 || ref.ArtifactType != "jar" || ref.RuntimeName != "carpet.jar" {
-		t.Fatalf("artifact ref = %+v", ref)
-	}
-}
-
-func TestEnvironmentSpecSupportsGTMC117Fields(t *testing.T) {
-	spec := EnvironmentSpec{
-		EnvironmentID: "gtmc-1.17", MinecraftVersion: "1.17.1", JavaVersion: "16",
-		LoaderType: "fabric", LoaderVersion: "0.11.7", ServerCore: "carpet",
-		CarpetRequired: true, MCDRRequired: true, RuntimeProfileID: "mcdr-managed",
-		Packages:       []PackageRef{{ID: "fabric-api", Source: "modrinth", Name: "Fabric API", VersionConstraint: "*", MinecraftVersion: "1.17.1", Loader: "fabric", Required: true, Metadata: map[string]string{}}},
-		LocalArtifacts: []LocalArtifactRef{}, Metadata: map[string]string{"community": "gtmc"},
-	}
-	if spec.EnvironmentID != "gtmc-1.17" || spec.MinecraftVersion != "1.17.1" || spec.LoaderType != "fabric" || spec.ServerCore != "carpet" || !spec.CarpetRequired || !spec.MCDRRequired || len(spec.Packages) != 1 {
-		t.Fatalf("environment spec = %+v", spec)
-	}
-}

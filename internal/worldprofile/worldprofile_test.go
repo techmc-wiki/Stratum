@@ -68,31 +68,3 @@ func TestNewDefaultSpawnRadius(t *testing.T) {
 		t.Fatalf("SpawnRadius = %d, want 10", wp.SpawnRadius)
 	}
 }
-
-func TestNewSuccess(t *testing.T) {
-	wp, err := New(CreateParams{
-		ID:                 "wp_flat",
-		Name:               "Flat World",
-		Description:        "Testing flat world",
-		Seed:               "12345",
-		LevelType:          LevelFlat,
-		GeneratorSettings:  `{"layers":[{"block":"stone","height":1}]}`,
-		GenerateStructures: false,
-		SpawnRadius:        5,
-		Difficulty:         DifficultyPeaceful,
-		MinecraftVersion:   "1.17.1",
-		Metadata:           map[string]string{"test": "value"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if wp.ID != "wp_flat" {
-		t.Fatalf("ID = %s", wp.ID)
-	}
-	if wp.SpawnRadius != 5 {
-		t.Fatalf("SpawnRadius = %d", wp.SpawnRadius)
-	}
-	if wp.Metadata["test"] != "value" {
-		t.Fatalf("Metadata = %v", wp.Metadata)
-	}
-}

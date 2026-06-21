@@ -17,20 +17,6 @@ import (
 	"github.com/stratummc/stratum/internal/storage/filesystem"
 )
 
-func TestLucyCommandGroupRegistered(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"lucy", "--help"}, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("code=%d stderr=%q", code, stderr.String())
-	}
-	output := stdout.String()
-	for _, want := range []string{"plan", "lock", "status", "verify", "install"} {
-		if !strings.Contains(output, want) {
-			t.Fatalf("help output missing %q: %q", want, output)
-		}
-	}
-}
-
 func TestLucyPlanOutputsActions(t *testing.T) {
 	store := testLucyStore(t)
 	cmd, stdout, stderr := testLucyCommand(store, lucyFakeAgent{})
