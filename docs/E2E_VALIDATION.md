@@ -18,24 +18,14 @@ The E2E validation infrastructure is implemented and verified. Real Minecraft bo
 - Graceful stop via stdin
 - Readiness check framework (log pattern detection)
 
-### Validation Artifacts
+### Validation Artifact
 
-1. **Go Integration Test**: `internal/agent/mcdr/e2e_real_minecraft_test.go`
-   - Downloads real Fabric 1.17.1 server jar (~160 KB)
-   - Writes MCDR config.yml with Java command
-   - Starts MCDR with real process supervisor
-   - Captures logs and validates readiness pattern
-   - Requires: Java 17+, MCDReforged installed, proper PATH
-
-2. **PowerShell E2E Script**: `test-e2e-minecraft.ps1`
-   - Builds Controller, Agent, CLI binaries
-   - Starts Controller on localhost:18080
-   - Starts Agent with auto-registration
-   - Creates Project → Room → Session (Fabric 1.17 environment)
-   - Starts session and waits for "Done (" pattern
-   - Collects logs and validates success criteria
-   - Stops session gracefully
-   - Requires: Go 1.25+, Java 17+, MCDReforged, Python 3.9+
+**Go Integration Test**: `internal/agent/mcdr/e2e_real_minecraft_test.go`
+- Downloads real Fabric 1.17.1 server jar (~160 KB)
+- Writes MCDR config.yml with Java command
+- Starts MCDR with real process supervisor
+- Captures logs and validates readiness pattern
+- Requires: Java 17+, MCDReforged installed, proper PATH or absolute Java path
 
 ## Current Limitation
 
@@ -70,7 +60,7 @@ go test -tags=integration -count=1 -v ./internal/agent/mcdr -run TestE2ERealMCDR
 - Config generation: ✅ correct command written
 - Java spawn: ⚠️ requires absolute path or PATH fix
 
-### PowerShell E2E Script
+### Manual Controller + Agent Smoke
 
 ```powershell
 # Ensure Java, Python, MCDReforged are in PATH
@@ -78,8 +68,16 @@ java -version
 python --version
 mcdreforged --version
 
-# Run E2E validation
-.\test-e2e-minecraft.ps1
+# Build local binaries
+go build -o dist/local/stratum-controller.exe ./cmd/stratum-controller
+go build -o dist/local/stratum-agent.exe ./cmd/stratum-agent
+go build -o dist/local/stratum.exe ./cmd/stratum
+
+# Terminal 1: controller
+dist/local/stratum-controller.exe serve --listen :18080 --data-dir .stratum/e2e-data
+
+# Terminal 2: agent
+dist/local/stratum-agent.exe --controller-url http://127.0.0.1:18080 --listen :18787 --runtime-root .stratum/e2e-runtime --data-dir .stratum/e2e-data
 ```
 
 **Expected outputs**:
@@ -116,7 +114,6 @@ mcdreforged --version
 ## Files Changed
 
 ### New Files
-- `test-e2e-minecraft.ps1` — PowerShell E2E validation harness
 - `docs/E2E_VALIDATION.md` — This document
 
 ### Modified Files

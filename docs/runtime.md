@@ -648,9 +648,8 @@ without MCDR installation and proper environment configuration.
 ## MCDR Runtime Directory Layout
 
 StratumMC Agent manages an MCDR-specific directory structure under the session
-work directory for future MCDR-managed RuntimeProfiles. Directory preparation
-does not start MCDR, invoke Python, or generate config files. The layout is
-Agent-owned and follows session runtime safety rules.
+work directory for MCDR RuntimeProfiles. The layout is Agent-owned and follows
+session runtime safety rules.
 
 Suggested layout:
 
@@ -671,17 +670,11 @@ The Agent provides helpers to compute MCDR paths from `SessionRuntimeLayout` and
 create these directories idempotently. All paths remain under the session
 runtime root. Path traversal is rejected through existing session ID validation.
 
-MCDR directory preparation:
-- Does not start MCDR or Minecraft.
-- Does not invoke Python or install dependencies.
-- Does not generate server.properties, MCDR config, or plugin manifests.
-- Does not call Lucy for dependency resolution.
-- Is idempotent and safe to repeat.
-
-Future work may populate `config/`, install plugins to `plugins/`, place
-Minecraft server jar in `server/`, and launch MCDR through a trusted enabled
-RuntimeProfile. MCDR remains a future Agent-supervised child runtime under
-Stratum process lifecycle control.
+MCDR runtime preparation is idempotent and safe to repeat. Current
+materialization can populate `config/`, place the Minecraft server jar in
+`server/`, generate MCDR `config.yml`, write `server.properties` and `eula.txt`,
+and launch MCDR through a trusted enabled RuntimeProfile. MCDR is an
+Agent-supervised child runtime under Stratum process lifecycle control.
 
 ### MCDR Layout Manifest
 
@@ -699,7 +692,7 @@ After directory creation, the Agent can optionally write
   "logs_dir": "/runtime/sessions/session-1/work/mcdr/logs",
   "tmp_dir": "/runtime/sessions/session-1/work/mcdr/tmp",
   "status": "prepared",
-  "notes": "MCDR runtime directories are prepared only; MCDR and Minecraft are not started."
+  "notes": "MCDR runtime directories are prepared under Agent ownership."
 }
 ```
 
@@ -708,39 +701,33 @@ This manifest is informational only:
 - It is not MCDR config (`config.yml`).
 - It is not Minecraft config (`server.properties`).
 - It does not imply MCDR has been installed or started.
-- Future work may use it for preparation verification or recovery workflows.
 
 Manifest generation is idempotent and safe to repeat.
 
 ### MCDR Config Stub Contract
 
-`internal/agent/mcdr.ConfigStub` is a Stratum planning contract for a future
+`internal/agent/mcdr.ConfigStub` is a Stratum planning/diagnostic contract for
 MCDR configuration. It records Environment identity and canonical,
-Session-relative locations for the MCDR root, plugin directory, future
-`config.yml`, `server.properties`, and `eula.txt`. Validation rejects unsafe
+Session-relative locations for the MCDR root, plugin directory, `config.yml`,
+`server.properties`, and `eula.txt`. Validation rejects unsafe
 identifiers, absolute paths, traversal, and paths outside the planned MCDR
 root.
 
-Building the stub returns metadata only. It does not write MCDR `config.yml`,
-Minecraft `server.properties`, or `eula.txt`; install dependencies; invoke
-Python or Lucy; or start MCDR or Minecraft. Future work may render real MCDR
-configuration from this contract after Lucy/Environment resolution and server
-layout preparation are implemented. Stratum Agent remains the outer process
-lifecycle owner.
+Building the stub returns metadata only. Runtime materialization and
+`internal/agent/mcdr/config_writer.go` are responsible for writing real MCDR
+`config.yml`, Minecraft `server.properties`, and `eula.txt`. Stratum Agent
+remains the outer process lifecycle owner.
 
 After the MCDR directory layout is explicitly prepared, the Agent package can
 optionally serialize the validated contract to
 `work/mcdr/mcdr-config-stub.json`. This atomically written, idempotent file is a
-Stratum planning manifest only. Its field names identify future `config.yml`,
-`server.properties`, and `eula.txt` paths as planned paths; writing it does not
-create those files, install MCDR, invoke Python/Lucy, or start MCDR or
-Minecraft.
+Stratum planning/diagnostic manifest only. Writing it does not create runtime
+config files, install MCDR, invoke Python/Lucy, or start MCDR or Minecraft.
 
 The manifest can be inspected read-only via `InspectConfigStubManifest`. This
 validates manifest integrity (JSON structure, path safety, session match) without
 modifying the file. It does not validate real MCDR config.yml, generate files,
-install MCDR, or start runtimes. Future Controller readiness checks may consume
-this inspection.
+install MCDR, or start runtimes.
 
 The CLI command `stratum sessions mcdr-config-stub inspect --id <session-id>
 --agent-url <url>` calls the Agent HTTP endpoint `GET
@@ -751,11 +738,12 @@ runtimes. Exits 0 only when the manifest exists and is valid.
 
 ### MCDR Bridge Launch Plan
 
-`internal/agent/mcdrbridge` defines a planning-only MCDR bridge contract that
-extends the config stub model into a structured launch plan. The bridge provides
-`BuildLaunchPlan`, `ValidateLaunchPlan`, and `InspectLaunchPlan` operations.
-All operations are planning-only: no MCDR or Minecraft process is started, no
-dependencies are installed, and no runtime config files are generated.
+`internal/agent/mcdrbridge` defines a planning/diagnostic MCDR bridge contract
+that extends the config stub model into a structured launch plan. The bridge
+provides `BuildLaunchPlan`, `ValidateLaunchPlan`, and `InspectLaunchPlan`
+operations. These operations are metadata-only: no MCDR or Minecraft process is
+started, no dependencies are installed, and no runtime config files are
+generated.
 
 `BuildLaunchPlan` derives the MCDR runtime layout from the bridge's runtime
 root and the request SessionID, constructs a `LaunchPlan` DTO with canonical
@@ -785,19 +773,19 @@ read-only and never modifies the manifest.
 
 The bridge does not start MCDR or Minecraft, does not install Python or MCDR
 dependencies, does not generate config.yml/server.properties/eula.txt, does not
-call Lucy, and does not modify Session lifecycle state. Real MCDR RuntimeProfile
-launch is deferred to a future task. The launch plan is the planning contract
-that a future RuntimeProfile will read.
+call Lucy, and does not modify Session lifecycle state. The implemented MCDR
+RuntimeProfile path is owned by `internal/agent/mcdr.Supervisor`; the launch plan
+is diagnostic metadata, not the runtime owner.
 
 The launch-plan manifest (`mcdr-launch-plan.json`) is written alongside the
-existing `mcdr-layout.json` and `mcdr-config-stub.json` in the MCDR root. All
-three files are planning-only manifests:
+existing `mcdr-layout.json` and `mcdr-config-stub.json` in the MCDR root. These
+files serve diagnostic and planning purposes:
 
 | File | Purpose |
 |---|---|
 | `mcdr-layout.json` | Records prepared MCDR directory paths |
 | `mcdr-config-stub.json` | Records planned config location metadata |
-| `mcdr-launch-plan.json` | Records full launch plan for a future RuntimeProfile |
+| `mcdr-launch-plan.json` | Records launch-plan metadata for diagnostics |
 
 ## Environment Metadata
 

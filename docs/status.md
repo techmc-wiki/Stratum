@@ -224,11 +224,6 @@ The full Controller → Agent → MCDR → Minecraft runtime pipeline is impleme
   - Validates readiness pattern framework
   - Requires: `go test -tags=integration`
 
-- **PowerShell E2E Script**: `test-e2e-minecraft.ps1`
-  - Full Controller + Agent + CLI workflow
-  - Creates Project → Room → Session → Start → Stop
-  - Validates entire control plane
-
 See [`docs/E2E_VALIDATION.md`](E2E_VALIDATION.md) for details.
 
 ---
@@ -246,6 +241,10 @@ See [`docs/E2E_VALIDATION.md`](E2E_VALIDATION.md) for details.
 ### Infrastructure
 - **Web UI** — Skipped (Phase 5)
 - **Authentication & Authorization** — Shared-token only, no user accounts, no RBAC
+
+### Runtime Baseline
+- **Carpet auto-download** — manifests reference Carpet, but materialization must still enforce installed Carpet jars when `carpetRequired` is true.
+- **Prime Backup auto-install** — not yet installed as a baseline MCDR plugin under `work/mcdr/plugins/`.
 
 ---
 
@@ -276,4 +275,8 @@ go vet ./...                   # ✅
 
 ## 📋 Suggested Next Task
 
-**Phase 6b: Authentication & Authorization** — User accounts, RBAC, project membership, replace shared-token auth.
+1. **Phase 6b: Authentication & Authorization** — user accounts, RBAC, project membership, replace shared-token auth.
+2. **Runtime baseline: Carpet auto-download** — install and readiness-check required Carpet jars through the Fabric/Lucy materialization path.
+3. **Runtime baseline: Prime Backup auto-install** — install Prime Backup as an MCDR plugin under `work/mcdr/plugins/` with generated config.
+4. **MCDR documentation alignment** — keep `docs/mcdr.md` synced with implemented runtime ownership, materialization, and plugin boundaries.
+5. **Web UI v0** — start only after the authenticated runtime baseline can expose meaningful Carpet/backup/session health.
