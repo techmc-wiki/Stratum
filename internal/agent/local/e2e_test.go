@@ -198,7 +198,7 @@ func TestE2EMCDRSessionMaterializeAndStart(t *testing.T) {
 	if !strings.Contains(cfgContent, "start_command") {
 		t.Fatal("config.yml missing start_command")
 	}
-	if !strings.Contains(cfgContent, "\"fabric-server-1.17.1") {
+	if !strings.Contains(cfgContent, "fabric-server-1.17.1") {
 		t.Fatalf("config.yml missing server jar name:\n%s", cfgContent)
 	}
 	if !strings.Contains(cfgContent, "/usr/bin/java17") {

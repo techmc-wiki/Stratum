@@ -28,7 +28,7 @@ func TestStartCommandUsesJavaExecutable(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(payload)
-	want := `start_command: "\"/usr/lib/jvm/java-16/bin/java\" -jar \"fabric-server-launch.jar\" nogui"`
+	want := `start_command: "/usr/lib/jvm/java-16/bin/java -jar fabric-server-launch.jar nogui"`
 	if !strings.Contains(content, want) {
 		t.Fatalf("config.yml missing expected start_command:\nwant: %s\ngot:\n%s", want, content)
 	}
@@ -50,8 +50,8 @@ func TestStartCommandFallsBackToSystemJava(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(payload)
-	if !strings.Contains(content, `start_command: "\"java\" -jar \"server.jar\" nogui"`) {
-		t.Fatalf("config.yml should fall back to quoted java:\n%s", content)
+	if !strings.Contains(content, `start_command: "java -jar server.jar nogui"`) {
+		t.Fatalf("config.yml should fall back to java:\n%s", content)
 	}
 }
 
@@ -147,7 +147,7 @@ func TestStartWithManifestData(t *testing.T) {
 		t.Fatalf("config.yml not written: %v", err)
 	}
 	content := string(payload)
-	if !strings.Contains(content, `"\"/path/to/java17\" -jar \"test-server.jar\" nogui"`) {
+	if !strings.Contains(content, `"/path/to/java17 -jar test-server.jar nogui"`) {
 		t.Fatalf("config.yml missing expected start_command:\n%s", content)
 	}
 

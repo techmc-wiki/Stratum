@@ -140,8 +140,11 @@ func renderRuntimeConfig(cfg RuntimeConfig) []byte {
 }
 
 func quoteShellArg(value string) string {
-	value = strings.ReplaceAll(value, `"`, `\"`)
-	return `"` + value + `"`
+	if strings.ContainsAny(value, " \t") {
+		value = strings.ReplaceAll(value, `"`, `\"`)
+		return `"` + value + `"`
+	}
+	return value
 }
 
 func quoteYAMLString(value string) string {

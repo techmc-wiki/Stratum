@@ -4,8 +4,10 @@ package mcdr
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,6 +15,7 @@ import (
 
 	agentprocess "github.com/stratummc/stratum/internal/agent/process"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
+	"github.com/stratummc/stratum/internal/agent/serverjar"
 )
 
 func TestE2ERealMCDRMinecraftBoot(t *testing.T) {
@@ -20,10 +23,24 @@ func TestE2ERealMCDRMinecraftBoot(t *testing.T) {
 		t.Skip("skipping E2E Minecraft boot test in short mode")
 	}
 
-	javaHome := os.Getenv("JAVA_HOME")
-	path := os.Getenv("PATH")
-	if javaHome == "" && !strings.Contains(strings.ToLower(path), "java") {
-		t.Skip("Java not detected (set JAVA_HOME or add java to PATH)")
+	// Check Java availability
+	javaExec := os.Getenv("E2E_JAVA_EXECUTABLE")
+	if javaExec == "" {
+		javaExec = "java"
+	}
+	javaCheck := exec.Command(javaExec, "-version")
+	if err := javaCheck.Run(); err != nil {
+		t.Skipf("Java not available (tried %q): %v. Set E2E_JAVA_EXECUTABLE or add Java to PATH.", javaExec, err)
+	}
+
+	// Check MCDR availability
+	mcdrExecutable := os.Getenv("MCDR_EXECUTABLE")
+	if mcdrExecutable == "" {
+		mcdrExecutable = "mcdreforged"
+	}
+	mcdrCheck := exec.Command(mcdrExecutable, "--version")
+	if err := mcdrCheck.Run(); err != nil {
+		t.Skipf("MCDReforged not available (tried %q): %v. Install with: pip install mcdreforged", mcdrExecutable, err)
 	}
 
 	root := t.TempDir()
@@ -64,33 +81,48 @@ func TestE2ERealMCDRMinecraftBoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	propsPath := filepath.Join(mcdrLayout.MCDRServerDir, "server.properties")
-	props := "server-port=25566\nonline-mode=false\nenable-command-block=true\nmax-players=5\n"
+	props := "server-port=25566\nonline-mode=false\nenable-command-block=true\nmax-players=5\ndifficulty=peaceful\n"
 	if err := os.WriteFile(propsPath, []byte(props), 0o640); err != nil {
 		t.Fatal(err)
 	}
 
-	mcdrExecutable := os.Getenv("MCDR_EXECUTABLE")
-	if mcdrExecutable == "" {
-		mcdrExecutable = "mcdreforged"
+	// Download real Fabric server jar
+	cacheDir := filepath.Join(root, ".cache")
+	if err := os.MkdirAll(cacheDir, 0o750); err != nil {
+		t.Fatal(err)
 	}
+	deployer := serverjar.NewDeployer(cacheDir)
+	t.Logf("Downloading Fabric 1.17.1 server jar (may take 30-60s)...")
+	deployResult, err := deployer.Deploy(context.Background(), serverjar.DeployRequest{
+		SessionID:        sessionID,
+		ServerCore:       "fabric",
+		MinecraftVersion: "1.17.1",
+		LoaderVersion:    "",
+		TargetDir:        mcdrLayout.MCDRServerDir,
+	})
+	if err != nil {
+		t.Fatalf("deploy server jar: %v", err)
+	}
+	t.Logf("Server jar deployed: %s (%.2f MB)", deployResult.JarName, float64(deployResult.SizeBytes)/1024/1024)
 
 	commandArgv := []string{mcdrExecutable}
-	serverJarName := os.Getenv("E2E_SERVER_JAR")
-	if serverJarName == "" {
-		serverJarName = "fabric-server-launch.jar"
-	}
-	javaExec := os.Getenv("E2E_JAVA_EXECUTABLE")
-	if javaExec == "" {
-		javaExec = "java"
-	}
 
-	mcdrConfig := NewRuntimeConfig(mcdrLayout)
-	mcdrConfig.ServerJarName = serverJarName
-	mcdrConfig.JavaExecutable = javaExec
-
-	if _, err := WriteRuntimeConfig(mcdrLayout, mcdrConfig); err != nil {
-		t.Fatalf("write MCDR config.yml: %v", err)
+	// Write environment materialization manifest for supervisor to read
+	manifestPath := filepath.Join(sessionLayout.ConfigDir, "environment-materialization.json")
+	manifestData := map[string]string{
+		"serverJarName":  deployResult.JarName,
+		"javaExecutable": javaExec,
+		"mcdrExecutable": mcdrExecutable,
 	}
+	manifestJSON, err := os.Create(manifestPath)
+	if err != nil {
+		t.Fatalf("create materialization manifest: %v", err)
+	}
+	if err := json.NewEncoder(manifestJSON).Encode(manifestData); err != nil {
+		manifestJSON.Close()
+		t.Fatalf("write materialization manifest: %v", err)
+	}
+	manifestJSON.Close()
 
 	profile := runtimeprofile.Profile{
 		ID:                  "mcdr-e2e",
@@ -107,14 +139,14 @@ func TestE2ERealMCDRMinecraftBoot(t *testing.T) {
 		ReadinessCheck: &runtimeprofile.ReadinessCheckConfig{
 			Type:    runtimeprofile.ReadinessLogPattern,
 			Pattern: "Done (",
-			Timeout: 120 * time.Second,
+			Timeout: 180 * time.Second,
 		},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	t.Logf("Starting MCDR with Java=%s jar=%s", javaExec, serverJarName)
+	t.Logf("Starting MCDR with Java=%s jar=%s", javaExec, deployResult.JarName)
 	state, err := ms.Start(ctx, sessionID, profile)
 	if err != nil {
 		if strings.Contains(err.Error(), "readiness") {
