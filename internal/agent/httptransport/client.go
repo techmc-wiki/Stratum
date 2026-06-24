@@ -15,6 +15,7 @@ import (
 
 	"github.com/stratummc/stratum/internal/agent"
 	"github.com/stratummc/stratum/internal/agent/runtimeprofile"
+	"github.com/stratummc/stratum/internal/integration/lucy"
 )
 
 type HTTPError struct {
@@ -342,6 +343,10 @@ func (c *Client) MaterializeEnvironment(ctx context.Context, request agent.Envir
 		ServerCore:             request.ServerCore,
 		MCDRRequired:           request.MCDRRequired,
 		CarpetRequired:         request.CarpetRequired,
+		LucyManifestRef:        request.LucyManifestRef,
+		LucyLockRef:            request.LucyLockRef,
+		Packages:               agentPackagesToDTO(request.Packages),
+		LocalArtifacts:         agentArtifactsToDTO(request.LocalArtifacts),
 		RuntimeProfileID:       request.RuntimeProfileID,
 		RuntimeProfileRequired: request.RuntimeProfileRequired,
 		ActorID:                request.ActorID,
@@ -557,4 +562,43 @@ func (c *Client) WriteSessionFile(ctx context.Context, sessionID, relativePath s
 		return fmt.Errorf("write session file: status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func agentPackagesToDTO(packages []lucy.PackageRef) []PackageRefDTO {
+	if len(packages) == 0 {
+		return nil
+	}
+	dtos := make([]PackageRefDTO, 0, len(packages))
+	for _, pkg := range packages {
+		dtos = append(dtos, PackageRefDTO{
+			ID:                pkg.ID,
+			Source:            pkg.Source,
+			Name:              pkg.Name,
+			VersionConstraint: pkg.VersionConstraint,
+			MinecraftVersion:  pkg.MinecraftVersion,
+			Loader:            pkg.Loader,
+			Required:          pkg.Required,
+			Metadata:          pkg.Metadata,
+		})
+	}
+	return dtos
+}
+
+func agentArtifactsToDTO(artifacts []lucy.LocalArtifactRef) []LocalArtifactRefDTO {
+	if len(artifacts) == 0 {
+		return nil
+	}
+	dtos := make([]LocalArtifactRefDTO, 0, len(artifacts))
+	for _, art := range artifacts {
+		dtos = append(dtos, LocalArtifactRefDTO{
+			ArtifactID:       art.ArtifactID,
+			PayloadAlgorithm: art.PayloadAlgorithm,
+			PayloadHash:      art.PayloadHash,
+			PayloadSize:      art.PayloadSize,
+			ArtifactType:     art.ArtifactType,
+			RuntimeName:      art.RuntimeName,
+			Metadata:         art.Metadata,
+		})
+	}
+	return dtos
 }

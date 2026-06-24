@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/stratummc/stratum/internal/agent"
+	"github.com/stratummc/stratum/internal/integration/lucy"
 )
 
 const requestIDHeader = "X-Request-ID"
@@ -463,6 +464,10 @@ func (s *Server) materializeEnvironment(w http.ResponseWriter, r *http.Request) 
 		ServerCore:             dto.ServerCore,
 		MCDRRequired:           dto.MCDRRequired,
 		CarpetRequired:         dto.CarpetRequired,
+		LucyManifestRef:        dto.LucyManifestRef,
+		LucyLockRef:            dto.LucyLockRef,
+		Packages:               dtoPackagesToAgent(dto.Packages),
+		LocalArtifacts:         dtoArtifactsToAgent(dto.LocalArtifacts),
 		RuntimeProfileID:       dto.RuntimeProfileID,
 		RuntimeProfileRequired: dto.RuntimeProfileRequired,
 		ActorID:                dto.ActorID,
@@ -593,4 +598,43 @@ func newRequestID() string {
 		return "request-unknown"
 	}
 	return hex.EncodeToString(bytes)
+}
+
+func dtoPackagesToAgent(dtos []PackageRefDTO) []lucy.PackageRef {
+	if len(dtos) == 0 {
+		return []lucy.PackageRef{}
+	}
+	packages := make([]lucy.PackageRef, 0, len(dtos))
+	for _, dto := range dtos {
+		packages = append(packages, lucy.PackageRef{
+			ID:                dto.ID,
+			Source:            dto.Source,
+			Name:              dto.Name,
+			VersionConstraint: dto.VersionConstraint,
+			MinecraftVersion:  dto.MinecraftVersion,
+			Loader:            dto.Loader,
+			Required:          dto.Required,
+			Metadata:          dto.Metadata,
+		})
+	}
+	return packages
+}
+
+func dtoArtifactsToAgent(dtos []LocalArtifactRefDTO) []lucy.LocalArtifactRef {
+	if len(dtos) == 0 {
+		return []lucy.LocalArtifactRef{}
+	}
+	artifacts := make([]lucy.LocalArtifactRef, 0, len(dtos))
+	for _, dto := range dtos {
+		artifacts = append(artifacts, lucy.LocalArtifactRef{
+			ArtifactID:       dto.ArtifactID,
+			PayloadAlgorithm: dto.PayloadAlgorithm,
+			PayloadHash:      dto.PayloadHash,
+			PayloadSize:      dto.PayloadSize,
+			ArtifactType:     dto.ArtifactType,
+			RuntimeName:      dto.RuntimeName,
+			Metadata:         dto.Metadata,
+		})
+	}
+	return artifacts
 }

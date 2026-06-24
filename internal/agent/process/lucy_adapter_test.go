@@ -343,6 +343,56 @@ func TestMaterializeEnvironmentWritesLucyManifest(t *testing.T) {
 	}
 }
 
+func TestMaterializeEnvironmentUsesLucyManifestRefPackages(t *testing.T) {
+	root := t.TempDir()
+	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := &fakeBackend{
+		plan: lucy.EnvironmentPlan{Metadata: map[string]string{}},
+		lock: lucy.EnvironmentLock{LockID: "lock-1", LockHash: "hash", GeneratedAt: time.Now().UTC(), ProviderMetadata: map[string]string{}},
+	}
+	adapter, err := lucy.NewEmbeddedAdapter(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervisor.SetLucyAdapter(adapter)
+
+	request := testMaterializationRequest("session-manifest-ref")
+	request.LucyManifestRef = filepath.Join("manifests", "gtmc-1.17-base.lucy.yaml")
+	result, err := supervisor.MaterializeEnvironment(context.Background(), request)
+	if err != nil {
+		t.Fatalf("materialize environment: %v", err)
+	}
+
+	if result.Metadata["lucyManifestSource"] != "environment-ref" {
+		t.Fatalf("lucyManifestSource = %q, want environment-ref; metadata=%#v", result.Metadata["lucyManifestSource"], result.Metadata)
+	}
+	if len(backend.plannedSpec.Packages) != 2 {
+		t.Fatalf("planned packages = %d, want 2: %#v", len(backend.plannedSpec.Packages), backend.plannedSpec.Packages)
+	}
+	assertPackageRef(t, backend.plannedSpec.Packages[0], "fabric-carpet", "fabric-carpet", "1.4.44", true)
+	assertPackageRef(t, backend.plannedSpec.Packages[1], "fabric-api", "fabric-api", "0.40.0", true)
+
+	lucyManifestPath := filepath.Join(root, result.LucyManifestPath)
+	manifestData, err := os.ReadFile(lucyManifestPath)
+	if err != nil {
+		t.Fatalf("read runtime lucy manifest: %v", err)
+	}
+	content := string(manifestData)
+	if !strings.Contains(content, "fabric/fabric-carpet") || !strings.Contains(content, "fabric/fabric-api") {
+		t.Fatalf("runtime lucy.yaml missing referenced packages:\n%s", content)
+	}
+}
+
+func assertPackageRef(t *testing.T, got lucy.PackageRef, wantID, wantName, wantVersion string, wantRequired bool) {
+	t.Helper()
+	if got.ID != wantID || got.Name != wantName || got.VersionConstraint != wantVersion || got.Source != "modrinth" || got.Loader != "fabric" || got.Required != wantRequired {
+		t.Fatalf("package ref mismatch:\ngot:  %#v\nwant: id=%s name=%s version=%s source=modrinth loader=fabric required=%t", got, wantID, wantName, wantVersion, wantRequired)
+	}
+}
+
 func TestMaterializeEnvironmentWithEmbeddedAdapterInstallsPackages(t *testing.T) {
 	root := t.TempDir()
 	supervisor, err := NewSupervisorWithRoot("test-agent", root, 256*1024)
@@ -669,6 +719,8 @@ type fakeBackend struct {
 	plan            lucy.EnvironmentPlan
 	lock            lucy.EnvironmentLock
 	status          lucy.EnvironmentStatus
+	plannedSpec     lucy.EnvironmentSpec
+	lockedSpec      lucy.EnvironmentSpec
 	installResult   lucy.InstallPackagesResult
 	installErr      error
 	installContent  []byte
@@ -682,11 +734,13 @@ func (f *fakeBackend) Capabilities(_ context.Context) (lucy.Capabilities, error)
 	return f.caps, f.err
 }
 
-func (f *fakeBackend) Plan(_ context.Context, _ lucy.EnvironmentSpec) (lucy.EnvironmentPlan, error) {
+func (f *fakeBackend) Plan(_ context.Context, spec lucy.EnvironmentSpec) (lucy.EnvironmentPlan, error) {
+	f.plannedSpec = spec
 	return f.plan, f.err
 }
 
-func (f *fakeBackend) Lock(_ context.Context, _ lucy.EnvironmentSpec) (lucy.EnvironmentLock, error) {
+func (f *fakeBackend) Lock(_ context.Context, spec lucy.EnvironmentSpec) (lucy.EnvironmentLock, error) {
+	f.lockedSpec = spec
 	return f.lock, f.err
 }
 

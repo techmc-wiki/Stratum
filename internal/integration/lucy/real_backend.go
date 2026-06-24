@@ -82,7 +82,7 @@ func (b *LucyProjectBackend) Lock(ctx context.Context, spec EnvironmentSpec) (En
 	var installResult *lucyinstall.Result
 	err := NewInstallService(b.workDir).withWorkDir(ctx, func() error {
 		var installErr error
-		installResult, installErr = lucyinstall.InstallMany(lucyRequests, lucyinstall.DefaultOptions())
+		installResult, installErr = lucyinstall.InstallMany(ctx, lucyRequests, lucyinstall.DefaultOptions())
 		return installErr
 	})
 	if err != nil {
@@ -262,15 +262,18 @@ func packageVersion(pkg PackageRef) string {
 	return "compatible"
 }
 
-func lucyInstallRequests(requests []PackageRequest) []lucyinstall.PackageRequest {
-	converted := make([]lucyinstall.PackageRequest, 0, len(requests))
+func lucyInstallRequests(requests []PackageRequest) []lucytypes.PackageRequest {
+	converted := make([]lucytypes.PackageRequest, 0, len(requests))
 	for _, req := range requests {
-		converted = append(converted, lucyinstall.PackageRequest{
-			ScopedPackageRef: lucytypes.ScopedPackageRef{
-				PackageRef: lucytypes.PackageRef{Platform: lucytypes.PlatformId(req.Platform), Name: lucytypes.BarePackageName(req.Name)},
-				Scope:      lucytypes.ParseSource(req.Scope),
+		converted = append(converted, lucytypes.PackageRequest{
+			FullPackageRef: lucytypes.FullPackageRef{
+				PackageRef: lucytypes.PackageRef{
+					Platform: lucytypes.PlatformId(req.Platform),
+					Name:     lucytypes.BarePackageName(req.Name),
+				},
+				Scope:   lucytypes.ParseSource(req.Scope),
+				Version: lucytypes.BareVersion(req.Version),
 			},
-			Version: lucytypes.BareVersion(req.Version),
 		})
 	}
 	return converted
@@ -290,28 +293,22 @@ func lucyLockFromInstallResult(workDir string, manifest *lucystate.Manifest, res
 		}
 		filename := ""
 		installPath := ""
-		if pkg.Local != nil {
-			filename = filepath.Base(pkg.Local.Path)
-			installPath = relativeLucyInstallPath(workDir, pkg.Local.Path)
+		if pkg.Path != "" {
+			filename = filepath.Base(pkg.Path)
+			installPath = relativeLucyInstallPath(workDir, pkg.Path)
 		}
 		source := "direct"
-		url := ""
-		hash := "unknown"
-		hashAlgorithm := "sha1"
-		if pkg.Remote != nil {
-			if value := pkg.Remote.Source.String(); value != "unknown" {
-				source = value
-			}
-			url = pkg.Remote.FileUrl
-			if pkg.Remote.Filename != "" {
-				filename = pkg.Remote.Filename
-			}
-			if pkg.Remote.Hash != "" {
-				hash = pkg.Remote.Hash
-			}
-			if pkg.Remote.HashAlgorithm != "" {
-				hashAlgorithm = pkg.Remote.HashAlgorithm
-			}
+		url := pkg.FileUrl
+		hash := pkg.Hash
+		hashAlgorithm := pkg.HashAlgorithm
+		if hash == "" {
+			hash = "unknown"
+		}
+		if hashAlgorithm == "" {
+			hashAlgorithm = "sha1"
+		}
+		if pkg.Filename != "" {
+			filename = pkg.Filename
 		}
 		if len(provenance) == 0 {
 			provenance = []string{"root"}

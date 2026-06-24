@@ -293,19 +293,44 @@ type ErrorResponse struct {
 }
 
 type EnvironmentMaterializationRequest struct {
-	SessionID              string `json:"sessionId"`
-	EnvironmentID          string `json:"environmentId"`
-	EnvironmentName        string `json:"environmentName"`
-	MinecraftVersion       string `json:"minecraftVersion"`
-	JavaVersion            string `json:"javaVersion"`
-	LoaderType             string `json:"loaderType"`
-	LoaderVersion          string `json:"loaderVersion"`
-	ServerCore             string `json:"serverCore"`
-	MCDRRequired           bool   `json:"mcdrRequired"`
-	CarpetRequired         bool   `json:"carpetRequired"`
-	RuntimeProfileID       string `json:"runtimeProfileId"`
-	RuntimeProfileRequired bool   `json:"runtimeProfileRequired"`
-	ActorID                string `json:"actorId"`
+	SessionID              string                `json:"sessionId"`
+	EnvironmentID          string                `json:"environmentId"`
+	EnvironmentName        string                `json:"environmentName"`
+	MinecraftVersion       string                `json:"minecraftVersion"`
+	JavaVersion            string                `json:"javaVersion"`
+	LoaderType             string                `json:"loaderType"`
+	LoaderVersion          string                `json:"loaderVersion"`
+	ServerCore             string                `json:"serverCore"`
+	MCDRRequired           bool                  `json:"mcdrRequired"`
+	CarpetRequired         bool                  `json:"carpetRequired"`
+	LucyManifestRef        string                `json:"lucyManifestRef,omitempty"`
+	LucyLockRef            string                `json:"lucyLockRef,omitempty"`
+	Packages               []PackageRefDTO       `json:"packages,omitempty"`
+	LocalArtifacts         []LocalArtifactRefDTO `json:"localArtifacts,omitempty"`
+	RuntimeProfileID       string                `json:"runtimeProfileId"`
+	RuntimeProfileRequired bool                  `json:"runtimeProfileRequired"`
+	ActorID                string                `json:"actorId"`
+}
+
+type PackageRefDTO struct {
+	ID                string            `json:"id"`
+	Source            string            `json:"source"`
+	Name              string            `json:"name"`
+	VersionConstraint string            `json:"versionConstraint,omitempty"`
+	MinecraftVersion  string            `json:"minecraftVersion,omitempty"`
+	Loader            string            `json:"loader,omitempty"`
+	Required          bool              `json:"required"`
+	Metadata          map[string]string `json:"metadata,omitempty"`
+}
+
+type LocalArtifactRefDTO struct {
+	ArtifactID       string            `json:"artifactId"`
+	PayloadAlgorithm string            `json:"payloadAlgorithm"`
+	PayloadHash      string            `json:"payloadHash"`
+	PayloadSize      int64             `json:"payloadSize"`
+	ArtifactType     string            `json:"artifactType"`
+	RuntimeName      string            `json:"runtimeName"`
+	Metadata         map[string]string `json:"metadata,omitempty"`
 }
 
 type EnvironmentMaterializationResponse struct {

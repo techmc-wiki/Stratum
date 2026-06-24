@@ -21,6 +21,7 @@ profile.cov
 dist/
 
 .agents
+.omo
 
 # Dependency directories (remove the comment below to include it)
 # vendor/

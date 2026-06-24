@@ -1,4 +1,4 @@
-format_version: "1"
+format_version: "v1"
 environment:
   game_version: "1.12.2"
   server_core: "forge"

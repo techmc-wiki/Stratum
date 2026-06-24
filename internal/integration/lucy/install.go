@@ -38,18 +38,18 @@ func (s *InstallService) Install(ctx context.Context, req PackageRequest) error 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	lucyReq := lucyinstall.PackageRequest{
-		ScopedPackageRef: lucytypes.ScopedPackageRef{
+	lucyReq := lucytypes.PackageRequest{
+		FullPackageRef: lucytypes.FullPackageRef{
 			PackageRef: lucytypes.PackageRef{
 				Platform: lucytypes.PlatformId(req.Platform),
 				Name:     lucytypes.BarePackageName(req.Name),
 			},
-			Scope: lucytypes.ParseSource(req.Scope),
+			Scope:   lucytypes.ParseSource(req.Scope),
+			Version: lucytypes.BareVersion(req.Version),
 		},
-		Version: lucytypes.BareVersion(req.Version),
 	}
 	err := s.withWorkDir(ctx, func() error {
-		_, err := lucyinstall.Install(lucyReq, lucyinstall.DefaultOptions())
+		_, err := lucyinstall.Install(ctx, lucyReq, lucyinstall.DefaultOptions())
 		return err
 	})
 	if err != nil {
@@ -63,21 +63,21 @@ func (s *InstallService) InstallMany(ctx context.Context, requests []PackageRequ
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	lucyReqs := make([]lucyinstall.PackageRequest, len(requests))
+	lucyReqs := make([]lucytypes.PackageRequest, len(requests))
 	for i, req := range requests {
-		lucyReqs[i] = lucyinstall.PackageRequest{
-			ScopedPackageRef: lucytypes.ScopedPackageRef{
+		lucyReqs[i] = lucytypes.PackageRequest{
+			FullPackageRef: lucytypes.FullPackageRef{
 				PackageRef: lucytypes.PackageRef{
 					Platform: lucytypes.PlatformId(req.Platform),
 					Name:     lucytypes.BarePackageName(req.Name),
 				},
-				Scope: lucytypes.ParseSource(req.Scope),
+				Scope:   lucytypes.ParseSource(req.Scope),
+				Version: lucytypes.BareVersion(req.Version),
 			},
-			Version: lucytypes.BareVersion(req.Version),
 		}
 	}
 	err := s.withWorkDir(ctx, func() error {
-		_, err := lucyinstall.InstallMany(lucyReqs, lucyinstall.DefaultOptions())
+		_, err := lucyinstall.InstallMany(ctx, lucyReqs, lucyinstall.DefaultOptions())
 		return err
 	})
 	if err != nil {
@@ -171,10 +171,14 @@ func NewProbeService(workDir string) *ProbeService {
 // ServerInfo returns the current server environment information.
 func (s *ProbeService) ServerInfo() (map[string]interface{}, error) {
 	info := lucyworkspace.ServerInfoAt(s.workDir)
+	ws := lucyworkspace.Workspace{
+		Runtime:  info.Runtime,
+		Topology: info.Topology,
+	}
 	result := make(map[string]interface{})
 	result["game_version"] = string(info.Runtime.GameVersion)
-	result["platform"] = string(info.Runtime.DerivedModLoader())
-	result["platform_version"] = info.Runtime.DerivedLoaderVersion()
+	result["platform"] = string(ws.DerivedModLoader())
+	result["platform_version"] = ws.DerivedLoaderVersion()
 	if info.Environments.Mcdr != nil {
 		result["mcdr"] = true
 	}

@@ -952,8 +952,18 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 		lucyResolutionStatus = "resolved"
 		lucyManifestPath := filepath.Join(configDir, "lucy.yaml")
 		lucyManifestRuntimePath = runtimeRelativePath(s.runtimeRoot, lucyManifestPath)
-		defaultManifest := lucy.CreateDefault(request.MinecraftVersion, request.LoaderType, request.LoaderVersion, request.MCDRRequired)
-		if err := lucy.NewManifestService(configDir).Write(ctx, defaultManifest); err != nil {
+		selectedManifest, err := selectLucyManifest(ctx, request.LucyManifestRef, request.Packages, lucy.CreateDefault(request.MinecraftVersion, request.LoaderType, request.LoaderVersion, request.MCDRRequired))
+		if err != nil {
+			lucyResolutionStatus = "failed"
+			lucyMetadata["lucyResolutionError"] = err.Error()
+			lucyMetadata["lucyResolutionErrorCode"] = string(lucy.ClassifyError(err))
+		}
+		for key, value := range selectedManifest.metadata {
+			lucyMetadata[key] = value
+		}
+		if lucyResolutionStatus == "failed" {
+			// Error metadata has already been recorded above.
+		} else if err := writeLucyManifest(ctx, configDir, selectedManifest.manifest); err != nil {
 			lucyResolutionStatus = "failed"
 			lucyMetadata["lucyResolutionError"] = err.Error()
 			lucyMetadata["lucyResolutionErrorCode"] = string(lucy.ClassifyError(err))
@@ -969,7 +979,7 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 				CarpetRequired:   request.CarpetRequired,
 				MCDRRequired:     request.MCDRRequired,
 				RuntimeProfileID: request.RuntimeProfileID,
-				Packages:         request.Packages,
+				Packages:         selectedManifest.packages,
 				LocalArtifacts:   request.LocalArtifacts,
 				Metadata: map[string]string{
 					"lucyManifestRef": request.LucyManifestRef,
