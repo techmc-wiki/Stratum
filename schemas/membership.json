@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["id", "userId", "projectId", "role", "addedBy", "addedAt", "updatedAt"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^mem_[a-zA-Z0-9_-]+$"
+    },
+    "userId": {
+      "type": "string",
+      "pattern": "^user_[a-zA-Z0-9_-]+$"
+    },
+    "projectId": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "role": {
+      "type": "string",
+      "enum": ["viewer", "researcher", "maintainer", "owner"]
+    },
+    "addedBy": {
+      "type": "string",
+      "minLength": 1
+    },
+    "addedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
