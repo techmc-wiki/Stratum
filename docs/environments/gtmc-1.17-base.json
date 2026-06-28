@@ -5,7 +5,7 @@
   "minecraftVersion": "1.17.1",
   "javaVersion": "16",
   "loaderType": "fabric",
-  "loaderVersion": "0.11.7",
+  "loaderVersion": "0.14.24",
   "serverCore": "fabric",
   "mcdrRequired": true,
   "carpetRequired": true,

@@ -122,3 +122,10 @@ func (a *EmbeddedAdapter) classifyError(err error) error {
 	}
 	return NewAdapterError(ErrorCodeInternalError, "backend error", err, false)
 }
+
+// SetServerDir forwards to LucyProjectBackend.SetServerDir if the backend supports it.
+func (a *EmbeddedAdapter) SetServerDir(serverDir string) {
+	if b, ok := a.backend.(*LucyProjectBackend); ok {
+		b.SetServerDir(serverDir)
+	}
+}

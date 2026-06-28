@@ -4,7 +4,7 @@ import (
 	"os"
 
 	"github.com/mclucy/lucy/cmd"
-	"github.com/mclucy/lucy/logger"
+	"github.com/mclucy/lucy/log"
 )
 
 func main() {

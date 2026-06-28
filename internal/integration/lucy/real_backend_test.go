@@ -8,7 +8,7 @@ import (
 )
 
 func TestLucyProjectBackendCapabilities(t *testing.T) {
-	backend := NewLucyProjectBackend(t.TempDir())
+	backend := NewLucyProjectBackend(t.TempDir(), "")
 	caps, err := backend.Capabilities(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func TestLucyLockToEnvironmentLock(t *testing.T) {
 }
 
 func TestLucyProjectBackendPlanReturnsNoActionsForEmptySpec(t *testing.T) {
-	backend := NewLucyProjectBackend(t.TempDir())
+	backend := NewLucyProjectBackend(t.TempDir(), "")
 	plan, err := backend.Plan(context.Background(), EnvironmentSpec{EnvironmentID: "env-1", MinecraftVersion: "1.17.1", LoaderType: "fabric", ServerCore: "carpet"})
 	if err != nil {
 		t.Fatal(err)
