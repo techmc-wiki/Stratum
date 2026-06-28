@@ -215,7 +215,7 @@ func createDefaultLucyAdapter(workDir string) lucy.Adapter {
 	if configured != "" {
 		workDir = configured
 	}
-	adapter, err := lucy.NewEmbeddedAdapter(lucy.NewLucyProjectBackend(workDir))
+	adapter, err := lucy.NewEmbeddedAdapter(lucy.NewLucyProjectBackend(workDir, ""))
 	if err != nil {
 		return lucy.NoopAdapter{}
 	}
@@ -902,6 +902,13 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 	if err := layout.Create(); err != nil {
 		return agent.EnvironmentMaterializationResult{}, err
 	}
+	if adapterMode == "embedded" && request.MCDRRequired {
+		if mcdrLayout, e := layout.MCDR(); e == nil {
+			if ea, ok := adapter.(*lucy.EmbeddedAdapter); ok {
+				ea.SetServerDir(mcdrLayout.MCDRServerDir)
+			}
+		}
+	}
 	sessionRoot := layout.SessionRoot
 	configDir := layout.ConfigDir
 	directories := []string{"config", "work", "world", "logs", "mods"}
@@ -1026,10 +1033,16 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 			}
 		}
 	}
+	modsDir := filepath.Join(sessionRoot, "mods")
+	if request.MCDRRequired {
+		if mcdrLayout, e := layout.MCDR(); e == nil {
+			modsDir = filepath.Join(mcdrLayout.MCDRServerDir, "mods")
+		}
+	}
 	if lucyConfigured && lucyResolutionStatus == "resolved" && resolvedLock != nil && len(resolvedLock.Packages) > 0 {
 		installResult, err := adapter.InstallPackages(ctx, lucy.InstallPackagesRequest{
 			Packages:  resolvedLock.Packages,
-			TargetDir: filepath.Join(sessionRoot, "mods"),
+			TargetDir: modsDir,
 			WorkDir:   configDir,
 		})
 		if err != nil {
@@ -1063,7 +1076,7 @@ func (s *Supervisor) MaterializeEnvironment(ctx context.Context, request agent.E
 		}
 		integrityResult, err := adapter.VerifyIntegrity(ctx, lucy.IntegrityRequest{
 			LockPath: filepath.Join(configDir, "lucy-lock.yaml"),
-			ModsDir:  filepath.Join(sessionRoot, "mods"),
+			ModsDir:  modsDir,
 		})
 		if err != nil {
 			lucyIntegrityStatus = "error"
