@@ -12,7 +12,7 @@ packages:
     source: modrinth
     role: required
     side: server
-  - id: fabric/fabric-carpet
+  - id: fabric/carpet
     version: "latest"
     source: modrinth
     role: recommended

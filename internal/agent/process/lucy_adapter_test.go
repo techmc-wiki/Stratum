@@ -372,8 +372,8 @@ func TestMaterializeEnvironmentUsesLucyManifestRefPackages(t *testing.T) {
 	if len(backend.plannedSpec.Packages) != 2 {
 		t.Fatalf("planned packages = %d, want 2: %#v", len(backend.plannedSpec.Packages), backend.plannedSpec.Packages)
 	}
-	assertPackageRef(t, backend.plannedSpec.Packages[0], "fabric-carpet", "fabric-carpet", "1.4.44", true)
-	assertPackageRef(t, backend.plannedSpec.Packages[1], "fabric-api", "fabric-api", "0.40.0", true)
+	assertPackageRef(t, backend.plannedSpec.Packages[0], "carpet", "carpet", "1.4.57", true)
+	assertPackageRef(t, backend.plannedSpec.Packages[1], "fabric-api", "fabric-api", "0.46.1+1.17", true)
 
 	lucyManifestPath := filepath.Join(root, result.LucyManifestPath)
 	manifestData, err := os.ReadFile(lucyManifestPath)
@@ -381,7 +381,7 @@ func TestMaterializeEnvironmentUsesLucyManifestRefPackages(t *testing.T) {
 		t.Fatalf("read runtime lucy manifest: %v", err)
 	}
 	content := string(manifestData)
-	if !strings.Contains(content, "fabric/fabric-carpet") || !strings.Contains(content, "fabric/fabric-api") {
+	if !strings.Contains(content, "fabric/carpet") || !strings.Contains(content, "fabric/fabric-api") {
 		t.Fatalf("runtime lucy.yaml missing referenced packages:\n%s", content)
 	}
 }
