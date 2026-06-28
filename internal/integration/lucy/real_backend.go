@@ -13,16 +13,18 @@ import (
 	lucyinstall "github.com/mclucy/lucy/install"
 	lucystate "github.com/mclucy/lucy/state"
 	lucytypes "github.com/mclucy/lucy/types"
+	lucyworkspace "github.com/mclucy/lucy/workspace"
 )
 
 type LucyProjectBackend struct {
-	workDir string
+	workDir   string
+	serverDir string
 }
 
 var _ EmbeddedBackend = (*LucyProjectBackend)(nil)
 
-func NewLucyProjectBackend(workDir string) *LucyProjectBackend {
-	return &LucyProjectBackend{workDir: workDir}
+func NewLucyProjectBackend(workDir, serverDir string) *LucyProjectBackend {
+	return &LucyProjectBackend{workDir: workDir, serverDir: serverDir}
 }
 
 func (b *LucyProjectBackend) Capabilities(context.Context) (Capabilities, error) {
@@ -34,6 +36,10 @@ func (b *LucyProjectBackend) Capabilities(context.Context) (Capabilities, error)
 		SupportedLoaders: []string{"fabric", "forge", "quilt", "liteloader"},
 		Metadata:         map[string]string{"backend": "lucy-project"},
 	}, nil
+}
+
+func (b *LucyProjectBackend) SetServerDir(serverDir string) {
+	b.serverDir = serverDir
 }
 
 func (b *LucyProjectBackend) Plan(ctx context.Context, spec EnvironmentSpec) (EnvironmentPlan, error) {
@@ -80,9 +86,12 @@ func (b *LucyProjectBackend) Lock(ctx context.Context, spec EnvironmentSpec) (En
 	}
 	lucyRequests := lucyInstallRequests(requests)
 	var installResult *lucyinstall.Result
+	serverInfo := lucyworkspace.ServerInfoAt(b.serverDir)
+	opts := lucyinstall.DefaultOptions()
+	opts.ServerInfo = func() lucyworkspace.Workspace { return serverInfo }
 	err := NewInstallService(b.workDir).withWorkDir(ctx, func() error {
 		var installErr error
-		installResult, installErr = lucyinstall.InstallMany(ctx, lucyRequests, lucyinstall.DefaultOptions())
+		installResult, installErr = lucyinstall.InstallMany(ctx, lucyRequests, opts)
 		return installErr
 	})
 	if err != nil {
