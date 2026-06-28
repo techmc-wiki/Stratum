@@ -2,6 +2,7 @@ package lucy
 
 import (
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -128,6 +129,30 @@ func fileSHA256(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func fileSHA512(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	hash := sha512.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func fileHashByAlgorithm(path, algorithm string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(algorithm)) {
+	case "sha256", "":
+		return fileSHA256(path)
+	case "sha512":
+		return fileSHA512(path)
+	default:
+		return "", fmt.Errorf("unsupported hash algorithm: %s", algorithm)
+	}
 }
 
 func findFileBySHA256(root, expected string) (string, error) {

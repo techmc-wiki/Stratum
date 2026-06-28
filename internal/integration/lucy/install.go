@@ -221,7 +221,11 @@ func (s *ProbeService) VerifyLockIntegrity(ctx context.Context, lockPath string,
 	}
 	for _, pkg := range lock.Packages {
 		result.Checked++
-		path := filepath.Join(modsDir, expectedPackageFilename(pkg))
+		filename := pkg.Metadata["filename"]
+		if filename == "" {
+			filename = expectedPackageFilename(pkg)
+		}
+		path := filepath.Join(modsDir, filename)
 		if _, err := os.Stat(path); err != nil {
 			if os.IsNotExist(err) {
 				result.Missing = append(result.Missing, pkg.ID)
@@ -230,7 +234,8 @@ func (s *ProbeService) VerifyLockIntegrity(ctx context.Context, lockPath string,
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", pkg.ID, err))
 			continue
 		}
-		actual, err := fileSHA256(path)
+		algorithm := pkg.Metadata["hash_algorithm"]
+		actual, err := fileHashByAlgorithm(path, algorithm)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", pkg.ID, err))
 			continue
