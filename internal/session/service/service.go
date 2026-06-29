@@ -18,6 +18,7 @@ import (
 	"github.com/stratummc/stratum/internal/integration/lucybridge"
 	"github.com/stratummc/stratum/internal/operation"
 	operationsvc "github.com/stratummc/stratum/internal/operation/service"
+	permissionsvc "github.com/stratummc/stratum/internal/permission/service"
 	"github.com/stratummc/stratum/internal/resourcepolicy"
 	schedulersvc "github.com/stratummc/stratum/internal/scheduler/service"
 	"github.com/stratummc/stratum/internal/session"
@@ -53,6 +54,7 @@ type Service struct {
 	operations      *operationsvc.Service
 	artifactGate    ArtifactReadinessGate
 	preOpCheckpoint PreOpCheckpointFunc
+	permissions     PermissionChecker
 }
 
 type ArtifactReadinessGate interface {
@@ -60,6 +62,10 @@ type ArtifactReadinessGate interface {
 }
 
 type PreOpCheckpointFunc func(ctx context.Context, sessionID, actorID string) error
+
+type PermissionChecker interface {
+	CheckSessionAccess(context.Context, string, string, string) error
+}
 
 type OperationOptions struct {
 	IdempotencyKey        string
@@ -109,6 +115,36 @@ func (s *Service) WithPreOpCheckpoint(fn PreOpCheckpointFunc) *Service {
 	return s
 }
 
+func (s *Service) WithPermissionChecker(checker PermissionChecker) *Service {
+	s.permissions = checker
+	return s
+}
+
+func (s *Service) requireSessionPermission(ctx context.Context, action, sessionID, actor string) error {
+	if s.permissions == nil {
+		return nil
+	}
+	if err := s.permissions.CheckSessionAccess(ctx, actor, sessionID, action); err != nil {
+		return stratumerrors.Error{Kind: stratumerrors.KindForbidden, Operation: "sessionsvc.permission", Message: "permission denied", Cause: err}
+	}
+	return nil
+}
+
+func sessionPermissionAction(action string) (string, error) {
+	switch action {
+	case "prepare", "start", "unfreeze":
+		return permissionsvc.ActionSessionStart, nil
+	case "stop", "freeze", "mark-crashed", "archive":
+		return permissionsvc.ActionSessionStop, nil
+	case "restart":
+		return permissionsvc.ActionSessionRestart, nil
+	case "delete":
+		return permissionsvc.ActionSessionDelete, nil
+	default:
+		return "", fmt.Errorf("unknown session action %q", action)
+	}
+}
+
 func collectApprovedLocalArtifactRefs(ctx context.Context, repo Repository, sessionID string) []lucy.LocalArtifactRef {
 	plans, err := repo.ListArtifactStagingPlansBySession(ctx, sessionID)
 	if err != nil || len(plans) == 0 {
@@ -138,6 +174,9 @@ func collectApprovedLocalArtifactRefs(ctx context.Context, repo Repository, sess
 func (s *Service) Create(ctx context.Context, value session.Session) error {
 	if value.ID == "" || value.ProjectID == "" || value.OwnerUserID == "" || value.EnvironmentID == "" {
 		return fmt.Errorf("session requires id, project, owner, and environment")
+	}
+	if err := s.requireSessionPermission(ctx, permissionsvc.ActionSessionCreate, value.ID, value.OwnerUserID); err != nil {
+		return err
 	}
 	if _, err := s.repository.GetEnvironment(ctx, value.EnvironmentID); err != nil {
 		return fmt.Errorf("environment %q not found: %w", value.EnvironmentID, err)
@@ -255,6 +294,9 @@ func (s *Service) SendCommandWithOptions(ctx context.Context, id, actor, command
 	if err != nil {
 		return operation.Operation{}, false, err
 	}
+	if err := s.requireSessionPermission(ctx, permissionsvc.ActionSessionCommand, id, actor); err != nil {
+		return operation.Operation{}, false, err
+	}
 	opValue, replay, err := s.operations.Begin(ctx, operationsvc.BeginParams{
 		RequestID:      options.RequestID,
 		IdempotencyKey: options.IdempotencyKey,
@@ -314,6 +356,13 @@ func (s *Service) coordinate(ctx context.Context, action, id, actor string, inte
 	}
 	current, err := s.repository.GetSession(ctx, id)
 	if err != nil {
+		return operation.Operation{}, false, err
+	}
+	permissionAction, err := sessionPermissionAction(action)
+	if err != nil {
+		return operation.Operation{}, false, err
+	}
+	if err := s.requireSessionPermission(ctx, permissionAction, id, actor); err != nil {
 		return operation.Operation{}, false, err
 	}
 	metadata := map[string]string{}
