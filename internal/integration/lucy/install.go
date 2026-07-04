@@ -41,8 +41,8 @@ func (s *InstallService) Install(ctx context.Context, req PackageRequest) error 
 	lucyReq := lucytypes.PackageRequest{
 		FullPackageRef: lucytypes.FullPackageRef{
 			PackageRef: lucytypes.PackageRef{
-				Platform: lucytypes.PlatformId(req.Platform),
-				Name:     lucytypes.BarePackageName(req.Name),
+				Eco:  lucytypes.Ecosystem(req.Platform),
+				Name: lucytypes.BarePackageName(req.Name),
 			},
 			Scope:   lucytypes.ParseSource(req.Scope),
 			Version: lucytypes.BareVersion(req.Version),
@@ -68,8 +68,8 @@ func (s *InstallService) InstallMany(ctx context.Context, requests []PackageRequ
 		lucyReqs[i] = lucytypes.PackageRequest{
 			FullPackageRef: lucytypes.FullPackageRef{
 				PackageRef: lucytypes.PackageRef{
-					Platform: lucytypes.PlatformId(req.Platform),
-					Name:     lucytypes.BarePackageName(req.Name),
+					Eco:  lucytypes.Ecosystem(req.Platform),
+					Name: lucytypes.BarePackageName(req.Name),
 				},
 				Scope:   lucytypes.ParseSource(req.Scope),
 				Version: lucytypes.BareVersion(req.Version),
@@ -170,7 +170,7 @@ func NewProbeService(workDir string) *ProbeService {
 
 // ServerInfo returns the current server environment information.
 func (s *ProbeService) ServerInfo() (map[string]interface{}, error) {
-	info := lucyworkspace.ServerInfoAt(s.workDir)
+	info := lucyworkspace.NewAt(s.workDir)
 	ws := lucyworkspace.Workspace{
 		Runtime:  info.Runtime,
 		Topology: info.Topology,
@@ -187,7 +187,7 @@ func (s *ProbeService) ServerInfo() (map[string]interface{}, error) {
 
 // Invalidate marks the cached server info as stale.
 func (s *ProbeService) Invalidate() {
-	lucyworkspace.InvalidateServerInfo()
+	lucyworkspace.Invalidate()
 }
 
 // LockIntegrityResult reports whether all locked packages are present and intact.

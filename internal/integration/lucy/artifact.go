@@ -34,7 +34,7 @@ func (s *ArtifactService) Analyze(ctx context.Context, filePath string) ([]Artif
 	result := make([]ArtifactInfo, len(infos))
 	for i, info := range infos {
 		result[i] = ArtifactInfo{
-			Platform: string(info.Ref.Platform),
+			Platform: string(info.Ref.Eco),
 			Name:     string(info.Ref.Name),
 			Version:  string(info.Version),
 		}

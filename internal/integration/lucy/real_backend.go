@@ -86,9 +86,9 @@ func (b *LucyProjectBackend) Lock(ctx context.Context, spec EnvironmentSpec) (En
 	}
 	lucyRequests := lucyInstallRequests(requests)
 	var installResult *lucyinstall.Result
-	serverInfo := lucyworkspace.ServerInfoAt(b.serverDir)
+	serverInfo := lucyworkspace.NewAt(b.serverDir)
 	opts := lucyinstall.DefaultOptions()
-	opts.ServerInfo = func() lucyworkspace.Workspace { return serverInfo }
+	opts.Workspace = func() lucyworkspace.Workspace { return serverInfo }
 	err := NewInstallService(b.workDir).withWorkDir(ctx, func() error {
 		var installErr error
 		installResult, installErr = lucyinstall.InstallMany(ctx, lucyRequests, opts)
@@ -277,8 +277,8 @@ func lucyInstallRequests(requests []PackageRequest) []lucytypes.PackageRequest {
 		converted = append(converted, lucytypes.PackageRequest{
 			FullPackageRef: lucytypes.FullPackageRef{
 				PackageRef: lucytypes.PackageRef{
-					Platform: lucytypes.PlatformId(req.Platform),
-					Name:     lucytypes.BarePackageName(req.Name),
+					Eco:  lucytypes.Ecosystem(req.Platform),
+					Name: lucytypes.BarePackageName(req.Name),
 				},
 				Scope:   lucytypes.ParseSource(req.Scope),
 				Version: lucytypes.BareVersion(req.Version),
